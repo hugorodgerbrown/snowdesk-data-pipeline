@@ -1173,9 +1173,9 @@ cache under SNOW-493.
 
 History: the posture was first load-bearing on ``/account/favourites/``,
 which the offline favourites roster read out of the shell cache
-(SNOW-418/668). SNOW-803 removed that page; the roster's write-through keys
-on the ``/favourites/partials/list/`` request path, which the map sheet
-fetches, and the map at ``/`` is the navigation the shell caches for it.
+(SNOW-418/668). SNOW-803 removed that page, and SNOW-1481 the
+``/favourites/partials/list/`` roster the map sheet fetched in its place;
+the posture stays for the account area's own cached navigations.
 """
 
 

@@ -2,8 +2,10 @@
  * tests/js/test_map_roundel_overlay_state.js — Vitest DOM test for
  * static/js/map_roundel_overlay_state.js (SNOW-658).
  *
- * The overlay roundels — downloads, favourites, field observations and,
- * since SNOW-687, routes — each carry ``data-overlay-shown``, meaning one
+ * The overlay roundels — downloads, field observations and, since SNOW-687,
+ * routes — each carry ``data-overlay-shown`` (the favourites star did too
+ * until SNOW-1481 made it open Saved; the routes roundel is the probe the
+ * star used to be), meaning one
  * thing on all of them: "the overlay this roundel's panel switches is drawn
  * on the map right now". Before SNOW-658 only one of them carried a state at
  * all, and it meant something else ("this device holds a downloaded area").
@@ -51,7 +53,9 @@ import '../../static/js/i18n_strings.js';
 import { MAP_BUNDLE, loadMapBundle } from './_load_map_bundle.js';
 
 const DOWNLOADS_ROUNDEL = 'map-custom-download-control';
-const FAVOURITES_ROUNDEL = 'favourite-add-btn';
+// SNOW-1481: the star opens Saved, four lists and no one layer, so it
+// carries no overlay state; it is in the fixture to prove that.
+const STAR_ROUNDEL = 'favourite-add-btn';
 const REPORTS_ROUNDEL = 'report-btn';
 const ROUTES_ROUNDEL = 'route-add-btn';
 
@@ -180,9 +184,8 @@ function buildFixture() {
             data-overlay-shown="false"
             aria-label="Manage downloads"
             title="Manage downloads"></button>
-    <button id="${FAVOURITES_ROUNDEL}"
-            data-overlay-shown="false"
-            aria-label="Your favourites"></button>
+    <button id="${STAR_ROUNDEL}"
+            aria-label="Saved"></button>
     <button id="${REPORTS_ROUNDEL}"
             data-overlay-shown="false"
             aria-label="Your field observations"></button>
@@ -272,22 +275,27 @@ function uninstallLayers(...layerIds) {
   for (const id of layerIds) mapStub.removeLayer(id);
 }
 
-/** Put the favourites pins back the way map.js does when a fetch lands —
- * through the public event favourites.js fires after a save. */
-async function installFavouritesLayers() {
-  document.dispatchEvent(new CustomEvent('snowdesk:favourites-changed'));
-  await waitFor(() => !!mapStub.getLayer('favourites-pin'));
+/** Put the routes back the way map.js does after a basemap swap: its
+ * styledata handler re-installs every overlay that is switched on. A
+ * routes write only refreshes the data of layers already there. */
+async function installRoutesLayers() {
+  if (mapStub.getLayer('regions-fill')) mapStub.removeLayer('regions-fill');
+  for (const handler of mapStub.handlers.styledata || []) await handler();
+  await waitFor(() => !!mapStub.getLayer('routes-line'));
 }
 
 beforeEach(async () => {
   // A known starting point for every case: nothing on the map. The
-  // favourites re-install covers a case below that deliberately takes those
+  // routes re-install covers a case below that deliberately takes those
   // layers away.
+  if (!mapStub.getLayer('routes-line')) {
+    window.pwaRoutesOverlay.show();
+    await installRoutesLayers();
+  }
   window.pwaDownloadedOverlay.hide();
   window.pwaFavouritesOverlay.hide();
   window.pwaCommunityReportsOverlay.hide();
   window.pwaRoutesOverlay.hide();
-  if (!mapStub.getLayer('favourites-pin')) await installFavouritesLayers();
 });
 
 // FIRST in the file on purpose: the suite boots with community reports
@@ -320,14 +328,14 @@ describe('each roundel tracks its own overlay', () => {
   it('paints from the layers, not from the stored preference', async () => {
     // The distinction the SNOW-658 review turns on: the preference below
     // never moves, and the state still goes off, because the pins did.
-    window.pwaFavouritesOverlay.show();
-    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
+    window.pwaRoutesOverlay.show();
+    await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
 
-    mapStub.setLayoutProperty('favourites-pin', 'visibility', 'none');
+    mapStub.setLayoutProperty('routes-line', 'visibility', 'none');
     window.pwaRoundelOverlayState.refresh();
 
-    expect(window.pwaFavouritesOverlay.isEnabled()).toBe(true);
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
+    expect(window.pwaRoutesOverlay.isEnabled()).toBe(true);
+    expect(shown(ROUTES_ROUNDEL)).toBe('false');
   });
 
   it('follows the downloads overlay in both directions', async () => {
@@ -336,18 +344,6 @@ describe('each roundel tracks its own overlay', () => {
 
     window.pwaDownloadedOverlay.hide();
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
-  });
-
-  it('follows the favourites overlay in both directions', async () => {
-    // show() is asynchronous by nature — it asks the lazy-load path for the
-    // layers and they are painted a tick later — so the state lights on the
-    // announcement that load makes, not on the click.
-    window.pwaFavouritesOverlay.show();
-    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
-
-    window.pwaFavouritesOverlay.hide();
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
   });
 
   it('follows the community-reports overlay in both directions', async () => {
@@ -373,12 +369,21 @@ describe('each roundel tracks its own overlay', () => {
   });
 
   it('leaves the other roundels alone', async () => {
-    window.pwaFavouritesOverlay.show();
-    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
+    window.pwaRoutesOverlay.show();
+    await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
 
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
     expect(shown(REPORTS_ROUNDEL)).toBe('false');
-    expect(shown(ROUTES_ROUNDEL)).toBe('false');
+  });
+
+  it('leaves the star alone, which opens Saved rather than one layer (SNOW-1481)', async () => {
+    window.pwaFavouritesOverlay.show();
+    await settle();
+    window.pwaRoundelOverlayState.refresh();
+
+    expect(document.getElementById(STAR_ROUNDEL).hasAttribute('data-overlay-shown')).toBe(false);
+    expect(label(STAR_ROUNDEL)).toBe('Saved');
+    window.pwaFavouritesOverlay.hide();
   });
 });
 
@@ -387,27 +392,27 @@ describe('an overlay that was asked for but never drawn', () => {
     // First enable offline: the preference is written and the fetch brings
     // back nothing, so there is no layer to paint. A state reading the
     // preference would claim "shown" over a map with no pins on it.
-    uninstallLayers('favourites-pin', 'favourites-label');
+    uninstallLayers('routes-line', 'routes-line-casing');
 
-    window.pwaFavouritesOverlay.show();
+    window.pwaRoutesOverlay.show();
     await settle();
 
-    expect(window.pwaFavouritesOverlay.isEnabled()).toBe(true);
-    expect(window.pwaFavouritesOverlay.isVisible()).toBe(false);
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
+    expect(window.pwaRoutesOverlay.isEnabled()).toBe(true);
+    expect(window.pwaRoutesOverlay.isVisible()).toBe(false);
+    expect(shown(ROUTES_ROUNDEL)).toBe('false');
   });
 
   it('lights the state when the layers finally install', async () => {
-    uninstallLayers('favourites-pin', 'favourites-label');
-    window.pwaFavouritesOverlay.show();
+    uninstallLayers('routes-line', 'routes-line-casing');
+    window.pwaRoutesOverlay.show();
     await settle();
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
+    expect(shown(ROUTES_ROUNDEL)).toBe('false');
 
     // The data lands later — map.js installs the pins, and the install is
     // what has to speak up, since nothing about the preference has changed.
-    await installFavouritesLayers();
+    await installRoutesLayers();
 
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
+    expect(shown(ROUTES_ROUNDEL)).toBe('true');
   });
 
 });
@@ -417,22 +422,22 @@ describe('a placement flow clears the map', () => {
     // static/js/map_placement_focus.js hides every geojson-sourced layer
     // without touching a bridge — the overlays genuinely are gone, so the
     // states have to go with them, and come back when the flow ends.
-    window.pwaFavouritesOverlay.show();
+    window.pwaRoutesOverlay.show();
     await window.pwaDownloadedOverlay.show();
-    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
+    await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
 
     window.PlacementFocus.enter();
 
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('false');
+    expect(shown(ROUTES_ROUNDEL)).toBe('false');
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('false');
     // The user's own settings are untouched — this is the map being
     // cleared, not their overlays being switched off.
-    expect(window.pwaFavouritesOverlay.isEnabled()).toBe(true);
+    expect(window.pwaRoutesOverlay.isEnabled()).toBe(true);
     expect(window.pwaDownloadedOverlay.isEnabled()).toBe(true);
 
     window.PlacementFocus.exit();
 
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
+    expect(shown(ROUTES_ROUNDEL)).toBe('true');
     expect(shown(DOWNLOADS_ROUNDEL)).toBe('true');
   });
 
@@ -442,11 +447,11 @@ describe('a placement flow clears the map', () => {
     // reading the value at the end. Two announcements, one per transition,
     // each already carrying the settled value (this module's own listener
     // is registered first, so it has painted by the time this one runs).
-    window.pwaFavouritesOverlay.show();
-    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
+    window.pwaRoutesOverlay.show();
+    await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
 
     const seen = [];
-    const record = () => seen.push(shown(FAVOURITES_ROUNDEL));
+    const record = () => seen.push(shown(ROUTES_ROUNDEL));
     document.addEventListener('snowdesk:overlay-visibility-changed', record);
 
     window.PlacementFocus.enter();
@@ -460,19 +465,6 @@ describe('a placement flow clears the map', () => {
 
 describe('the state is announced, not only painted', () => {
   it('composes each roundel\'s own name into its aria-label, and restores it', async () => {
-    window.pwaFavouritesOverlay.show();
-    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
-    expect(label(FAVOURITES_ROUNDEL)).toBe('Your favourites — shown on the map');
-
-    window.pwaFavouritesOverlay.hide();
-    expect(label(FAVOURITES_ROUNDEL)).toBe('Your favourites');
-  });
-
-  it('composes the routes roundel\'s own name too', async () => {
-    // One translated string states the shared fact; each roundel keeps its
-    // own name. The fourth roundel gets this for free from the same
-    // compose-don't-pick path — worth pinning, since a pair of hardcoded
-    // labels would have needed a third and fourth variant here.
     window.pwaRoutesOverlay.show();
     await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
     expect(label(ROUTES_ROUNDEL)).toBe('Your routes — shown on the map');
@@ -490,9 +482,9 @@ describe('the state is announced, not only painted', () => {
   });
 
   it('invents no title for a roundel that never had one', () => {
-    window.pwaFavouritesOverlay.show();
+    window.pwaRoutesOverlay.show();
 
-    expect(document.getElementById(FAVOURITES_ROUNDEL).hasAttribute('title')).toBe(false);
+    expect(document.getElementById(ROUTES_ROUNDEL).hasAttribute('title')).toBe(false);
   });
 });
 
@@ -521,20 +513,20 @@ describe('changes from outside the panel', () => {
     // true before the swap for the rest of the session. It also pins the
     // ORDER — announcing beside that handler's overlayState re-seed, before
     // the re-installs, would read an empty style and report "not shown".
-    window.pwaFavouritesOverlay.show();
+    window.pwaRoutesOverlay.show();
     window.pwaCommunityReportsOverlay.hide();
-    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
+    await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
 
     // Force the handler past its own guard (it early-returns while the
     // regions fill is still installed) and hand it the same DOM state a
     // real setStyle leaves behind.
-    document.getElementById(FAVOURITES_ROUNDEL).dataset.overlayShown = 'false';
+    document.getElementById(ROUTES_ROUNDEL).dataset.overlayShown = 'false';
     mapStub.removeLayer('regions-fill');
-    uninstallLayers('favourites-pin', 'favourites-label');
+    uninstallLayers('routes-line', 'routes-line-casing');
     for (const handler of mapStub.handlers.styledata || []) await handler();
 
-    await waitFor(() => shown(FAVOURITES_ROUNDEL) === 'true');
-    expect(shown(FAVOURITES_ROUNDEL)).toBe('true');
+    await waitFor(() => shown(ROUTES_ROUNDEL) === 'true');
+    expect(shown(ROUTES_ROUNDEL)).toBe('true');
     expect(shown(REPORTS_ROUNDEL)).toBe('false');
   });
 });

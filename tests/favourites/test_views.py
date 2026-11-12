@@ -46,25 +46,20 @@ Covers:
                     no-elevation-band problem renders unannotated; the
                     section never contains the word "safe" (safety-sensitive
                     — copy is altitude-relative only).
-  favourite_list — owner sees only their own favourites; another user's
-                    favourites are absent; anon → 403; non-HTMX → 400;
-                    empty state when the user has none (SNOW-415); each
-                    row carries one detail link to the pin's weather page,
-                    hx-get-enhanced onto the card panel (SNOW-507,
-                    SNOW-658); ```` renders the sheet's lean
-                    template instead — same rows and roster sidecar, a
-                    plain detail link, no card panel and no "view on the
-                    map" link — and an unknown variant falls back to the
-                    manage-page template.
+  the pin rows, through Places (favourite_list's until SNOW-1481 retired
+                    it, and favourites:list no longer resolves) — owner
+                    sees only their own favourites; anon → 403;
+                    non-HTMX → 400; each row frames its pin, renames in
+                    place and collapses its controls into a menu.
   favourites_geojson — returns only the requester's own pins, [lon, lat]
                         coordinate order, Cache-Control: private, no-store;
                         anonymous → 403; each feature carries resort_slug
                         (null for a plain pin, SNOW-499/796) and created_at
                         as ISO-8601 (SNOW-658).
-  freshness (SNOW-418) — favourite_card / favourite_list stamp
+  freshness (SNOW-418) — favourite_card / places stamp
                         X-Data-Generated-At / -Max-Age / -Unsafe-After;
-                        the card's cache_payload / roster_payload
-                        json_script sidecars carry the expected shape;
+                        the card's cache_payload json_script sidecar
+                        carries the expected shape;
                         the card shows the freshness indicator when a
                         rating exists; the list's rating lookup is
                         batched into one query regardless of favourite
@@ -97,6 +92,7 @@ from waffle.testutils import override_flag
 from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
 from apps.favourites.models import Favourite
 from apps.locations.models import Location
+from apps.regions.models import Resort
 from apps.weather.models import Weather
 from tests.factories import (
     BulletinFactory,
@@ -115,7 +111,9 @@ from tests.factories import (
 CREATE_URL = "/favourites/partials/create/"
 RESORT_CREATE_URL = "/favourites/partials/resort/create/"
 GEOJSON_URL = "/favourites/favourites.geojson"
-LIST_URL = "/favourites/partials/list/"
+# SNOW-1481: favourites:list is retired; the pin rows are tested through
+# Places, the favourites sheet's only list.
+RETIRED_LIST_URL = "/favourites/partials/list/"
 
 HTMX_HEADERS: dict[str, Any] = {"HTTP_HX_REQUEST": "true"}
 
@@ -1572,7 +1570,9 @@ class TestFavouriteCardProblems:
 
 
 # ---------------------------------------------------------------------------
-# favourite_list — GET /favourites/partials/list/
+# The pin rows, through Places — GET /favourites/partials/places/. They were
+# favourite_list's (GET /favourites/partials/list/) until SNOW-1481 retired
+# that list; Places renders the same row (_favourite.html).
 # ---------------------------------------------------------------------------
 
 
@@ -1595,8 +1595,17 @@ def _row_meta(html: str) -> str:
 
 
 @pytest.mark.django_db
-class TestFavouriteList:
-    """favourite_list — owner-scoped favourites list (SNOW-415)."""
+class TestPlacesPinRows:
+    """The pin rows in Places — owner-scoped (SNOW-415; Places since SNOW-1481)."""
+
+    def test_the_pins_list_no_longer_resolves(self, client: Client) -> None:
+        """favourites:list is retired: the sheet lists Places (SNOW-1481)."""
+        from django.urls import NoReverseMatch, reverse  # noqa: PLC0415
+
+        client.force_login(UserFactory.create())
+        with pytest.raises(NoReverseMatch):
+            reverse("favourites:list")
+        assert client.get(RETIRED_LIST_URL, **HTMX_HEADERS).status_code == 404
 
     def test_owner_sees_only_own_favourites(self, client: Client) -> None:
         """Another user's favourites never appear in the requester's list."""
@@ -1606,7 +1615,7 @@ class TestFavouriteList:
         FavouriteFactory.create(user=other_user, name="Theirs")
 
         client.force_login(user)
-        response = client.get(LIST_URL, **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         assert response.status_code == 200
         content = response.content.decode()
@@ -1614,29 +1623,13 @@ class TestFavouriteList:
         assert "Theirs" not in content
         assert str(mine.uuid) in content
 
-    def test_a_favourited_resort_is_not_listed(self, client: Client) -> None:
-        """The panel lists dropped pins; search lists pinned resorts (SNOW-1229)."""
-        user = UserFactory.create()
-        FavouriteFactory.create(user=user, name="Car park")
-        FavouriteFactory.create(
-            user=user, name="Wengen", resort=ResortFactory.create(name="Wengen")
-        )
-
-        client.force_login(user)
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-        # SNOW-1359: "Today" above Places names the resort; Places does not.
-        places = content.split('id="favourites-roster-cache"', 1)[1]
-
-        assert "Car park" in places
-        assert "Wengen" not in places
-
     def test_map_variant_renders_the_lean_template(self, client: Client) -> None:
         """```` drops the card panel and the map link (SNOW-658)."""
         user = UserFactory.create()
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         assert response.status_code == 200
         content = response.content.decode()
@@ -1662,7 +1655,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine", latitude=46.1, longitude=7.5)
 
-        content = client.get(f"{LIST_URL}", **HTMX_HEADERS).content.decode()
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert 'data-row-focus="7.500000,46.100000"' in content
         assert 'aria-label="Zoom to Mine"' in content
@@ -1679,7 +1672,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, latitude=45.9, longitude=6.87)
 
-        content = client.get(f"{LIST_URL}", **HTMX_HEADERS).content.decode()
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
         feature = client.get(GEOJSON_URL).json()["features"][0]
 
         assert favourite.location is not None
@@ -1710,23 +1703,13 @@ class TestFavouriteList:
         favourite.location.short_id = ""
         favourite.location.save(update_fields=["short_id"])
 
-        response = client.get(LIST_URL, **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         assert response.status_code == 200
         content = response.content.decode()
         assert "Mine" in content
         assert 'data-row-focus="7.500000,46.100000"' in content
         assert f'data-favourite-rename="{favourite.uuid}"' in content
-
-    def test_map_variant_keeps_the_roster_sidecar(self, client: Client) -> None:
-        """The sheet still caches the roster for offline reads."""
-        user = UserFactory.create()
-        client.force_login(user)
-        FavouriteFactory.create(user=user, name="Mine")
-
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
-
-        assert 'id="favourites-roster-cache"' in response.content.decode()
 
     def test_map_variant_does_not_link_the_row_anywhere(self, client: Client) -> None:
         """The map row has no NAVIGATION (SNOW-658, Hugo's design).
@@ -1746,7 +1729,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         content = response.content.decode()
         assert _detail_url(favourite.uuid) not in content
@@ -1765,33 +1748,15 @@ class TestFavouriteList:
         with freeze_time("2026-02-03T09:00:00Z"):
             favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
-        assert _row_meta(response.content.decode()) == "Saved 3 Feb 2026"
+        # Places gives the pin's height before the date (SNOW-1479).
+        assert _row_meta(response.content.decode()) == "1500m · saved 3 Feb 2026"
         # The coordinates are gone entirely, not merely demoted. Asserted
-        # against the row's own meta line rather than the whole body: the
-        # roster sidecar this list still carries for offline reads
-        # (SNOW-418) is JSON, and legitimately holds the coordinates.
+        # against the row's own meta line rather than the whole body.
         assert favourite.location is not None
         latitude = f"{favourite.location.latitude:.4f}"
         assert latitude not in _row_meta(response.content.decode())
-
-    def test_map_variant_meta_line_prefixes_the_region(self, client: Client) -> None:
-        """A pin that matched a region reads "<region> · saved <date>".
-
-        Hugo's own design for this row — "Alpstein · saved 3 Feb". Region
-        is nullable (a pin can fall outside every known boundary), which is
-        why the date alone is the default rather than the exception.
-        """
-        user = UserFactory.create()
-        client.force_login(user)
-        region = MicroRegionFactory.create(name="Alpstein")
-        with freeze_time("2026-02-03T09:00:00Z"):
-            FavouriteFactory.create(user=user, name="Mine", region=region)
-
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
-
-        assert _row_meta(response.content.decode()) == "Alpstein · saved 3 Feb 2026"
 
     def test_map_variant_label_is_not_a_rename_trigger(self, client: Client) -> None:
         """The label carries no click affordance — the pencil is the trigger.
@@ -1805,7 +1770,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         content = response.content.decode()
         assert "cursor-text" not in content
@@ -1827,7 +1792,7 @@ class TestFavouriteList:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         content = response.content.decode()
         assert "data-row-renameable" in content
@@ -1854,7 +1819,7 @@ class TestFavouriteList:
         favourite = FavouriteFactory.create(user=user, name="Mine", location=location)
 
         with override_flag("what3words", active=True):
-            content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+            content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         share = content.index(f'data-favourite-share="{favourite.uuid}"')
         rename = content.index(f'data-favourite-rename="{favourite.uuid}"')
@@ -1876,7 +1841,7 @@ class TestFavouriteList:
         location = LocationFactory.create(what3words="filled.count.soap")
         FavouriteFactory.create(user=user, name="Mont Fort", location=location)
 
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert (
             'data-favourite-share-text="Mont Fort - https://w3w.co/filled.count.soap"'
@@ -1896,7 +1861,7 @@ class TestFavouriteList:
         location = LocationFactory.create(what3words="filled.count.soap")
         FavouriteFactory.create(user=user, name="", location=location)
 
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert 'data-favourite-share-text="https://w3w.co/filled.count.soap"' in content
         assert "Unnamed pin - " not in content
@@ -1913,7 +1878,7 @@ class TestFavouriteList:
         location = LocationFactory.create(what3words=None)
         FavouriteFactory.create(user=user, name="Mine", location=location)
 
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert "data-favourite-share=" not in content
         # The menu survives — Rename and Remove are still two controls.
@@ -1926,7 +1891,7 @@ class TestFavouriteList:
         location = LocationFactory.create(what3words="filled.count.soap")
         FavouriteFactory.create(user=user, name="Mine", location=location)
 
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert "data-favourite-share=" not in content
         assert "filled.count.soap" not in content
@@ -1940,7 +1905,7 @@ class TestFavouriteList:
         FavouriteFactory.create(user=user, location=location)
 
         with patch("apps.ingest.sources.what3words.requests.get") as mock_get:
-            client.get(LIST_URL, **HTMX_HEADERS)
+            client.get(PLACES_URL, **HTMX_HEADERS)
 
         mock_get.assert_not_called()
 
@@ -1959,7 +1924,7 @@ class TestFavouriteList:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Mine")
 
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         content = response.content.decode()
         assert content.count('role="menu"') == 1
@@ -1973,36 +1938,16 @@ class TestFavouriteList:
         assert 'aria-label="Actions for Mine"' in content
         assert 'aria-label="Delete Mine"' in content
 
-    def test_map_variant_empty_state(self, client: Client) -> None:
-        """A user with no favourites sees the empty-state copy in the sheet."""
-        user = UserFactory.create()
-        client.force_login(user)
-
-        response = client.get(f"{LIST_URL}", **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        assert b"no saved favourites" in response.content.lower()
-
-    def test_empty_state_when_no_favourites(self, client: Client) -> None:
-        """A user with no favourites sees the empty-state copy."""
-        user = UserFactory.create()
-        client.force_login(user)
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        assert b"no saved favourites" in response.content.lower()
-
     def test_anonymous_gets_403(self, client: Client) -> None:
         """An anonymous GET returns 403."""
-        response = client.get(LIST_URL, **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
         assert response.status_code == 403
 
     def test_non_htmx_returns_400(self, client: Client) -> None:
         """A plain GET without HX-Request returns 400."""
         user = UserFactory.create()
         client.force_login(user)
-        response = client.get(LIST_URL)
+        response = client.get(PLACES_URL)
         assert response.status_code == 400
 
 
@@ -2036,7 +1981,7 @@ class TestFavouriteRowOverflowMenu:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user, name="Lac de Vaux")
 
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        body = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert body.count("data-overflow-trigger") == 1
         assert 'aria-label="Actions for Lac de Vaux"' in body
@@ -2056,7 +2001,7 @@ class TestFavouriteRowOverflowMenu:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="")
 
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        body = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert 'aria-label="Actions for Unnamed pin"' in body
 
@@ -2072,7 +2017,7 @@ class TestFavouriteRowOverflowMenu:
         first = FavouriteFactory.create(user=user)
         second = FavouriteFactory.create(user=user)
 
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        body = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert f'id="favourite-actions-{first.uuid}"' in body
         assert f'id="favourite-actions-{second.uuid}"' in body
@@ -2092,7 +2037,7 @@ class TestFavouriteRowOverflowMenu:
         client.force_login(user)
         favourite = FavouriteFactory.create(user=user)
 
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        body = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert "data-row-rename" in body
         assert f'data-favourite-rename="{favourite.uuid}"' in body
@@ -2112,7 +2057,7 @@ class TestFavouriteRowOverflowMenu:
         client.force_login(user)
         FavouriteFactory.create(user=user)
 
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        body = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert body.count('role="menu"') == 1
         assert body.count('role="menuitem"') == 2
@@ -2134,7 +2079,7 @@ class TestFavouriteRowOverflowMenu:
         location = LocationFactory.create(what3words="filled.count.soap")
         FavouriteFactory.create(user=user, location=location)
 
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        body = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert body.count('role="menuitem"') == 3
         assert '<li aria-hidden="true"' in body
@@ -2154,7 +2099,7 @@ class TestFavouriteRowOverflowMenu:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Lac de Vaux")
 
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        body = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
         items = re.findall(r"role=\"menuitem\"(.*?)</(?:button|a)>", body, re.S)
         labels = [re.sub(r"<[^>]+>", "", item).split()[-1] for item in items]
 
@@ -2186,7 +2131,7 @@ class TestFavouriteRowOverflowMenu:
         client.force_login(user)
         FavouriteFactory.create(user=user, name="Lac de Vaux")
 
-        body = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        body = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert "hx-confirm=" in body
         assert "Delete Lac de Vaux?" in body
@@ -2468,8 +2413,8 @@ class TestFavouriteCardFreshness:
 
 
 @pytest.mark.django_db
-class TestFavouriteListFreshness:
-    """favourite_list — freshness headers + roster_payload sidecar (SNOW-418)."""
+class TestPlacesFreshness:
+    """Places — freshness headers (SNOW-418; favourite_list's until SNOW-1481)."""
 
     def test_no_ratings_omits_unsafe_after_header(self, client: Client) -> None:
         """With no ratings at all, the response has no unsafe-after header."""
@@ -2477,7 +2422,7 @@ class TestFavouriteListFreshness:
         client.force_login(user)
         FavouriteFactory.create(user=user, region=None)
 
-        response = client.get(LIST_URL, **HTMX_HEADERS)
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         assert response.status_code == 200
         assert "X-Data-Generated-At" in response
@@ -2499,35 +2444,13 @@ class TestFavouriteListFreshness:
         FavouriteFactory.create(user=user, region=region_new)
 
         with freeze_time("2026-01-01T12:00:00Z"):
-            response = client.get(LIST_URL, **HTMX_HEADERS)
+            response = client.get(PLACES_URL, **HTMX_HEADERS)
 
         assert response.status_code == 200
         assert response["X-Data-Generated-At"] == older.updated_at.isoformat(
             timespec="seconds"
         )
         assert response["X-Data-Unsafe-After"] == "172800"
-
-    def test_roster_payload_sidecar_has_expected_keys(self, client: Client) -> None:
-        """The rendered list carries a favourites-roster-cache json_script sidecar."""
-        user = UserFactory.create()
-        client.force_login(user)
-        region = MicroRegionFactory.create()
-        RegionDayRatingFactory.create(region=region, max_rating="high")
-        favourite = FavouriteFactory.create(user=user, region=region, name="Mine")
-
-        response = client.get(LIST_URL, **HTMX_HEADERS)
-
-        assert response.status_code == 200
-        content = response.content.decode()
-        assert 'id="favourites-roster-cache"' in content
-
-        roster = _extract_json_script(content, "favourites-roster-cache")
-        assert isinstance(roster, list)
-        [record] = [r for r in roster if r["uuid"] == str(favourite.uuid)]
-        assert record["name"] == "Mine"
-        assert record["rating"]["max_rating"] == "high"
-        assert "generated_at" in record
-        assert record["unsafe_after_seconds"] == 172800
 
     def test_rating_lookup_is_batched_not_n_plus_one(self, client: Client) -> None:
         """The rating lookup query count does not scale with favourite count.
@@ -2551,10 +2474,10 @@ class TestFavouriteListFreshness:
         FavouriteFactory.create(user=user, region=region_b)
 
         # Uncounted warm-up — see docstring.
-        client.get(LIST_URL, **HTMX_HEADERS)
+        client.get(PLACES_URL, **HTMX_HEADERS)
 
         with CaptureQueriesContext(connection) as ctx_small:
-            response = client.get(LIST_URL, **HTMX_HEADERS)
+            response = client.get(PLACES_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         small_count = len(ctx_small.captured_queries)
 
@@ -2566,7 +2489,7 @@ class TestFavouriteListFreshness:
         FavouriteFactory.create(user=user, region=region_d)
 
         with CaptureQueriesContext(connection) as ctx_large:
-            response = client.get(LIST_URL, **HTMX_HEADERS)
+            response = client.get(PLACES_URL, **HTMX_HEADERS)
         assert response.status_code == 200
         large_count = len(ctx_large.captured_queries)
 
@@ -2595,47 +2518,6 @@ def _extract_json_script(html: str, element_id: str) -> Any:
 
 
 TODAY_URL = "/favourites/partials/today/"
-
-
-@pytest.mark.django_db
-class TestTheListIsDroppedPinsOnly:
-    """SNOW-1366: SNOW-1359's Today block left the list for its own panel."""
-
-    def _everything(self, user: Any) -> tuple[Any, Any, Any]:
-        """Save a pin, a resort and a region pin in one rated region."""
-        region = MicroRegionFactory.create(name="Martigny-Verbier")
-        RegionDayRatingFactory.create(region=region, max_rating="considerable")
-        pin = FavouriteFactory.create(user=user, name="Car park", region=region)
-        resort = FavouriteFactory.create(
-            user=user,
-            region=region,
-            resort=ResortFactory.create(name="Verbier", region=region),
-        )
-        region_pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
-        return pin, resort, region_pin
-
-    def test_no_today_block_and_each_pin_once(self, client: Client) -> None:
-        user = UserFactory.create()
-        pin, resort, region_pin = self._everything(user)
-        client.force_login(user)
-
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-
-        assert "saved-today" not in content
-        assert "data-panel-open" not in content
-        assert content.count(f'id="favourite-{pin.uuid}"') == 1
-        assert f"favourite-{resort.uuid}" not in content
-        assert f"favourite-{region_pin.uuid}" not in content
-
-    def test_the_offline_roster_is_dropped_pins_only(self, client: Client) -> None:
-        user = UserFactory.create()
-        pin, _, _ = self._everything(user)
-        client.force_login(user)
-
-        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
-        roster = _extract_json_script(content, "favourites-roster-cache")
-
-        assert [record["uuid"] for record in roster] == [str(pin.uuid)]
 
 
 @pytest.mark.django_db
@@ -2927,22 +2809,14 @@ class TestRetiredResortFavourites:
         """The Favourites panel shows the retired one, with Remove alone."""
         _user, _live, gone = self._setup(client)
 
-        html = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+        html = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
 
         assert "Gone Hill" in html
         assert "No longer listed" in html
-        # A live saved resort stays in search, not this panel (SNOW-1229).
-        assert "Live Hill" not in html
+        # A live saved resort is a resort row of its own in Places.
         # One control: the bare Remove form, no overflow menu.
         assert f"favourite-actions-{gone.uuid}" not in html
         assert _delete_url(gone.uuid) in html
-        # The offline roster carries the state, so the cached card says so too.
-        roster = json.loads(
-            re.search(
-                r'id="favourites-roster-cache"[^>]*>(.*?)</script>', html, re.S
-            ).group(1)  # type: ignore[union-attr]
-        )
-        assert [r["retired"] for r in roster] == [True]
 
     def test_left_out_of_the_map_feed(self, client: Client) -> None:
         """favourites.geojson draws and searches live resorts only."""
@@ -2963,3 +2837,238 @@ class TestRetiredResortFavourites:
         """The FK holds: nothing is lost by retiring."""
         _user, _live, gone = self._setup(client)
         assert Favourite.objects.get(pk=gone.pk).resort is not None
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1479 — the installed phone app's Places list
+# ---------------------------------------------------------------------------
+
+PLACES_URL = "/favourites/partials/places/"
+
+
+def _menu_items(content: str, menu_id: str) -> list[str]:
+    """Return the visible words of a "…" menu's items, in order."""
+    menu = re.search(
+        r'<ul\s+id="%s"\s+role="menu".*?</ul>' % re.escape(menu_id), content, re.S
+    )
+    assert menu, menu_id
+    return [
+        " ".join(re.sub(r"<[^>]+>", " ", item).split())
+        for item in re.findall(
+            r'<(?:button|a)\b[^>]*role="menuitem"[^>]*>(.*?)</(?:button|a)>',
+            menu.group(0),
+            re.S,
+        )
+    ]
+
+
+@pytest.mark.django_db
+class TestPlacesView:
+    """favourites:places — Today's regions with the pins in each."""
+
+    def test_a_visitor_is_refused(self, client: Client) -> None:
+        assert client.get(PLACES_URL, **HTMX_HEADERS).status_code == 403
+
+    def test_htmx_only(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+        assert client.get(PLACES_URL).status_code == 400
+
+    def test_danger_weather_and_pin_heights(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create(name="Martigny-Verbier")
+        RegionDayRatingFactory.create(region=region, max_rating="considerable")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        point = LocationFactory.create(latitude=46.10, longitude=7.40)
+        MicroRegionFactory.create(centroid_location=point)
+        WeatherFactory.create(location=point, temperature_2m_max=-3.0, weather_code=71)
+        FavouriteFactory.create(
+            user=user,
+            latitude=46.10,
+            longitude=7.40,
+            resort=ResortFactory.create(name="Verbier", region=region),
+        )
+        FavouriteFactory.create(
+            user=user, name="Car park", region=region, elevation=2140.0
+        )
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert content.count('data-testid="places-region"') == 1
+        level = re.search(
+            r'data-testid="places-region-level"\s*>([^<]*)<', content, re.S
+        )
+        assert level and level.group(1).strip() == "3"
+        announce = re.search(
+            r'data-testid="places-region-announce"\s*>(.*?)</span>', content, re.S
+        )
+        assert announce
+        assert " ".join(announce.group(1).split()) == "Danger today: Considerable"
+        forecast = re.search(
+            r'data-testid="places-resort-forecast"\s*>(.*?)</span>', content, re.S
+        )
+        assert forecast and "<img" in forecast.group(1)
+        assert "-3&deg;" in forecast.group(1)
+        assert "Car park" in content
+        assert "2140m · saved" in content
+        assert 'data-panel-key="places:now"' in content
+
+    def test_elsewhere_lists_the_pins_in_no_region_last(self, client: Client) -> None:
+        user = UserFactory.create()
+        FavouriteFactory.create(
+            user=user,
+            region=MicroRegionFactory.create(name="Engelberg"),
+            region_pin=True,
+        )
+        FavouriteFactory.create(user=user, name="Hut", region=None)
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="places-elsewhere"' in content
+        assert content.index("Engelberg") < content.index("Elsewhere")
+        assert content.index("Elsewhere") < content.index("Hut")
+
+    def test_a_region_listed_for_a_resort_alone_has_no_menu(
+        self, client: Client
+    ) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create(name="Südliches Urseren")
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Andermatt", region=region)
+        )
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert "Südliches Urseren" in content
+        assert 'data-testid="places-region-menu"' not in content
+        assert 'data-testid="places-resort-menu"' in content
+
+    def test_each_kind_of_row_has_its_menu_in_order(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        region_pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        resort_pin = FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Verbier", region=region)
+        )
+        pin = FavouriteFactory.create(user=user, name="Car park", region=region)
+        location = pin.location
+        assert location is not None
+        location.what3words = "filled.count.soap"
+        location.save()
+        client.force_login(user)
+
+        with override_flag("what3words", active=True):
+            content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert _menu_items(content, f"place-actions-menu-{region_pin.uuid}") == [
+            "Share",
+            "Delete",
+        ]
+        assert _menu_items(content, f"place-actions-menu-{resort_pin.uuid}") == [
+            "Share",
+            "Delete",
+        ]
+        assert _menu_items(content, f"favourite-actions-menu-{pin.uuid}") == [
+            "Share",
+            "Rename",
+            "Delete",
+        ]
+        assert f'data-place-share="{region.get_absolute_url()}"' in content
+        assert f'hx-post="/favourites/partials/{region_pin.uuid}/delete/"' in content
+
+    def test_a_region_delete_empties_its_own_row_not_the_group(
+        self, client: Client
+    ) -> None:
+        """The resorts and pins under a pinned region outlive its Delete."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        region_pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Verbier", region=region)
+        )
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        head_id = f"place-region-head-{region.region_id}"
+        assert f'id="{head_id}"' in content
+        form = re.search(
+            r'<form[^>]*hx-post="/favourites/partials/%s/delete/"[^>]*>'
+            % region_pin.uuid,
+            content,
+            re.S,
+        )
+        assert form and f'hx-target="#{head_id}"' in form.group(0)
+        head = content.index(f'id="{head_id}"')
+        resorts = content.index('data-testid="places-resort"')
+        # The resort rows sit outside the header row the Delete empties.
+        assert (
+            content.index("</div>", content.index("places-region-menu", head)) < resorts
+        )
+
+    def test_a_pin_row_lines_up_with_the_resort_rows(self, client: Client) -> None:
+        """Same left inset, same "…" column and same name size (SNOW-1479)."""
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        FavouriteFactory.create(
+            user=user, resort=ResortFactory.create(name="Verbier", region=region)
+        )
+        FavouriteFactory.create(user=user, name="Car park", region=region)
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        pins = re.search(r'<ul\s+class="([^"]*)"\s+data-testid="places-pins"', content)
+        assert pins
+        # Inset on the left only: the "…" sits on the card's edge, as the
+        # resort rows' menus do.
+        assert "pl-3" in pins.group(1).split()
+        assert "px-3" not in pins.group(1).split()
+        label = re.search(
+            r'data-testid="favourite-list-row-label"\s+class="([^"]*)"', content
+        )
+        assert label and "text-sm" in label.group(1).split()
+        assert "text-label" not in label.group(1).split()
+        resort = re.search(r'<span\s+class="([^"]*)"\s*>Verbier</span>', content)
+        assert resort and "text-sm" in resort.group(1).split()
+
+    def test_a_resort_with_no_page_has_delete_alone(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        resort = ResortFactory.create(name="Verbier", region=region)
+        resort_pin = FavouriteFactory.create(user=user, resort=resort)
+        Resort.all_objects.filter(pk=resort.pk).update(slug="")
+        client.force_login(user)
+
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+
+        assert _menu_items(content, f"place-actions-menu-{resort_pin.uuid}") == [
+            "Delete"
+        ]
+
+    def test_nothing_pinned_says_how(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+        content = client.get(PLACES_URL, **HTMX_HEADERS).content.decode()
+        assert 'data-testid="places-empty"' in content
+
+    def test_freshness_headers_follow_the_oldest_rating(self, client: Client) -> None:
+        user = UserFactory.create()
+        region = MicroRegionFactory.create()
+        rating = RegionDayRatingFactory.create(region=region, max_rating="low")
+        FavouriteFactory.create(user=user, region=region, region_pin=True)
+        client.force_login(user)
+
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
+
+        assert response["X-Data-Generated-At"] == rating.updated_at.isoformat(
+            timespec="seconds"
+        )
+        assert response["X-Data-Unsafe-After"] == "172800"
+
+    def test_no_rating_carries_no_unsafe_after(self, client: Client) -> None:
+        client.force_login(UserFactory.create())
+        response = client.get(PLACES_URL, **HTMX_HEADERS)
+        assert "X-Data-Generated-At" in response
+        assert "X-Data-Unsafe-After" not in response

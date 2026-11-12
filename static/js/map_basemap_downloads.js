@@ -428,9 +428,12 @@ function activeTerrainClassTileURLs(blob) {
  * its quota and budget pre-flights.
  *
  * @param {Object|null} blob
+ * @param {string[]} [keys] SNOW-1478: the maps the download saves
+ *   (`downloadBasemapKeys`); elevation is priced where the primary one is
+ *   the 3D map. Omitted, the map on screen.
  * @returns {number} 0 when terrain data is unavailable here.
  */
-function terrainClassMbForBlob(blob) {
+function terrainClassMbForBlob(blob, keys) {
   const core = self.pwaBasemapDownloadCore;
   const terrain = self.pwaTerrainFilterCore;
   if (!core || !terrain || !terrainClassTileTemplate()) return 0;
@@ -439,7 +442,7 @@ function terrainClassMbForBlob(blob) {
   );
   // SNOW-1453: and the elevation tiles, folded into the one terrain figure,
   // where the run would pin them (the 3D basemap).
-  const elevationMb = elevationPinnedOn(activeBasemapKey())
+  const elevationMb = downloadPinsElevation(keys)
     ? core.elevationMb(core.elevationTileCount(blob, terrain.COVERAGE_BOUNDS))
     : 0;
   return classMb + elevationMb;
@@ -458,9 +461,10 @@ function terrainClassMbForBlob(blob) {
  *
  * @param {number[]|null} bbox `[west, south, east, north]`.
  * @param {number} [maxTiles] The download's own tile count, when known.
+ * @param {string[]} [keys] SNOW-1478: the maps the download saves.
  * @returns {number} 0 when terrain data is unavailable here.
  */
-function terrainClassMbForGround(bbox, maxTiles) {
+function terrainClassMbForGround(bbox, maxTiles, keys) {
   const core = self.pwaBasemapDownloadCore;
   const terrain = self.pwaTerrainFilterCore;
   if (!core || !terrain || !terrainClassTileTemplate() || !bbox) return 0;
@@ -470,7 +474,7 @@ function terrainClassMbForGround(bbox, maxTiles) {
     core.tileRangesForBBox(clipped, terrain.MIN_ZOOM, terrain.MAX_ZOOM),
   );
   if (Number.isFinite(maxTiles) && maxTiles >= 0) count = Math.min(count, maxTiles);
-  return core.terrainClassMb(count) + elevationMbForGround(clipped, maxTiles);
+  return core.terrainClassMb(count) + elevationMbForGround(clipped, maxTiles, keys);
 }
 
 /**
@@ -483,12 +487,13 @@ function terrainClassMbForGround(bbox, maxTiles) {
  *
  * @param {number[]} clipped The ground's box, clipped to the coverage.
  * @param {number} [maxTiles] The download's own tile count, when known.
+ * @param {string[]} [keys] SNOW-1478: the maps the download saves.
  * @returns {number} 0 where the page pins no elevation tiles, or the
- *   active basemap is not the 3D one.
+ *   download's primary map is not the 3D one.
  */
-function elevationMbForGround(clipped, maxTiles) {
+function elevationMbForGround(clipped, maxTiles, keys) {
   const core = self.pwaBasemapDownloadCore;
-  if (!core || !elevationPinnedOn(activeBasemapKey())) return 0;
+  if (!core || !downloadPinsElevation(keys)) return 0;
   const [bandMin, bandMax] = core.ELEVATION_BAND;
   let band = core.tileCount(core.tileRangesForBBox(clipped, bandMin, bandMax));
   if (Number.isFinite(maxTiles) && maxTiles >= 0) band = Math.min(band, maxTiles);
@@ -596,8 +601,9 @@ function terrainDataAvailable() {
  * "Terrain data" switch for this on the Downloads sheet, off by default;
  * Hugo removed it (4 Nov 2026), so terrain comes with every download.
  * What a download actually included is still recorded per area
- * (`terrain` on its record and its account row): an area downloaded
- * without terrain keeps reading so until it is downloaded again.
+ * (`terrain` on its record and its account row). An area downloaded
+ * without terrain reads so until a sync adds it (`_addMissingTerrain`,
+ * SNOW-1483).
  *
  * @returns {boolean}
  */
@@ -659,6 +665,22 @@ function areaTerrainClassTileUrls(record) {
 }
 
 /**
+ * SNOW-1483: whether ONE recorded area should hold the terrain-class
+ * tiles, whatever its own `terrain` flag says: this page fetches terrain
+ * data (`terrainDataAvailable`) and the area's ground meets the tiles'
+ * coverage, so a download today would save some. An area for which this
+ * is false is never judged on terrain, and lists no Terrain row.
+ *
+ * @param {Object|null} record A `basemap.regions` / `basemap.customAreas`
+ *   entry.
+ * @returns {boolean}
+ */
+function terrainExpected(record) {
+  if (!record || !terrainDataAvailable()) return false;
+  return areaTerrainClassTileUrls({ ...record, terrain: true }).length > 0;
+}
+
+/**
  * SNOW-844: which render-dependency list to check ONE recorded area
  * against — the three-row resolution rule, in one place because three
  * surfaces apply it (both download controls and the Manage downloads
@@ -693,6 +715,264 @@ function areaRenderDependencyURLs(recordedDeps, basemapIsActive) {
   return [];
 }
 
+/* -------------------------------------------------------------------- *
+ * SNOW-1478: a download saves the map its ground needs, not only the one
+ * on screen. Ground in Switzerland saves Swisstopo, whatever is on screen;
+ * ground outside saves the map on screen where it covers that country,
+ * OpenFreeMap otherwise (`basemapsForGround`, basemap_download_core.js).
+ * A map that is not on screen is read from its documents — its style and
+ * each vector source's TileJSON — rather than from the live MapLibre
+ * style. See docs/decisions/swiss-downloads-save-the-swisstopo-map.md.
+ * -------------------------------------------------------------------- */
+
+/**
+ * The picker row for one basemap key, or null.
+ *
+ * @param {string|null|undefined} key
+ * @returns {HTMLElement|null}
+ */
+function _basemapPickerRow(key) {
+  if (!key) return null;
+  const rows = document.querySelectorAll('#basemap-menu .basemap-menu-item[data-basemap-key]');
+  for (const row of rows) {
+    if (row.dataset.basemapKey === key) return row;
+  }
+  return null;
+}
+
+/**
+ * A basemap's style URL, off its picker row (`settings.BASEMAP_STYLES`).
+ *
+ * @param {string|null|undefined} key
+ * @returns {string} `''` for a key the picker does not offer.
+ */
+function basemapStyleUrl(key) {
+  const row = _basemapPickerRow(key);
+  return (row && row.dataset.basemapUrl) || '';
+}
+
+/**
+ * Each picker basemap's countries, lower case, off the rows'
+ * `data-basemap-countries` (`settings.BASEMAP_COUNTRIES`).
+ *
+ * @returns {Object<string, string[]>}
+ */
+function basemapCountriesByKey() {
+  const out = {};
+  const rows = document.querySelectorAll('#basemap-menu .basemap-menu-item[data-basemap-key]');
+  for (const row of rows) {
+    out[row.dataset.basemapKey] = (row.dataset.basemapCountries || '')
+      .split(/\s+/)
+      .map((code) => code.toLowerCase())
+      .filter(Boolean);
+  }
+  return out;
+}
+
+/**
+ * The countries of the regions a box overlaps, off the map's region
+ * features (`FEATURE_BY_REGION_ID`, `countriesForBBox`).
+ *
+ * @param {number[]|null|undefined} bbox `[west, south, east, north]`.
+ * @returns {string[]} Empty when the box is unusable or no region is loaded.
+ */
+function groundCountries(bbox) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.countriesForBBox !== 'function') return [];
+  const features = typeof FEATURE_BY_REGION_ID === 'object' && FEATURE_BY_REGION_ID ? FEATURE_BY_REGION_ID : {};
+  return core.countriesForBBox(bbox, Object.values(features));
+}
+
+/**
+ * The maps a download over this ground saves, primary first.
+ *
+ * A map the picker does not offer here (no style URL to read it from) is
+ * dropped, and with nothing left the map on screen stands, which is the
+ * behaviour before SNOW-1478.
+ *
+ * @param {{country?: string|null, bbox?: number[]|null, countries?: string[]|null}} ground
+ *   A region names its country; a drawn area or drop zone its box, whose
+ *   countries are read from the regions it overlaps (`groundCountries`).
+ * @returns {string[]} Empty only when no map is resolved at all.
+ */
+function downloadBasemapKeys(ground) {
+  const core = self.pwaBasemapDownloadCore;
+  const active = activeBasemapKey();
+  if (!core || typeof core.basemapsForGround !== 'function') return active ? [active] : [];
+  const extent = self.pwaSwisstopoExtent;
+  const placed = ground || {};
+  // A drawn box names no country: read it off the regions it overlaps,
+  // so the map on screen is kept only where it covers them all.
+  const withCountries =
+    !placed.country && Array.isArray(placed.bbox) && !Array.isArray(placed.countries)
+      ? { ...placed, countries: groundCountries(placed.bbox) }
+      : placed;
+  const keys = core.basemapsForGround(
+    withCountries,
+    active,
+    basemapCountriesByKey(),
+    extent ? extent.EXTENT : null,
+  );
+  const usable = keys.filter((key) => key === active || !!basemapStyleUrl(key));
+  if (usable.length > 0) return usable;
+  return active ? [active] : [];
+}
+
+/**
+ * Whether these keys are just the map on screen — a run that the live
+ * style answers alone, exactly as before SNOW-1478.
+ *
+ * @param {string[]|null|undefined} keys
+ * @returns {boolean}
+ */
+function _onlyActiveBasemap(keys) {
+  return !keys || keys.length === 0 || (keys.length === 1 && keys[0] === activeBasemapKey());
+}
+
+/**
+ * What one tile of a download costs on these maps together: one "source"
+ * at the summed per-cell price, the shape `budgetScaleForBBox` and
+ * `terrainScaledBytesPerTile` take.
+ *
+ * @param {string[]|null|undefined} keys
+ * @returns {{sourceCount: number, bytesPerTile: number}}
+ */
+function downloadTilePrice(keys) {
+  const core = self.pwaBasemapDownloadCore;
+  const live = activeBasemapTileSources(MAP);
+  if (_onlyActiveBasemap(keys)) {
+    return { sourceCount: core.tileSourceCount(live), bytesPerTile: core.bytesPerTileForSources(live) };
+  }
+  const active = activeBasemapKey();
+  let perCell = 0;
+  for (const key of keys) {
+    if (key === active && live) {
+      perCell += core.tileSourceCount(live) * core.bytesPerTileForSources(live);
+    } else {
+      perCell += core.basemapSourceCount(key) * core.bytesPerTileForBasemap(key);
+    }
+  }
+  return { sourceCount: 1, bytesPerTile: perCell };
+}
+
+/**
+ * What a blob costs on these maps, in MB — `sourceScaledMb` summed over
+ * them, each at its own price.
+ *
+ * @param {number} mb The blob's own estimate.
+ * @param {string[]|null|undefined} keys
+ * @param {number} [count] The blob's tile count.
+ * @returns {number}
+ */
+function downloadScaledMb(mb, keys, count) {
+  const core = self.pwaBasemapDownloadCore;
+  const live = activeBasemapTileSources(MAP);
+  if (_onlyActiveBasemap(keys)) return core.sourceScaledMb(mb, live, count);
+  const active = activeBasemapKey();
+  let total = 0;
+  for (const key of keys) {
+    total +=
+      key === active && live ? core.sourceScaledMb(mb, live, count) : core.basemapScaledMb(mb, key, count);
+  }
+  return total;
+}
+
+/**
+ * The map a download over this ground pins elevation tiles on: its
+ * primary one (`activeElevationTileURLs`).
+ *
+ * @param {string[]|null|undefined} keys
+ * @returns {boolean}
+ */
+function downloadPinsElevation(keys) {
+  return elevationPinnedOn(keys && keys.length ? keys[0] : activeBasemapKey());
+}
+
+/**
+ * Fetch one JSON document for a basemap that is not on screen.
+ *
+ * @param {string} url
+ * @returns {Promise<Object>}
+ */
+async function _fetchBasemapDocument(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`basemap document ${response.status}`);
+  return response.json();
+}
+
+/**
+ * One map a run saves, resolved: its tile sources, render dependencies
+ * and glyph prefix. The map on screen answers from the live style, as
+ * every run did before SNOW-1478; any other is read from its documents.
+ *
+ * @param {string} key
+ * @returns {Promise<{key: string, tileSources: string[][], renderDeps: string[],
+ *   glyphPrefix: string}|null>} Null when its documents cannot be read.
+ */
+async function resolveDownloadBasemap(key) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !key) return null;
+  if (key === activeBasemapKey()) {
+    const tileSources = activeBasemapTileSources(MAP);
+    if (!tileSources) return null;
+    return {
+      key: key,
+      tileSources: tileSources,
+      renderDeps: activeBasemapRenderDependencyURLs(MAP),
+      glyphPrefix: activeBasemapGlyphPrefix(MAP),
+    };
+  }
+  const styleUrl = basemapStyleUrl(key);
+  if (!styleUrl) return null;
+  try {
+    const absolute = new URL(styleUrl, window.location.href).toString();
+    const style = await _fetchBasemapDocument(absolute);
+    const tileJsons = {};
+    for (const id of Object.keys((style && style.sources) || {})) {
+      const source = style.sources[id];
+      if (!source || source.type !== 'vector' || Array.isArray(source.tiles)) continue;
+      if (typeof source.url !== 'string' || !source.url) continue;
+      tileJsons[id] = await _fetchBasemapDocument(new URL(source.url, absolute).toString());
+    }
+    const tileSources = core.tileSourcesFromStyleDocuments(style, tileJsons);
+    if (!tileSources) return null;
+    return {
+      key: key,
+      tileSources: tileSources,
+      // The picker's own URL leads the list, as the live reader's does, so
+      // the record names the document the map will ask for.
+      renderDeps: core.renderDependencyUrlsFromStyle(styleUrl, style),
+      glyphPrefix: core.glyphPrefixFromStyle(style),
+    };
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
+ * Every render dependency one stored area should hold, over every map it
+ * holds (`recordBasemaps`): each entry's recorded list, or the live
+ * style's for an entry on the map on screen that names none — the second
+ * row of `areaRenderDependencyURLs`' rule, applied per map.
+ *
+ * @param {Object|null|undefined} record A record or a sheet row.
+ * @returns {string[]} Empty means UNKNOWN, as `areaRenderDependencyURLs`.
+ */
+function areaAllRenderDependencyURLs(record) {
+  const core = self.pwaBasemapDownloadCore;
+  const active = activeBasemapKey();
+  const entries =
+    core && typeof core.recordBasemaps === 'function'
+      ? core.recordBasemaps(record)
+      : [{ key: record && record.basemapKey, deps: record && record.deps }];
+  if (entries.length === 0) return areaRenderDependencyURLs(record && record.deps, false);
+  const urls = [];
+  for (const entry of entries) {
+    urls.push(...areaRenderDependencyURLs(entry.deps, !!active && entry.key === active));
+  }
+  return [...new Set(urls)];
+}
+
 // SNOW-521: same-origin data-feed + active-basemap-style URL list —
 // everything a basemap download warms besides its own tile ranges.
 // Mirrors SNOW-492/493's assembly (see the removed cacheNowInit for the
@@ -705,8 +985,13 @@ function areaRenderDependencyURLs(recordedDeps, basemapIsActive) {
 // duplicating it — everything it touches (COUNTRY_STATE, RATINGS_URL,
 // computeBasemapSpriteURLs) is already module-scope.
 //
+// SNOW-1478: `renderDeps` is the run's primary map's render dependencies,
+// which need not be the live style's (`resolveDownloadBasemap`). Omitted,
+// the live style's, as before.
+//
+// @param {string[]} [renderDeps]
 // @returns {string[]}
-function assembleBasemapDownloadFeedURLs() {
+function assembleBasemapDownloadFeedURLs(renderDeps) {
   const mapEl = document.getElementById('map');
   const urls = [];
   const enabledCountries = Object.keys(COUNTRY_STATE).filter((code) => COUNTRY_STATE[code]);
@@ -729,7 +1014,7 @@ function assembleBasemapDownloadFeedURLs() {
   // TileJSON, from the ONE definition the probe also reads — see
   // `activeBasemapRenderDependencyURLs` for why a second copy of these
   // three pushes here is the exact drift this ticket removes.
-  urls.push(...activeBasemapRenderDependencyURLs(MAP));
+  urls.push(...(Array.isArray(renderDeps) ? renderDeps : activeBasemapRenderDependencyURLs(MAP)));
   return urls;
 }
 
@@ -802,7 +1087,12 @@ async function cacheOverlayFeedsForDownload() {
         const data = await fetch(url).then((r) => (r.ok ? r.json() : null));
         if (!data) return;
         if (resource === 'ski_summits' && !Array.isArray(data.summits)) return;
-        await cache.putOverlay(resource, data);
+        // SNOW-1480: the reports cache is principal-free, so it keeps no
+        // `mine` — as map.js's own write of the same feed.
+        const kept = resource === 'community_reports' && window.pwaCommunityReportsCore
+          ? window.pwaCommunityReportsCore.withoutMine(data)
+          : data;
+        await cache.putOverlay(resource, kept);
         if (resource === 'community_reports') {
           fetched.reports = data;
           fetched.reportsAt = new Date().toISOString();
@@ -1458,6 +1748,182 @@ const ORPHAN_BUCKET_BYTES = new Map();
  */
 function forgetPinnedBucketMeasurement(areaId) {
   ORPHAN_BUCKET_BYTES.delete(areaId);
+  AREA_INVENTORY_MEASUREMENTS.delete(areaId);
+  AREA_MEASUREMENT_GENERATION.set(areaId, (AREA_MEASUREMENT_GENERATION.get(areaId) || 0) + 1);
+}
+
+// SNOW-1487: the inventory's measurements of one area's bucket, by area
+// id — see `measureAreaInventory`. Forgotten with the orphan figure above,
+// by the same two writers.
+const AREA_INVENTORY_MEASUREMENTS = new Map();
+
+// SNOW-1487 review: a measurement walks the bucket over many awaits, so a
+// write can land while it runs. Each forget bumps the area's generation,
+// and a measurement keeps its answer only when the generation it started
+// under is still current and no write into the bucket is in flight
+// (`AREA_BUCKET_WRITES`). Otherwise it answers once and caches nothing.
+/** @type {Map<string, number>} */
+const AREA_MEASUREMENT_GENERATION = new Map();
+/** @type {Map<string, number>} */
+const AREA_BUCKET_WRITES = new Map();
+
+/**
+ * SNOW-1487 review: mark a write into one area's bucket as begun, and
+ * forget its measurement. The function returned marks it ended, and
+ * forgets the measurement again, since one taken while the write ran saw
+ * a part-written bucket. Calling it twice ends the write once.
+ *
+ * @param {string} areaId
+ * @returns {function(): void}
+ */
+function _beginBucketWrite(areaId) {
+  forgetPinnedBucketMeasurement(areaId);
+  AREA_BUCKET_WRITES.set(areaId, (AREA_BUCKET_WRITES.get(areaId) || 0) + 1);
+  let ended = false;
+  return () => {
+    if (ended) return;
+    ended = true;
+    const left = (AREA_BUCKET_WRITES.get(areaId) || 1) - 1;
+    if (left > 0) AREA_BUCKET_WRITES.set(areaId, left);
+    else AREA_BUCKET_WRITES.delete(areaId);
+    forgetPinnedBucketMeasurement(areaId);
+  };
+}
+
+// SNOW-1487 review: how many bodies one URL class has read, at most,
+// when its entries carry no `Content-Length`. Production tiles are served
+// compressed and carry none (see `measurePinnedBucketBytes`), so reading
+// every body would be thousands of reads on a large area; a sample, spread
+// evenly over the class, is read instead and its mean stands for the rest.
+const INVENTORY_BODY_SAMPLE = 200;
+
+/**
+ * SNOW-1487: one cached entry's `Content-Length`, or 0 when it has none.
+ *
+ * @param {Response|undefined} response
+ * @returns {number}
+ */
+function _entryLength(response) {
+  if (!response) return 0;
+  const header = Number(response.headers && response.headers.get('Content-Length'));
+  return Number.isFinite(header) && header > 0 ? header : 0;
+}
+
+/**
+ * SNOW-1487: one cached entry's body size, or null when it cannot be read.
+ *
+ * @param {Response|undefined} response
+ * @returns {Promise<number|null>}
+ */
+async function _entryBodyBytes(response) {
+  if (!response) return null;
+  try {
+    return (await response.clone().blob()).size;
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * SNOW-1487: the bytes one URL class of a bucket holds — the lengths its
+ * entries carry, and for the entries with none, the mean of a bounded,
+ * evenly spread sample of their bodies (`INVENTORY_BODY_SAMPLE`) times
+ * their count.
+ *
+ * @param {Cache} cache
+ * @param {Request[]} requests
+ * @returns {Promise<number>}
+ */
+async function _classBytes(cache, requests) {
+  let known = 0;
+  /** @type {Request[]} */
+  const unsized = [];
+  for (const request of requests) {
+    const length = _entryLength(await cache.match(request));
+    if (length > 0) known += length;
+    else unsized.push(request);
+  }
+  if (unsized.length === 0) return known;
+  const sample = Math.min(unsized.length, INVENTORY_BODY_SAMPLE);
+  let read = 0;
+  let readBytes = 0;
+  for (let k = 0; k < sample; k += 1) {
+    const request = unsized[Math.floor((k * unsized.length) / sample)];
+    const bytes = await _entryBodyBytes(await cache.match(request));
+    if (bytes === null) continue;
+    read += 1;
+    readBytes += bytes;
+  }
+  return known + (read ? Math.round((readBytes / read) * unsized.length) : 0);
+}
+
+/**
+ * SNOW-1487: what one area's bucket holds, measured — the map's bytes,
+ * the terrain data's bytes, and whether every terrain tile the record
+ * implies is there.
+ *
+ * The record keeps one total, written by the run that made it and grown
+ * by each sync; split by an estimate it read "0 MB" for a map whenever
+ * the estimate ran over the total. So the inventory measures instead, by
+ * URL class: an entry under the terrain-class or elevation template is
+ * terrain data, and everything else in the bucket is the map. An entry's
+ * size is its `Content-Length`; where entries carry none, a bounded sample
+ * of their bodies is read (`_classBytes`), so a large area costs at most
+ * `INVENTORY_BODY_SAMPLE` body reads per class. Measured once per area per
+ * page and forgotten whenever its bucket changes.
+ *
+ * @param {string} areaId
+ * @param {Object|null} record The area's stored record.
+ * @returns {Promise<{mapBytes: number, terrainBytes: number,
+ *   terrainHeld: (boolean|null)}|null>} Null when the bucket cannot be
+ *   read. `terrainHeld` is null for an area with no terrain tiles to hold.
+ */
+async function measureAreaInventory(areaId, record) {
+  if (AREA_INVENTORY_MEASUREMENTS.has(areaId)) return AREA_INVENTORY_MEASUREMENTS.get(areaId);
+  if (!('caches' in window) || !areaId) return null;
+  const generation = AREA_MEASUREMENT_GENERATION.get(areaId) || 0;
+  /** @param {string} template */
+  const prefixOf = (template) => (template ? template.split('{z}')[0] : '');
+  const prefixes = [prefixOf(terrainClassTileTemplate()), prefixOf(elevationTileTemplate())].filter(Boolean);
+  let measured;
+  try {
+    const cache = await caches.open(BASEMAP_PINNED_CACHE_PREFIX + areaId);
+    const requests = await cache.keys();
+    const held = new Set();
+    /** @type {Request[]} */
+    const mapRequests = [];
+    /** @type {Request[]} */
+    const terrainRequests = [];
+    for (const request of requests) {
+      held.add(request.url);
+      if (prefixes.some((prefix) => request.url.startsWith(prefix))) terrainRequests.push(request);
+      else mapRequests.push(request);
+    }
+    const expected = record && record.terrain ? areaTerrainClassTileUrls(record) : [];
+    measured = {
+      mapBytes: await _classBytes(cache, mapRequests),
+      terrainBytes: await _classBytes(cache, terrainRequests),
+      terrainHeld: expected.length ? expected.every((url) => held.has(url)) : null,
+    };
+  } catch (_e) {
+    return null;
+  }
+  const current = (AREA_MEASUREMENT_GENERATION.get(areaId) || 0) === generation;
+  if (current && !AREA_BUCKET_WRITES.has(areaId)) AREA_INVENTORY_MEASUREMENTS.set(areaId, measured);
+  return measured;
+}
+
+/**
+ * SNOW-1487: whether a stored area's ground wants the Swisstopo map and
+ * the area does not hold it — the inventory's "Swiss map: Not added yet"
+ * line, read by the rule Sync adds it by (`_basemapsToAdd`).
+ *
+ * @param {Object|null} record A `basemap.regions` or `basemap.customAreas` row.
+ * @returns {boolean}
+ */
+function swissMapMissing(record) {
+  if (!record) return false;
+  return _basemapsToAdd({ record: record, regionId: record.region_id || '' }).length > 0;
 }
 
 /**
@@ -2851,6 +3317,16 @@ window.pwaBasemapDownloads = Object.freeze({
     areaRenderDependencyURLs(recordedDeps, basemapIsActive),
 
   /**
+   * SNOW-1478: the same rule over every map one row holds
+   * (`areaAllRenderDependencyURLs`), so a row whose second map lacks a
+   * document reads incomplete.
+   *
+   * @param {Object} row A Manage downloads row, or a stored record.
+   * @returns {string[]}
+   */
+  areaAllRenderDependencyUrls: (row) => areaAllRenderDependencyURLs(row),
+
+  /**
    * SNOW-1072: the terrain-class tiles one recorded area should hold —
    * see `areaTerrainClassTileUrls`. Empty unless the record carries
    * `terrain`.
@@ -2885,6 +3361,16 @@ window.pwaBasemapDownloads = Object.freeze({
   terrainDataAvailable: () => terrainDataAvailable(),
   terrainDataPreferred: () => terrainDataPreferred(),
 
+  /**
+   * SNOW-1483: whether one recorded area should hold terrain data — see
+   * `terrainExpected`. Read by the Downloads sheet for a row's dot and
+   * its inventory's Terrain row alike.
+   *
+   * @param {Object|null} record
+   * @returns {boolean}
+   */
+  terrainExpected: (record) => terrainExpected(record),
+
   // SNOW-844's `repair(areaId, urls)` stood here until SNOW-951. It was
   // the Manage downloads sheet's Repair control and nothing else, and
   // that control is gone — one "Sync now" replaced it, and `syncArea`
@@ -2917,10 +3403,35 @@ window.pwaBasemapDownloads = Object.freeze({
    * many surfaces offer them. See `syncArea` for the ordering, the
    * unconditional content refetch, and what the two fields mean.
    *
+   * SNOW-1487: `onStage(step, {done, total})` hears each stage with its
+   * counts, and `signal` stops the sync; `steps` lists what did not
+   * finish.
+   *
    * @param {string} areaId
-   * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean}>}
+   * @param {function(string, Object=): void} [onStage]
+   * @param {AbortSignal|null} [signal]
+   * @returns {Promise<{tiles: 'ok'|'failed'|'none', content: boolean, steps?: Object[]}>}
    */
-  syncArea: (areaId, onStage) => syncArea(areaId, onStage),
+  syncArea: (areaId, onStage, signal) => syncArea(areaId, onStage, signal),
+
+  /**
+   * SNOW-1487: what one area's bucket holds, measured by URL class, for
+   * the Downloads sheet's inventory — see `measureAreaInventory`.
+   *
+   * @param {string} areaId
+   * @param {Object|null} record
+   * @returns {Promise<Object|null>}
+   */
+  measureAreaInventory: (areaId, record) => measureAreaInventory(areaId, record),
+
+  /**
+   * SNOW-1487: whether a stored area should gain the Swisstopo map — see
+   * `swissMapMissing`.
+   *
+   * @param {Object|null} record
+   * @returns {boolean}
+   */
+  swissMapMissing: (record) => swissMapMissing(record),
 
   /**
    * SNOW-844: every URL held across every pinned bucket — see
@@ -3878,15 +4389,25 @@ let pinnedRunActive = false;
  * the region copy rather than "frame a smaller area". The runner itself
  * never sees it — only its `revealError` dependency is rebound.
  *
+ * SNOW-1478: `options.basemapKeys` names the maps the run saves, primary
+ * first (`downloadBasemapKeys`). When they are anything but the map on
+ * screen, each is resolved (`resolveDownloadBasemap`) before the runner
+ * starts, and the run's tile sources, render dependencies, glyph prefix
+ * and basemap key are the primary one's, with the rest handed over as
+ * `extraBasemaps`. A map whose documents cannot be read fails the run, as
+ * an unsettled style does. Omitted, the run saves the map on screen.
+ *
  * @param {Object} options
  * @returns {Promise<void>}
  */
 async function runPinnedDownload(options) {
   // SNOW-612: whatever this run writes changes the bucket's size, so a
-  // measurement taken before it is stale from here on.
-  forgetPinnedBucketMeasurement(options.areaId);
+  // measurement taken before it is stale from here on. SNOW-1487 review:
+  // and one taken while it runs, so the write is ended when it settles.
+  const endWrite = _beginBucketWrite(options.areaId);
   const runner = self.pwaBasemapDownloadRunner;
   if (!runner) {
+    endWrite();
     options.paint('error');
     revealBasemapDownloadError(null);
     return;
@@ -3897,8 +4418,33 @@ async function runPinnedDownload(options) {
   // declined eviction), because then no `finish` will come.
   pinnedRunActive = true;
   let warmStarted = false;
+  let plans = null;
+  if (!_onlyActiveBasemap(options.basemapKeys)) {
+    // The runner paints 'busy' itself, synchronously; reading documents
+    // comes first here, so the roundel is told now.
+    options.paint('busy', 0);
+    plans = await Promise.all(options.basemapKeys.map((key) => resolveDownloadBasemap(key)));
+    if (plans.some((plan) => !plan)) {
+      pinnedRunActive = false;
+      endWrite();
+      options.paint('error');
+      revealBasemapDownloadError(null, options.kind);
+      return;
+    }
+  }
   const deps = {
     ...PINNED_DOWNLOAD_DEPS,
+    // SNOW-1478: the maps this run saves, when not the one on screen.
+    ...(plans
+      ? {
+          tileSources: () => plans[0].tileSources,
+          basemapKey: () => plans[0].key,
+          renderDeps: () => plans[0].renderDeps,
+          glyphPrefix: () => plans[0].glyphPrefix,
+          feedUrls: () => assembleBasemapDownloadFeedURLs(plans[0].renderDeps),
+          extraBasemaps: () => plans.slice(1),
+        }
+      : {}),
     warmCache: (urls, opts) => {
       warmStarted = true;
       return PINNED_DOWNLOAD_DEPS.warmCache(urls, opts);
@@ -3917,13 +4463,17 @@ async function runPinnedDownload(options) {
         return await finish(...args);
       } finally {
         pinnedRunActive = false;
+        endWrite();
       }
     },
   };
   try {
     return await runner.run(deps, run);
   } finally {
-    if (!warmStarted) pinnedRunActive = false;
+    if (!warmStarted) {
+      pinnedRunActive = false;
+      endWrite();
+    }
   }
 }
 
@@ -4215,7 +4765,8 @@ async function _stampAreaContent(areaId, regionId, complete, expectation, conten
  * it back into stages. Best-effort, like the content stamp beside it.
  *
  * @param {string} areaId
- * @param {{tiles?: string, content?: boolean}} result `syncArea`'s answer.
+ * @param {{tiles?: string, content?: boolean, steps?: Object[]}} result
+ *   `syncArea`'s answer. SNOW-1487: its `steps` are stamped with it.
  * @returns {Promise<void>}
  */
 async function _stampAreaVerified(areaId, result) {
@@ -4369,16 +4920,50 @@ async function _rewriteAreaRecord(areaId, regionId, stamp) {
  *   completion rather than a failure.
  */
 async function refreshAreaContent(areaId, onStage) {
+  return (await _refreshAreaContent(areaId, onStage, null)).ok;
+}
+
+/**
+ * SNOW-1487: `refreshAreaContent`'s whole answer — whether the content
+ * landed and, where it did not, why: the plan was short (`plan`), the
+ * fetch fell short (`network`) or `signal` stopped it (`interrupted`).
+ * `syncArea` keeps the reason as its content step. An area with no
+ * record has no reason: there was nothing to fetch.
+ *
+ * @param {string} areaId
+ * @param {function(string, {done: number, total: number}=): void} [onStage]
+ * @param {AbortSignal|null} [signal]
+ * @returns {Promise<{ok: boolean, reason: ''|'plan'|'network'|'interrupted',
+ *   done: number, total: number}>}
+ */
+async function _refreshAreaContent(areaId, onStage, signal) {
   const tell = typeof onStage === 'function' ? onStage : () => {};
+  /**
+   * @param {boolean} ok
+   * @param {''|'plan'|'network'|'interrupted'} [reason]
+   * @param {number} [done]
+   * @param {number} [total]
+   */
+  const answer = (ok, reason, done, total) => ({
+    ok: ok,
+    reason: ok ? '' : reason || '',
+    done: done || 0,
+    total: total || 0,
+  });
   const found = await _areaRecordById(areaId);
-  if (!found) return false;
-  tell('bulletins');
+  if (!found) return answer(false);
+  tell('bulletins', { done: 0, total: 0 });
 
   // The pair, not a bare list: a plan assembled while a country was
   // unreachable is short however many of its urls land, and a refresh that
   // reported success on one would clear the very flag it was called to
   // clear. See `assembleAreaContentURLs`.
   const content = await assembleAreaContentURLs(found.record, !!found.record.terrain);
+  // SNOW-1487 review: a stop while the plan was read stamps nothing, so
+  // the area keeps the content answer it had. A plan read while the page
+  // went out of sight may be short only because the request was cut off.
+  const stopped = () => !!(signal && signal.aborted);
+  if (stopped()) return answer(false, 'interrupted');
   if (content.urls.length === 0) {
     // SNOW-932 review: an empty plan is not automatically a failed one. A
     // plan assembled against the WHOLE country set that resolves to no
@@ -4401,20 +4986,21 @@ async function refreshAreaContent(areaId, onStage) {
     // exactly the message-not-a-state SNOW-932 closed.
     if (content.short) {
       await _stampAreaContent(areaId, found.regionId, false);
-      return false;
+      return answer(false, 'plan');
     }
     await _stampAreaContent(areaId, found.regionId, true, content.items);
-    return true;
+    return answer(true);
   }
 
   // SNOW-1416: only what changed — see `_contentDeltaFor`.
   const delta = await _contentDeltaFor(found.record, content);
+  if (stopped()) return answer(false, 'interrupted');
   if (delta.urls.length === 0) {
     const autosync = self.pwaOfflineAutosyncCore;
     // A fresh, whole area: nothing to fetch, and its `contentAt` must not
     // move, or it would never come due again.
     const fresh = !!autosync && !autosync.isStale(found.record, new Date());
-    if (fresh && !content.short) return true;
+    if (fresh && !content.short) return answer(true);
     // A short plan is still recorded as one (SNOW-953), even when what it
     // did resolve was all held — keeping a fresh area's `contentAt`.
     await _stampAreaContent(
@@ -4424,33 +5010,25 @@ async function refreshAreaContent(areaId, onStage) {
       content.items,
       fresh ? delta.keepsContentAt : undefined,
     );
-    return !content.short;
+    return answer(!content.short, 'plan');
   }
 
-  return new Promise((resolve) => {
-    repairPinnedDownload({
-      areaId: areaId,
-      urls: delta.urls,
-      // Nothing to paint: the sheet re-renders on the result, and this is
-      // a handful of documents rather than a several-minute download —
-      // the same reasoning the `repair` bridge member above gives.
-      // SNOW-1415: the percentage names the stage, because the plan lists
-      // its urls in stage order (`stageFrom`) and the runner counts them.
-      paint: (_state, pct) => {
-        const done = Number.isFinite(pct) ? Math.floor((pct / 100) * delta.urls.length) : 0;
-        tell(contentStageAt(delta.stageFrom, done));
-      },
-      finish: async (result, extras) => {
-        const runCore = extras && extras.core;
-        const ok = !!(runCore && runCore.downloadSucceeded(result)) && !content.short;
-        // SNOW-1416: a fresh area that only gained what it lacked keeps its
-        // `contentAt` — its held bulletins were not refetched, so the stamp
-        // must not claim they were.
-        await _stampAreaContent(areaId, found.regionId, ok, content.items, delta.keepsContentAt);
-        resolve(ok);
-      },
-    });
+  // SNOW-1415: the counts name the stage, because the plan lists its urls
+  // in stage order (`stageFrom`) and the runner counts them. SNOW-1487:
+  // and they are passed on, so the row can say how far it has got.
+  const fetched = await _repairInto(areaId, delta.urls, {
+    signal: signal,
+    onProgress: (done, total) => tell(contentStageAt(delta.stageFrom, done), { done: done, total: total }),
   });
+  const ok = fetched.ok && !content.short;
+  // A stopped fetch is not a short one: nothing is stamped, so the area
+  // keeps the content answer it had, and the next sync fetches the rest.
+  if (fetched.cancelled) return answer(false, 'interrupted', fetched.done, fetched.total);
+  // SNOW-1416: a fresh area that only gained what it lacked keeps its
+  // `contentAt` — its held bulletins were not refetched, so the stamp
+  // must not claim they were.
+  await _stampAreaContent(areaId, found.regionId, ok, content.items, delta.keepsContentAt);
+  return answer(ok, fetched.ok ? 'plan' : 'network', fetched.done, fetched.total);
 }
 
 /**
@@ -4503,9 +5081,8 @@ async function _missingAreaRenderDependencies(record, areaId) {
   } catch (_e) {
     return null;
   }
-  const activeKey = activeBasemapKey();
-  const isActive = !!activeKey && record.basemapKey === activeKey;
-  const recorded = areaRenderDependencyURLs(record.deps, isActive);
+  // SNOW-1478: over every map the area holds, not only its primary one.
+  const recorded = areaAllRenderDependencyURLs(record);
   const terrain = areaTerrainClassTileUrls(record);
   // SNOW-1453: and the elevation tiles, derived on the same terms, which
   // is how a sync brings an area downloaded before them up to date. Judged
@@ -4604,6 +5181,8 @@ async function _areaTilesHeld(areaId, record) {
     return journey.tileReading(
       {
         template: record.template,
+        // SNOW-1478: every map the area holds is judged.
+        basemaps: record.basemaps,
         z: record.z,
         bbox: record.bbox,
         band: record.band,
@@ -4615,6 +5194,428 @@ async function _areaTilesHeld(areaId, record) {
   } catch (_e) {
     return null;
   }
+}
+
+/**
+ * SNOW-1478: the ground one stored area covers, as `downloadBasemapKeys`
+ * takes it. A region names its country (its feature's `country`, else its
+ * id's prefix: `CH-4115`); a framed area or drop zone its box.
+ *
+ * @param {{record: Object, regionId: (string|null)}} found
+ * @returns {{country?: string, bbox?: number[]}}
+ */
+function _areaGround(found) {
+  if (found.regionId) return regionGround(found.regionId);
+  return { bbox: Array.isArray(found.record.bbox) ? found.record.bbox : null };
+}
+
+/**
+ * SNOW-1478: the ground of one region, for `downloadBasemapKeys`.
+ *
+ * @param {string} regionId
+ * @returns {{country: string|null}}
+ */
+function regionGround(regionId) {
+  const features = typeof FEATURE_BY_REGION_ID === 'object' && FEATURE_BY_REGION_ID ? FEATURE_BY_REGION_ID : {};
+  const feature = features[regionId];
+  const country = feature && feature.properties && feature.properties.country;
+  if (typeof country === 'string' && country) return { country: country };
+  const prefix = /^([A-Za-z]{2})-/.exec(String(regionId || ''));
+  return { country: prefix ? prefix[1] : null };
+}
+
+/**
+ * SNOW-1478: the tile blob one stored area was downloaded over — a
+ * region's own `z`, or a framed area's box and band rebuilt, as
+ * `offline_journey_core.js`'s `areaBlob` rebuilds it.
+ *
+ * @param {Object} record
+ * @returns {Object|null}
+ */
+function _recordBlob(record) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || !record) return null;
+  if (record.z) return { z: record.z };
+  const band = Array.isArray(record.band) ? record.band : null;
+  if (!Array.isArray(record.bbox) || !band) return null;
+  if (record.type === 'dropzone' && typeof core.circleBlobForBBox === 'function') {
+    return core.circleBlobForBBox(record.bbox, band[0], band[1]);
+  }
+  return core.buildBlob(record.bbox, band[0], band[1]);
+}
+
+/**
+ * SNOW-1487: one addition's answer — `_addMissingBasemaps` and
+ * `_addMissingTerrain` both return it, and `syncArea` turns a failed one
+ * into a step on the `verified` stamp.
+ *
+ * @typedef {Object} AdditionResult
+ * @property {'ok'|'none'|'failed'|'unknown'} status `'none'` when there
+ *   was nothing to add; `'unknown'` when the bucket could not be read.
+ * @property {''|'network'|'interrupted'|'budget'|'quota'|'plan'} reason
+ *   Why a failed addition failed, '' otherwise: the connection dropped
+ *   (`network`), the run was stopped or the page hidden (`interrupted`),
+ *   it would take the downloads over the reader's limit (`budget`), the
+ *   phone has no room (`quota`), or the map's own documents could not be
+ *   read (`plan`).
+ * @property {number} done Files that landed.
+ * @property {number} total Files the addition needed.
+ * @property {number} neededMb What the addition would cost.
+ * @property {number|null} freeMb What room there was, where it was read.
+ */
+
+/**
+ * SNOW-1487: an addition's answer, with every field present.
+ *
+ * @param {'ok'|'none'|'failed'|'unknown'} status
+ * @param {string} [reason]
+ * @param {Object} [extra] Any of `done`, `total`, `neededMb`, `freeMb`.
+ * @returns {AdditionResult}
+ */
+function _additionResult(status, reason, extra) {
+  return /** @type {AdditionResult} */ (Object.assign(
+    { status: status, reason: reason || '', done: 0, total: 0, neededMb: 0, freeMb: null },
+    extra || {},
+  ));
+}
+
+/**
+ * SNOW-1487: whether an addition of `deltaMb` fits, before anything is
+ * fetched. A sync never evicts another area to make room, so a delta that
+ * would need an eviction is a failed addition (`budget`), as is one the
+ * phone's storage cannot take (`quota`).
+ *
+ * @param {string} areaId
+ * @param {Object} record The area's stored record.
+ * @param {number} deltaMb
+ * @param {number} total How many files the addition needs.
+ * @returns {Promise<AdditionResult|null>} Null when it fits.
+ */
+async function _additionRefusal(areaId, record, deltaMb, total) {
+  const mb = 1024 * 1024;
+  const currentBytes = Number(record && record.bytes) || 0;
+  const budget = await planBasemapDownloadBudget(areaId, currentBytes / mb + deltaMb);
+  if (budget && (budget.impossible || budget.evict.length > 0)) {
+    let standing = 0;
+    for (const [id, area] of budget.areasById || new Map()) {
+      if (id !== areaId) standing += Number(area && area.bytes) || 0;
+    }
+    const budgetBytes = await basemapDownloadBudgetBytes();
+    const freeMb = Math.max(0, Math.floor((budgetBytes - standing - currentBytes) / mb));
+    return _additionResult('failed', 'budget', { total: total, neededMb: deltaMb, freeMb: freeMb });
+  }
+  if (!(await basemapDownloadFitsQuota(deltaMb))) {
+    return _additionResult('failed', 'quota', {
+      total: total,
+      neededMb: deltaMb,
+      freeMb: await _storageFreeMb(),
+    });
+  }
+  return null;
+}
+
+/**
+ * SNOW-1487: how much room the phone's storage has left, in MB, or null
+ * where the browser will not say.
+ *
+ * @returns {Promise<number|null>}
+ */
+async function _storageFreeMb() {
+  try {
+    if (!('storage' in navigator) || typeof navigator.storage.estimate !== 'function') return null;
+    const estimate = await navigator.storage.estimate();
+    const quota = Number(estimate && estimate.quota);
+    const usage = Number(estimate && estimate.usage);
+    if (!Number.isFinite(quota) || !Number.isFinite(usage)) return null;
+    return Math.max(0, Math.floor((quota - usage) / (1024 * 1024)));
+  } catch (_e) {
+    return null;
+  }
+}
+
+/**
+ * SNOW-1487: fetch `urls` into an area's own bucket through the repair
+ * path, telling `onProgress` the counts as they land, and stopping when
+ * `signal` aborts.
+ *
+ * Every fetch a sync makes goes through here: the Swisstopo map, the
+ * terrain tiles, the render-dependency repair and the content. A stop is
+ * the worker's own cancel (`pwaWarmCacheCancel`, `cancelWarmCache` in
+ * sw_register.js), whose run settles with `cancelled: true`, so what
+ * landed before the stop stays in the bucket and a later sync fetches
+ * only the rest (`missingFromAreaBucket`). A signal already aborted
+ * fetches nothing.
+ *
+ * @param {string} areaId
+ * @param {string[]} urls
+ * @param {{signal?: AbortSignal|null, onProgress?: function(number, number): void}} [options]
+ * @returns {Promise<{ok: boolean, cancelled: boolean, done: number, total: number, bytes: number}>}
+ */
+function _repairInto(areaId, urls, options) {
+  const opts = options || {};
+  const signal = opts.signal || null;
+  const report = typeof opts.onProgress === 'function' ? opts.onProgress : () => {};
+  const total = urls.length;
+  if (signal && signal.aborted) {
+    return Promise.resolve({ ok: false, cancelled: true, done: 0, total: total, bytes: 0 });
+  }
+  return new Promise((resolve) => {
+    let done = 0;
+    // The worker runs one warm at a time, queued (`_warmCacheChain` in
+    // sw_register.js), and its cancel stops whichever run holds the slot.
+    // Counts reach `paint` only from this run's own replies, so until one
+    // has, the slot may be another run's (a download, the offline report's
+    // shell warm): a stop then waits for this run's first reply.
+    let running = false;
+    let stopWanted = false;
+    const cancel = () => {
+      stopWanted = false;
+      window.pwaWarmCacheCancel?.();
+    };
+    const onAbort = () => {
+      if (running) cancel();
+      else stopWanted = true;
+    };
+    if (signal) signal.addEventListener('abort', onAbort);
+    report(0, total);
+    repairPinnedDownload({
+      areaId: areaId,
+      urls: urls,
+      // Nothing to paint on a roundel: the caller is told the counts.
+      paint: (_state, _pct, _bytes, counts) => {
+        if (!counts || !Number.isFinite(counts.done)) return;
+        running = true;
+        done = counts.done;
+        const of = Number.isFinite(counts.total) ? counts.total : total;
+        report(counts.done, of);
+        if (stopWanted && counts.done < of) cancel();
+      },
+      finish: async (result, extras) => {
+        if (signal) signal.removeEventListener('abort', onAbort);
+        const runCore = extras && extras.core;
+        const answer = result || {};
+        // The run's own answer, not the signal: a stop that lands after
+        // the last fetch settled leaves a finished fetch finished, and
+        // only keeps the next stage from starting.
+        resolve({
+          ok: !!(runCore && runCore.downloadSucceeded(result)),
+          cancelled: !!answer.cancelled,
+          done: Number.isFinite(answer.ok) ? Number(answer.ok) : done,
+          total: total,
+          bytes: Number(answer.bytes) || 0,
+        });
+      },
+    });
+  });
+}
+
+/**
+ * SNOW-1487: a failed addition's answer from its fetch, and the bytes
+ * that did land counted on the record, since they stay in the bucket.
+ *
+ * @param {string} areaId
+ * @param {string} regionId
+ * @param {{cancelled: boolean, done: number, total: number, bytes: number}} outcome
+ * @param {number} deltaMb
+ * @returns {Promise<AdditionResult>}
+ */
+async function _failedAddition(areaId, regionId, outcome, deltaMb) {
+  if (outcome.bytes > 0) {
+    await _rewriteAreaRecord(areaId, regionId, (entry) => ({
+      ...entry,
+      bytes: (Number(entry.bytes) || 0) + outcome.bytes,
+    }));
+  }
+  return _additionResult('failed', outcome.cancelled ? 'interrupted' : 'network', {
+    done: outcome.done,
+    total: outcome.total,
+    neededMb: deltaMb,
+  });
+}
+
+/**
+ * SNOW-1478: add the Swisstopo map to an area downloaded on another map
+ * before Swiss downloads saved it — the half of Sync that makes an old
+ * Swiss area draw offline whichever map is on screen.
+ *
+ * Fetches only what the bucket lacks (`missingFromAreaBucket`): Swisstopo
+ * and the map already held share no tiles, but a reader who browsed the
+ * area on Swisstopo may hold some. The delta is checked against the
+ * budget first, and a sync never evicts another area to make room: a
+ * delta that does not fit is a failed addition, mended by freeing space.
+ * On success the record gains the entry, first, and its top-level
+ * `basemapKey`, `template` and `deps` move to it; the map it already held
+ * stays as a second entry. The glyph prefix is kept: it is the handle on
+ * entries the original run promoted, and every glyph this one needs is
+ * fetched by URL.
+ *
+ * SNOW-1487: a failed addition leaves the map the area already held as it
+ * was, and says why (`AdditionResult`). What landed before a failure
+ * stays in the bucket and on the record's bytes, so a retry fetches only
+ * the rest.
+ *
+ * @param {string} areaId
+ * @param {{record: Object, regionId: (string|null)}} found
+ * @param {{signal?: AbortSignal|null, onProgress?: function(number, number): void}} [options]
+ * @returns {Promise<AdditionResult>} `'none'` when the area already holds
+ *   every map its ground needs, or needs none it lacks.
+ */
+async function _addMissingBasemaps(areaId, found, options) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.recordBasemaps !== 'function') return _additionResult('none');
+  const toAdd = _basemapsToAdd(found);
+  if (toAdd.length === 0) return _additionResult('none');
+  const blob = _recordBlob(found.record);
+  if (!blob) return _additionResult('unknown');
+  const plans = await Promise.all(toAdd.map((key) => resolveDownloadBasemap(key)));
+  if (plans.some((plan) => !plan)) return _additionResult('failed', 'plan');
+  const urls = [];
+  for (const plan of plans) {
+    urls.push(...plan.renderDeps, ...core.rangesToTileURLs(plan.tileSources, blob));
+  }
+  const missing = await missingFromAreaBucket(areaId, urls);
+  if (missing === null) return _additionResult('unknown');
+  let addedBytes = 0;
+  if (missing.length > 0) {
+    const perTile = plans.reduce((most, plan) => Math.max(most, core.bytesPerTileForBasemap(plan.key)), 0);
+    const deltaMb = Math.ceil((missing.length * perTile) / (1024 * 1024));
+    const refused = await _additionRefusal(areaId, found.record, deltaMb, missing.length);
+    if (refused) return refused;
+    const outcome = await _repairInto(areaId, missing, options);
+    if (!outcome.ok) return _failedAddition(areaId, found.regionId || '', outcome, deltaMb);
+    addedBytes = outcome.bytes;
+  }
+  await _rewriteAreaRecord(areaId, found.regionId, (entry) => {
+    const added = plans.map((plan) => ({ key: plan.key, template: plan.tileSources, deps: plan.renderDeps }));
+    const kept = core.recordBasemaps(entry).filter((existing) => toAdd.indexOf(existing.key) < 0);
+    const list = [...added, ...kept];
+    return {
+      ...entry,
+      basemaps: list,
+      basemapKey: list[0].key,
+      template: list[0].template,
+      deps: list[0].deps,
+      bytes: (Number(entry.bytes) || 0) + addedBytes,
+    };
+  });
+  notifyDownloadsChanged();
+  return _additionResult('ok', '', { done: missing.length, total: missing.length });
+}
+
+/**
+ * SNOW-1478: the maps a sync would add to one stored area — Swisstopo,
+ * where its ground is Swiss and it does not hold it. A foreign map the
+ * reader has since switched to is not: Sync is not a re-download onto
+ * whatever is on screen.
+ *
+ * SNOW-1487: shared with the Downloads sheet's "Swiss map: Not added yet"
+ * line (`swissMapMissing`), so the line and the sync cannot disagree.
+ *
+ * @param {{record: Object, regionId: (string|null)}} found
+ * @returns {string[]}
+ */
+function _basemapsToAdd(found) {
+  const core = self.pwaBasemapDownloadCore;
+  if (!core || typeof core.recordBasemaps !== 'function' || !found || !found.record) return [];
+  const held = core.recordBasemaps(found.record).map((entry) => entry.key);
+  return downloadBasemapKeys(_areaGround(found)).filter(
+    (key) => key === core.ELEVATION_BASEMAP_KEY && held.indexOf(key) < 0,
+  );
+}
+
+/**
+ * SNOW-1483: add the terrain data to an area saved without it — the half
+ * of Sync that brings an area downloaded before terrain came with every
+ * download (4 Nov 2026) up to what a download saves today.
+ *
+ * Only for a record without `terrain` that should hold it
+ * (`terrainExpected`). Fetches the terrain-class tiles the area's bucket
+ * lacks, and nothing else: the elevation tiles ride on the same flag, so
+ * once the record carries it the render-dependency repair in `syncArea`
+ * derives and fetches them, as it does for any area synced since
+ * SNOW-1453. The delta is checked against the budget and the quota first,
+ * and a sync never evicts another area to make room, as
+ * `_addMissingBasemaps` does not.
+ *
+ * On success the record gains `terrain: true` and the bytes added, and
+ * the account row is re-pushed with the flag, so another device repeats
+ * it. On failure the record keeps no flag: it still reads "Terrain not
+ * saved", which is true. SNOW-1487: the bytes that landed are counted,
+ * and the answer says why it failed.
+ *
+ * @param {string} areaId
+ * @param {{record: Object, regionId: (string|null)}} found
+ * @param {{signal?: AbortSignal|null, onProgress?: function(number, number): void}} [options]
+ * @returns {Promise<AdditionResult>} `'none'` when the area already has
+ *   terrain data or should not hold any.
+ */
+async function _addMissingTerrain(areaId, found, options) {
+  const core = self.pwaBasemapDownloadCore;
+  const record = found.record;
+  if (!core || !record || record.terrain || !terrainExpected(record)) return _additionResult('none');
+  const urls = areaTerrainClassTileUrls({ ...record, terrain: true });
+  const missing = await missingFromAreaBucket(areaId, urls);
+  if (missing === null) return _additionResult('unknown');
+  let addedBytes = 0;
+  if (missing.length > 0) {
+    const deltaMb = core.terrainClassMb(missing.length);
+    const refused = await _additionRefusal(areaId, record, deltaMb, missing.length);
+    if (refused) return refused;
+    const outcome = await _repairInto(areaId, missing, options);
+    if (!outcome.ok) return _failedAddition(areaId, found.regionId || '', outcome, deltaMb);
+    addedBytes = outcome.bytes;
+  }
+  await _rewriteAreaRecord(areaId, found.regionId, (entry) => ({
+    ...entry,
+    terrain: true,
+    bytes: (Number(entry.bytes) || 0) + addedBytes,
+  }));
+  // The flag travels with the definition, as a download's push carries it
+  // (SNOW-1072), and only for the signed-in account's own area (SNOW-1142).
+  const sync = window.pwaDownloadsSync;
+  await sync?.push({
+    areaId: areaId,
+    regionId: found.regionId || '',
+    bbox: found.regionId ? undefined : record.bbox,
+    basemapKey: record.basemapKey,
+    name: record.name || '',
+    terrain: true,
+    type: record.type,
+    principal: record.principal,
+  });
+  notifyDownloadsChanged();
+  return _additionResult('ok', '', { done: missing.length, total: missing.length });
+}
+
+/**
+ * SNOW-1487: one step of a sync that did not finish, as the `verified`
+ * stamp keeps it.
+ *
+ * @typedef {Object} SyncStep
+ * @property {'basemap'|'terrain'|'deps'|'content'} step
+ * @property {'network'|'interrupted'|'budget'|'quota'|'plan'} reason
+ * @property {number} done
+ * @property {number} total
+ * @property {number} neededMb
+ * @property {number|null} freeMb
+ */
+
+/**
+ * SNOW-1487: a failed addition or fetch as a step.
+ *
+ * @param {'basemap'|'terrain'|'deps'|'content'} step
+ * @param {{reason: string, done?: number, total?: number, neededMb?: number, freeMb?: number|null}} answer
+ * @returns {SyncStep}
+ */
+function _syncStep(step, answer) {
+  return /** @type {SyncStep} */ ({
+    step: step,
+    reason: answer.reason || 'network',
+    done: Number(answer.done) || 0,
+    total: Number(answer.total) || 0,
+    neededMb: Number(answer.neededMb) || 0,
+    freeMb: Number.isFinite(answer.freeMb) ? Number(answer.freeMb) : null,
+  });
 }
 
 /**
@@ -4653,9 +5654,23 @@ async function _areaTilesHeld(areaId, record) {
  * render check and still draws nothing — SNOW-951 review, and see
  * `_areaBucketOnDevice` for where such a record comes from.
  *
+ * SNOW-1487: a failed ADDITION (the Swisstopo map, the terrain data) is
+ * not a map fault. The map the area already held still draws, so its
+ * `tiles` answer is the one the render check gives, and the failure is a
+ * step (`steps`) with its reason, which the Downloads sheet shows under
+ * the row (docs/decisions/a-failed-addition-never-hides-a-working-map.md).
+ * `onStage(step, {done, total})` hears each stage — `map`, `terrain`,
+ * then `bulletins`, `weather` and `things` — with the files landed of
+ * the files it needs. `signal` stops the sync: no later stage starts, the
+ * fetch in flight is cancelled, its step is recorded as `interrupted`
+ * and what the sync learned is stamped.
+ *
  * @param {string} areaId The pinned bucket id.
+ * @param {function(string, {done: number, total: number}=): void} [onStage]
+ * @param {AbortSignal|null} [signal]
  * @returns {Promise<{tiles: 'ok'|'failed'|'none'|'unknown'|'absent'|'incomplete',
- *   tilesHeld?: boolean|null, content: boolean}>} `tiles` is `'incomplete'`
+ *   tilesHeld?: boolean|null, content: boolean, steps?: SyncStep[],
+ *   cancelled?: boolean}>} `tiles` is `'incomplete'`
  *   when the dependencies are here but the tile grid is short
  *   (`_areaTilesHeld`, SNOW-1415 review), which only a re-download mends;
  *   `tilesHeld` is that reading, null where none could be taken.
@@ -4667,37 +5682,89 @@ async function _areaTilesHeld(areaId, record) {
  *   fetched and `content` is `false`. `content` is otherwise
  *   `refreshAreaContent`'s own answer, unchanged, including its
  *   short-plan and empty-plan semantics. `'none'`/`false` for an
- *   id nothing on this device carries.
+ *   id nothing on this device carries. `steps` lists what did not finish,
+ *   failed steps only; `cancelled` is set when `signal` stopped the sync.
  */
-async function syncArea(areaId, onStage) {
+async function syncArea(areaId, onStage, signal) {
   const tell = typeof onStage === 'function' ? onStage : () => {};
-  const found = await _areaRecordById(areaId);
+  const stopped = () => !!(signal && signal.aborted);
+  let found = await _areaRecordById(areaId);
   if (!found) return { tiles: 'none', content: false };
   if (!(await _areaBucketOnDevice(areaId))) {
     const gone = { tiles: 'absent', content: false };
     await _stampAreaVerified(areaId, gone);
     return gone;
   }
-
-  tell('map');
-  const missing = await _missingAreaRenderDependencies(found.record, areaId);
-  let tiles = missing === null ? 'unknown' : 'none';
-  if (missing && missing.length > 0) {
-    const repaired = await new Promise((resolve) => {
-      repairPinnedDownload({
-        areaId: areaId,
-        urls: missing,
-        // Nothing to paint, as `refreshAreaContent` above: the caller
-        // re-renders on the result, and a repair is a handful of
-        // documents rather than a several-minute download.
-        paint: () => {},
-        finish: async (result, extras) => {
-          const runCore = extras && extras.core;
-          resolve(!!(runCore && runCore.downloadSucceeded(result)));
-        },
-      });
+  /** @type {SyncStep[]} */
+  const steps = [];
+  // The stages this sync reached, by step name. Only these answer for
+  // their step: the stamp keeps the last sync's step for a stage this one
+  // never started (`stampVerifiedRecord`), so a stop cannot wipe an
+  // earlier "could not add" notice.
+  /** @type {string[]} */
+  const ran = [];
+  /**
+   * Stamp what the sync learned before a stop, and say so. The step in
+   * flight is already in `steps`, as `interrupted`; a stage that never
+   * started claims nothing, and no content answer is stamped, because the
+   * content was not read.
+   *
+   * @param {Object} partial The answer so far.
+   * @returns {Promise<Object>}
+   */
+  const stop = async (partial) => {
+    const result = Object.assign({ tiles: 'unknown', tilesHeld: null }, partial, {
+      content: false,
+      steps: steps,
+      cancelled: true,
     });
-    tiles = repaired ? 'ok' : 'failed';
+    await _stampAreaVerified(areaId, Object.assign({}, result, { content: undefined, ran: ran }));
+    return result;
+  };
+  // Stopped before it began: nothing was read, so nothing is stamped.
+  if (stopped()) return { tiles: 'unknown', content: false, steps: steps, cancelled: true };
+
+  tell('map', { done: 0, total: 0 });
+  const mapProgress = (done, total) => tell('map', { done: done, total: total });
+  // SNOW-1478: an area in Switzerland downloaded on another map gains the
+  // Swisstopo map first, and the record is read again, so the halves
+  // below judge (and mend) every map it now holds, the Swisstopo
+  // elevation tiles among them.
+  const added = await _addMissingBasemaps(areaId, found, { signal: signal, onProgress: mapProgress });
+  ran.push('basemap');
+  if (added.status === 'failed') steps.push(_syncStep('basemap', added));
+  if (added.status === 'ok') found = (await _areaRecordById(areaId)) || found;
+  if (stopped()) return stop({});
+  // SNOW-1483: and an area saved without terrain data gains it, the record
+  // read again so the halves below judge (and stamp) it with its terrain,
+  // its elevation tiles among what they mend.
+  const terrainAdded = await _addMissingTerrain(areaId, found, {
+    signal: signal,
+    onProgress: (done, total) => tell('terrain', { done: done, total: total }),
+  });
+  ran.push('terrain');
+  if (terrainAdded.status === 'failed') steps.push(_syncStep('terrain', terrainAdded));
+  if (terrainAdded.status === 'ok') found = (await _areaRecordById(areaId)) || found;
+  if (stopped()) return stop({});
+  const missing = await _missingAreaRenderDependencies(found.record, areaId);
+  ran.push('deps');
+  let tiles = missing === null ? 'unknown' : 'none';
+  if ((added.status === 'ok' || terrainAdded.status === 'ok') && tiles === 'none') tiles = 'ok';
+  if (missing && missing.length > 0) {
+    // The documents the area draws with, on the map stage's counts.
+    const repaired = await _repairInto(areaId, missing, { signal: signal, onProgress: mapProgress });
+    if (!repaired.ok) {
+      steps.push(
+        _syncStep('deps', {
+          reason: repaired.cancelled ? 'interrupted' : 'network',
+          done: repaired.done,
+          total: repaired.total,
+        }),
+      );
+      // A stopped repair is not a map fault: the stamp keeps what it said.
+      if (repaired.cancelled) return stop({});
+    }
+    tiles = repaired.ok ? 'ok' : 'failed';
   }
   // SNOW-1453: every elevation tile the area should hold is in its bucket
   // now (nothing was missing, or the repair fetched it all), so the record
@@ -4712,10 +5779,16 @@ async function syncArea(areaId, onStage) {
     tilesHeld = await _areaTilesHeld(areaId, found.record);
     if (tilesHeld === false) tiles = 'incomplete';
   }
+  if (stopped()) return stop({ tiles: tiles, tilesHeld: tilesHeld });
 
-  const content = await refreshAreaContent(areaId, tell);
-  const result = { tiles: tiles, tilesHeld: tilesHeld, content: content };
-  await _stampAreaVerified(areaId, result);
+  const content = await _refreshAreaContent(areaId, tell, signal);
+  ran.push('content');
+  if (!content.ok && content.reason) {
+    steps.push(_syncStep('content', { reason: content.reason, done: content.done, total: content.total }));
+  }
+  const result = { tiles: tiles, tilesHeld: tilesHeld, content: content.ok, steps: steps };
+  if (content.reason === 'interrupted') return stop({ tiles: tiles, tilesHeld: tilesHeld });
+  await _stampAreaVerified(areaId, Object.assign({}, result, { ran: ran }));
   return result;
 }
 
@@ -4770,7 +5843,20 @@ async function _stampAreaElevation(areaId, found) {
 async function repairPinnedDownload(options) {
   // The bucket's size changes, so a cached orphan measurement of it is
   // stale from here on — same reason `runPinnedDownload` forgets it.
-  forgetPinnedBucketMeasurement(options.areaId);
+  // SNOW-1487 review: and so is one taken while the repair writes, so the
+  // write is ended (and the measurement forgotten again) when it settles.
+  const endWrite = _beginBucketWrite(options.areaId);
+  const finish = options.finish;
+  const tracked = {
+    ...options,
+    finish: async (/** @type {any[]} */ ...args) => {
+      try {
+        return await finish(...args);
+      } finally {
+        endWrite();
+      }
+    },
+  };
   const runner = self.pwaBasemapDownloadRunner;
   if (!runner || typeof runner.repair !== 'function') {
     options.paint('error');
@@ -4778,10 +5864,15 @@ async function repairPinnedDownload(options) {
     // Settled even here, so a caller awaiting the outcome (the Manage
     // downloads sheet's Repair control) is never left hanging on a
     // promise an older cached shell can never resolve.
-    await options.finish(null, { core: self.pwaBasemapDownloadCore });
+    await tracked.finish(null, { core: self.pwaBasemapDownloadCore });
     return;
   }
-  return runner.repair(PINNED_DOWNLOAD_DEPS, options);
+  try {
+    return await runner.repair(PINNED_DOWNLOAD_DEPS, tracked);
+  } catch (err) {
+    endWrite();
+    throw err;
+  }
 }
 
 /**

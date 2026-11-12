@@ -2,7 +2,7 @@
 name: sheet-detents-are-phone-only
 description: Phone sheet detents (_overlay_sheet.html detents, data-sheet-detents, bindDetents); forms take none; sheet covers, never moves, map controls
 status: current
-last-reviewed: 2026-10-31
+last-reviewed: 2026-11-10
 ---
 
 # Sheet detents are phone-only, and forms take none
@@ -13,9 +13,11 @@ a sheet that declares detents shows a drag handle and rests at one of those
 heights; at `sm` and above it is the inset desktop panel, unchanged, and
 the handle is hidden. Only a thing tapped on the map (a region, a route, a
 resort, a pin, a weather symbol) declares detents, and only the ones it can
-use. A list opened from a roundel (favourites, observations, routes,
-downloads) and a form (report, add favourite, sign in) declare none and
-keep their one docked state.
+use. A list opened from a roundel (downloads, the terrain filter) and a
+form (sign in) declare none and keep their one docked state. Since
+SNOW-1486 the four Saved sheets are the exception: they declare half and
+full as the phone card, which covers no roundel, and their forms mark
+`data-sheet-fit` ([`one-sheet-design-on-a-phone.md`](one-sheet-design-on-a-phone.md)).
 
 **Why roundel lists stay cards.** Hugo's review of SNOW-1102 (17 Oct
 2026): the slide-up sheet is for what the reader tapped on the map. A list

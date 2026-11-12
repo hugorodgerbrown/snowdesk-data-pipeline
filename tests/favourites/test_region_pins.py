@@ -248,23 +248,24 @@ class TestRegionPinSurfaces:
         response = client.get(reverse("favourites:region_list"), **HTMX)
         assert response.status_code == 403
 
-    def test_region_pin_is_not_in_the_places_list(self, client: Client) -> None:
-        """SNOW-814: the pins sheet lists places; a region is not one."""
+    def test_region_pin_is_not_a_pin_row_in_places(self, client: Client) -> None:
+        """SNOW-814: a region is not a place, so it gets no pin row.
+
+        Places (the sheet's only list since SNOW-1481 retired
+        favourites:list) heads a pinned region's group with the region
+        itself; its pins are the rows under it.
+        """
         user = UserFactory.create()
         client.force_login(user)
         region = MicroRegionFactory.create(name="Valais")
         pin = FavouriteFactory.create(user=user, region=region, region_pin=True)
         placed = FavouriteFactory.create(user=user, name="Lac de Vaux")
 
-        content = client.get(reverse("favourites:list"), **HTMX).content.decode()
-        # SNOW-1359: the "Today" block above Places lists every kind, the
-        # region pin included; the Places rows after it still do not.
-        places = content.split('id="favourites-roster-cache"', 1)[1]
+        content = client.get(reverse("favourites:places"), **HTMX).content.decode()
 
-        assert "Lac de Vaux" in places
-        assert f"favourite-{pin.uuid}" not in places
-        assert "Valais" not in places
-        assert str(placed.uuid) in places
+        assert "Lac de Vaux" in content
+        assert f'id="favourite-{pin.uuid}"' not in content
+        assert f'id="favourite-{placed.uuid}"' in content
 
     @override_settings(SEASON_START_DATE=datetime.date(2025, 11, 1))
     @freeze_time("2026-02-17")

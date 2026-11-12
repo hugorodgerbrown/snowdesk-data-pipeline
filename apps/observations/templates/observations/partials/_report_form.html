@@ -7,9 +7,9 @@ report sheet on the map page by report.js.
 
 SNOW-1289: the types come in three families (warning signs, snow surface,
 on the trail), each a group of toggle tiles. The reporter ticks as many as
-are true and taps Share once; every ticked type is a repeated
-observation_type in the body, and report_submit writes one row per type
-under one submission.
+are true and taps Save once (SNOW-1485; it was "Share with everyone
+here"); every ticked type is a repeated observation_type in the body, and
+report_submit writes one row per type under one submission.
 
 SNOW-420: the form no longer submits via HTMX (``hx-post``). A document-
 delegated ``submit`` handler in ``report.js`` intercepts the tap, stamps
@@ -28,6 +28,9 @@ Context:
     location_source : str — one of GPS, GPS_REFINED, MANUAL.
     gps_lat         : float | None — raw device GPS latitude (None on MANUAL path).
     gps_lon         : float | None — raw device GPS longitude (None on MANUAL path).
+    placed          : bool — True when the form was opened from a hold on the map
+                      (``placed=1``, SNOW-1485). The pin was just placed there,
+                      so the Move pin row is left out; × and hold again redoes it.
     families        : list[dict] — one per OBSERVATION_FAMILY: value, label and
                       types, a list of (value, label) pairs (views._form_families).
     submit_url      : str — URL for the POST endpoint.
@@ -44,6 +47,10 @@ Context:
     {# sheet instead of scrolling inside it.                              #}
     class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto"
     aria-label='{% trans "Field observation report" %}'
+    {# SNOW-1486: a task, so on a phone the sheet is as tall as the form, #}
+    {# at most 75dvh, and shrinks to the placing row while the pin moves; #}
+    {# its handle is drawn but inert, so a swipe never loses a report.   #}
+    data-sheet-fit
 >
     {% csrf_token %}
     <input type="hidden" name="observed_at" value="">
@@ -55,38 +62,43 @@ Context:
     {% if gps_lon is not None %}<input type="hidden" name="gps_lon" value="{{ gps_lon }}">{% endif %}
 
     {% trans "Report" as report_form_title %}
-    {% include "includes/_sheet_header.html" with title=report_form_title close_action="dismiss" %}
+    {% include "includes/_sheet_header.html" with title=report_form_title close_action="dismiss" title_class="text-lg font-semibold" %}
 
     {# SNOW-1295: WHERE, then WHAT. The tiles fill most of a phone, so  #}
     {# while the reporter places the pin (Move pin, or straight away     #}
     {# with no GPS) the "what" block steps aside and the sheet shrinks   #}
     {# to the placing row, leaving the map and the pin in view.          #}
     {# report.js toggles the two blocks' `hidden`; nothing else moves.   #}
-    <div class="flex items-center gap-3 text-sm" data-report-where>
-        {# report.js swaps this text for data-placed-label after Done once #}
-        {# the pin has moved — the GPS wording and region no longer hold.  #}
-        <span
-            class="min-w-0 flex-1 text-text-2"
-            data-report-where-text
-            data-placed-label="{% trans 'Placed where you put the pin.' %}"
-        >
-            {% if has_coords %}
-                {% if location_source == "GPS" or location_source == "GPS_REFINED" %}
-                    {% trans "Using current GPS location" %}
-                {% endif %}
-                {% if region %}
-                    &mdash; {% blocktrans with name=region.name %}We think you're in <strong
+    {# SNOW-1485: a form opened from a hold has no where row — the pin   #}
+    {# was placed a moment ago. report.js's toggles use `?.`, so the     #}
+    {# row's absence is safe there.                                      #}
+    {% if not placed %}
+        <div class="flex items-center gap-3 text-sm" data-report-where>
+            {# report.js swaps this text for data-placed-label after Done once #}
+            {# the pin has moved — the GPS wording and region no longer hold.  #}
+            <span
+                class="min-w-0 flex-1 text-text-2"
+                data-report-where-text
+                data-placed-label="{% trans 'Placed where you put the pin.' %}"
+            >
+                {% if has_coords %}
+                    {% if location_source == "GPS" or location_source == "GPS_REFINED" %}
+                        {% trans "Using current GPS location" %}
+                    {% endif %}
+                    {% if region %}
+                        &mdash; {% blocktrans with name=region.name %}We think you're in <strong
                         >{{ name }}</strong>.{% endblocktrans %}
+                    {% else %}
+                        &mdash; {% trans "We couldn't match your location to a known region." %}
+                    {% endif %}
                 {% else %}
-                    &mdash; {% trans "We couldn't match your location to a known region." %}
+                    {% trans "GPS not available — move the map to set your location" %}
                 {% endif %}
-            {% else %}
-                {% trans "GPS not available — move the map to set your location" %}
-            {% endif %}
-        </span>
-        {% trans "Move pin" as move_pin_label %}
-        {% include "includes/_button.html" with label=move_pin_label button_type="button" variant="secondary" size="compact" data_action="refine-location" only %}
-    </div>
+            </span>
+            {% trans "Move pin" as move_pin_label %}
+            {% include "includes/_button.html" with label=move_pin_label button_type="button" variant="secondary" size="compact" data_action="refine-location" only %}
+        </div>
+    {% endif %}
     <div class="flex flex-col gap-3" data-report-placing hidden>
         <p class="text-sm text-text-1">{% trans "Move the map so the pin sits where you saw it." %}</p>
         {% trans "Done" as place_done_label %}
@@ -124,16 +136,19 @@ Context:
             </fieldset>
         {% endfor %}
 
-        {% trans "Share with everyone here" as report_share_label %}
-        {% include "includes/_button.html" with label=report_share_label button_type="submit" full_width=True only %}
-
-        <button
-            type="button"
-            class="text-sm font-medium rounded-tag text-text-2 border border-text-3/30 hover:text-text-1 hover:border-text-2 transition-colors px-4 py-2"
-            data-action="dismiss"
-        >
-            {% trans "Cancel" %}
-        </button>
+        {# SNOW-1485: Save and Cancel side by side, held at the foot of the     #}
+        {# form's own scroll region (`sticky bottom-0`; the form is the        #}
+        {# overflow-y-auto element), so the send is in view however many tiles #}
+        {# sit above it. bg-card hides the tiles scrolling under it.           #}
+        <div class="sticky bottom-0 flex flex-col gap-2 bg-card pt-2" data-report-footer>
+            <div class="grid grid-cols-2 gap-2">
+                {% trans "Save" as report_save_label %}
+                {% include "includes/_button.html" with label=report_save_label button_type="submit" full_width=True only %}
+                {% trans "Cancel" as report_cancel_label %}
+                {% include "includes/_button.html" with label=report_cancel_label button_type="button" variant="secondary" full_width=True data_action="dismiss" only %}
+            </div>
+            <p class="text-center text-meta text-text-3">{% trans "Observations are visible to other users." %}</p>
+        </div>
     </div>
 </form>
 {# Inert clone source for the optimistic confirmation (SNOW-420) — report.js  #}

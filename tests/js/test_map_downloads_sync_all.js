@@ -151,6 +151,42 @@ describe('verdict', () => {
 
     expect(syncAll.verdict(undefined, TODAY).verdict).toBe('unknown');
   });
+
+  // SNOW-1483: the dot reads terrain, as the inventory's Terrain row does.
+  it('gives terrain as the reason for an area saved without it that should hold it', async () => {
+    const syncAll = await loadModule();
+    window.pwaBasemapDownloads = { terrainExpected: vi.fn(() => true) };
+    const record = readyRecord();
+
+    expect(syncAll.verdict(record, TODAY)).toEqual({ verdict: 'refresh', reason: 'terrain' });
+    expect(window.pwaBasemapDownloads.terrainExpected).toHaveBeenCalledWith(record);
+    // The row's inventory says the same thing, from the same flag.
+    const rows = window.pwaOfflineJourneyCore.inventoryFor(record, TODAY, {
+      terrainAvailable: true,
+      signedIn: true,
+      principal: PRINCIPAL,
+    });
+    expect(rows.find((row) => row.key === 'terrain').status).toBe('missing');
+    expect(rows.find((row) => row.key === 'map').status).toBe('yes');
+  });
+
+  it('says ready for an area with its terrain, or one that should hold none', async () => {
+    const syncAll = await loadModule();
+    window.pwaBasemapDownloads = { terrainExpected: () => true };
+    expect(syncAll.verdict(readyRecord({ terrain: true }), TODAY).verdict).toBe('ready');
+
+    window.pwaBasemapDownloads = { terrainExpected: () => false };
+    expect(syncAll.verdict(readyRecord(), TODAY).verdict).toBe('ready');
+  });
+
+  it('keeps a missing map red whatever its terrain', async () => {
+    const syncAll = await loadModule();
+    window.pwaBasemapDownloads = { terrainExpected: () => true };
+    const record = readyRecord();
+    record.verified = { map: 'no', reason: 'tiles', at: TODAY.toISOString() };
+
+    expect(syncAll.verdict(record, TODAY).verdict).toBe('open-map');
+  });
 });
 
 describe('press — Sync all', () => {
@@ -170,7 +206,13 @@ describe('press — Sync all', () => {
 
     expect(order).toEqual(['drain', 'a', 'b']);
     expect(result).toMatchObject({ total: 2, ready: 2, waiting: 0 });
-    expect(syncAll.shortfall(result)).toBe('');
+    expect(syncAll.closing(result, ['a', 'b'])).toEqual({
+      areas: [
+        { id: 'a', outcome: 'ready' },
+        { id: 'b', outcome: 'ready' },
+      ],
+      queue: '',
+    });
   });
 
   it('names the area in flight while it runs, and nothing once it settles', async () => {
@@ -190,12 +232,20 @@ describe('press — Sync all', () => {
     const running = syncAll.press(['a'], () => seen.push(syncAll.state()));
     await vi.waitFor(() => expect(syncAll.state().current).toBe('a'));
     expect(syncAll.state().running).toBe(true);
-    expect(syncAll.state().label).toBe('Syncing… (1 of 1)');
+    expect(syncAll.state().label).toBe('Syncing 1 of 1 areas');
 
     release();
     await running;
 
-    expect(syncAll.state()).toEqual({ running: false, current: '', label: '' });
+    expect(syncAll.state()).toEqual({
+      running: false,
+      current: '',
+      label: '',
+      index: 0,
+      count: 0,
+      step: null,
+      pending: [],
+    });
     // One repaint to start, one per step, one to settle.
     expect(seen[0].running).toBe(true);
     expect(seen.at(-1).running).toBe(false);
@@ -232,10 +282,16 @@ describe('press — Sync all', () => {
 
     const result = await syncAll.press(['a', 'b'], () => {});
 
-    expect(syncAll.shortfall(result)).toBe('1 of 2 ready. 1 change still waiting to send');
+    expect(syncAll.closing(result, ['a', 'b'])).toEqual({
+      areas: [
+        { id: 'a', outcome: 'ready' },
+        { id: 'b', outcome: 'unfinished' },
+      ],
+      queue: '1 change still waiting to send',
+    });
   });
 
-  it('settles as a shortfall when the sync bridge throws', async () => {
+  it('settles as not finished when the sync bridge throws', async () => {
     installDb({});
     window.pwaBasemapDownloads = { syncArea: vi.fn(async () => Promise.reject(new Error('x'))) };
     const syncAll = await loadModule();
@@ -243,7 +299,114 @@ describe('press — Sync all', () => {
     const result = await syncAll.press(['a'], () => {});
 
     expect(syncAll.state().running).toBe(false);
-    expect(syncAll.shortfall(result)).not.toBe('');
+    expect(syncAll.closing(result, ['a']).areas).toEqual([{ id: 'a', outcome: 'unfinished' }]);
+  });
+
+  // SNOW-1487: the run says which area of how many it is on, and how far.
+  it('says which area of how many it is on, its step and counts, and which wait', async () => {
+    installDb({});
+    let release;
+    let stage;
+    window.pwaBasemapDownloads = {
+      syncArea: vi.fn(async (id, onStage) => {
+        if (id !== 'b') return { tiles: 'none', tilesHeld: true, content: true, steps: [] };
+        stage = onStage;
+        return new Promise((resolve) => {
+          release = () => resolve({ tiles: 'none', tilesHeld: true, content: true, steps: [] });
+        });
+      }),
+    };
+    const syncAll = await loadModule();
+    const changes = [];
+
+    const running = syncAll.press(['a', 'b', 'c'], (change) => changes.push(change));
+    await vi.waitFor(() => expect(syncAll.state().current).toBe('b'));
+    stage('map', { done: 0, total: 528 });
+    stage('map', { done: 212, total: 528 });
+
+    expect(syncAll.state()).toMatchObject({
+      running: true,
+      current: 'b',
+      label: 'Syncing 2 of 3 areas',
+      index: 2,
+      count: 3,
+      step: { name: 'map', done: 212, total: 528 },
+      pending: ['c'],
+    });
+    // A move of the counts alone is a progress repaint.
+    expect(changes.at(-1)).toEqual({ progress: true });
+
+    release();
+    await running;
+  });
+
+  it('a failed addition is "did not finish", and a stop "stopped"', async () => {
+    const syncAll = await loadModule();
+    const step = { step: 'basemap', reason: 'network', done: 0, total: 10 };
+
+    expect(syncAll.outcomeOf({ tiles: 'none', content: true, steps: [step] })).toBe('unfinished');
+    expect(syncAll.outcomeOf({ tiles: 'none', content: true, steps: [] })).toBe('ready');
+    expect(syncAll.outcomeOf({ tiles: 'none', content: false, steps: [], cancelled: true })).toBe('stopped');
+    expect(syncAll.outcomeOf({ tiles: 'absent', content: false })).toBe('absent');
+  });
+
+  it('Stop ends the area in flight and skips the rest', async () => {
+    installDb({});
+    let seenSignal;
+    window.pwaBasemapDownloads = {
+      syncArea: vi.fn(
+        (_id, _onStage, signal) =>
+          new Promise((resolve) => {
+            seenSignal = signal;
+            signal.addEventListener('abort', () =>
+              resolve({ tiles: 'unknown', content: false, steps: [], cancelled: true }),
+            );
+          }),
+      ),
+    };
+    const syncAll = await loadModule();
+
+    const running = syncAll.press(['a', 'b', 'c'], () => {});
+    await vi.waitFor(() => expect(syncAll.state().current).toBe('a'));
+    syncAll.stop();
+    const result = await running;
+
+    expect(seenSignal.aborted).toBe(true);
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledTimes(1);
+    expect(result.skipped).toEqual(['b', 'c']);
+    expect(syncAll.closing(result, ['a', 'b', 'c']).areas.map((area) => area.outcome)).toEqual([
+      'stopped',
+      'stopped',
+      'stopped',
+    ]);
+    expect(syncAll.state().running).toBe(false);
+  });
+
+  it('stops when the page goes out of sight', async () => {
+    installDb({});
+    let seenSignal;
+    window.pwaBasemapDownloads = {
+      syncArea: vi.fn(
+        (_id, _onStage, signal) =>
+          new Promise((resolve) => {
+            seenSignal = signal;
+            signal.addEventListener('abort', () => resolve({ tiles: 'unknown', content: false, cancelled: true }));
+          }),
+      ),
+    };
+    const syncAll = await loadModule();
+
+    const running = syncAll.press(['a'], () => {});
+    await vi.waitFor(() => expect(syncAll.state().current).toBe('a'));
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await running;
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+    }
+
+    expect(seenSignal.aborted).toBe(true);
   });
 
   it('does nothing on a page with no sync bridge', async () => {
@@ -328,6 +491,6 @@ describe('one content run at a time (SNOW-1416)', () => {
     window.pwaBasemapDownloads = { contentRun: run, syncArea: vi.fn() };
     const syncAll = await loadModule();
 
-    expect(syncAll.state()).toEqual({ running: false, current: 'custom-a1', label: '' });
+    expect(syncAll.state()).toMatchObject({ running: false, current: 'custom-a1', label: '' });
   });
 });

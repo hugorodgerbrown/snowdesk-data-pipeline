@@ -598,6 +598,20 @@ describe('repair', () => {
 
     expect(o.finish.mock.calls[0][0]).toEqual({ ok: 1, failed: 0, bytes: 900 });
   });
+
+  it('paints the counts beside the percentage (SNOW-1487)', async () => {
+    const d = deps({
+      warmCache: vi.fn(async (_urls, opts) => {
+        opts.onProgress(212, 528, [0], 4096);
+        return { ok: 528, failed: 0, bytes: 4096 };
+      }),
+    });
+    const o = repairOptions();
+
+    await repairAndSettle(d, o);
+
+    expect(o.paint).toHaveBeenCalledWith('busy', 40, 4096, { done: 212, total: 528 });
+  });
 });
 
 /*
@@ -1111,5 +1125,84 @@ describe('elevation tiles (SNOW-1453)', () => {
 
     expect(d.warmCache.mock.calls[0][0]).toEqual(['/api/feed', '/tile/1', '/tile/2']);
     expect(o.finish.mock.calls[0][2].elevation).toBe('');
+  });
+});
+
+describe('more than one map (SNOW-1478)', () => {
+  const EXTRA = {
+    key: 'openfreemap_liberty',
+    tileSources: [['https://ofm/{z}/{x}/{y}.pbf']],
+    renderDeps: ['https://ofm/style.json'],
+  };
+
+  /** The fake core, with the one helper the extra maps need. */
+  function coreWithRanges() {
+    const base = deps().core();
+    return {
+      ...base,
+      rangesToTileURLs: (spec) => (spec[0][0].includes('ofm') ? ['/ofm/1'] : []),
+    };
+  }
+
+  it("adds each extra map's documents and tiles after the grid's own tiles", async () => {
+    const d = deps({
+      core: vi.fn(() => coreWithRanges()),
+      basemapKey: vi.fn(() => 'swisstopo_winter'),
+      extraBasemaps: vi.fn(() => [EXTRA]),
+    });
+
+    await runAndSettle(d, options());
+
+    expect(d.warmCache.mock.calls[0][0]).toEqual([
+      '/api/feed',
+      '/tile/1',
+      '/tile/2',
+      'https://ofm/style.json',
+      '/ofm/1',
+    ]);
+    // The grid's offset is untouched.
+    expect(d.progressGrid).toHaveBeenCalledWith(expect.anything(), 1);
+  });
+
+  it('prices every map in the pre-flights', async () => {
+    const d = deps({ core: vi.fn(() => coreWithRanges()), extraBasemaps: vi.fn(() => [EXTRA]) });
+
+    await runAndSettle(d, options({ mb: 12 }));
+
+    // One source each at the stub's simple multiple: 12 + 12.
+    expect(d.planBudget).toHaveBeenCalledWith('region:ch-4115', 24);
+  });
+
+  it('hands finish every map, primary first', async () => {
+    const d = deps({
+      core: vi.fn(() => coreWithRanges()),
+      basemapKey: vi.fn(() => 'swisstopo_winter'),
+      renderDeps: vi.fn(() => ['https://swiss/style.json']),
+      extraBasemaps: vi.fn(() => [EXTRA]),
+    });
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(o.finish.mock.calls[0][2].basemaps).toEqual([
+      {
+        key: 'swisstopo_winter',
+        template: [['https://tiles/{z}/{x}/{y}.png']],
+        deps: ['https://swiss/style.json'],
+      },
+      { key: 'openfreemap_liberty', template: EXTRA.tileSources, deps: EXTRA.renderDeps },
+    ]);
+  });
+
+  it('saves one map, as before, with no extra maps', async () => {
+    const d = deps();
+    const o = options();
+
+    await runAndSettle(d, o);
+
+    expect(o.finish.mock.calls[0][2].basemaps).toEqual([
+      { key: 'openfreemap_liberty', template: [['https://tiles/{z}/{x}/{y}.png']], deps: [] },
+    ]);
+    expect(d.planBudget).toHaveBeenCalledWith('region:ch-4115', 12);
   });
 });

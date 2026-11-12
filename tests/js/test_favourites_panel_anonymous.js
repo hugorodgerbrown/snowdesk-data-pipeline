@@ -18,13 +18,13 @@ import '../../static/js/i18n_strings.js';
 import '../../static/js/map_sheet.js';
 
 const SIGNIN_URL = '/accounts/sign-in/';
-const LIST_URL = '/favourites/partials/list/';
+const PLACES_URL = '/favourites/partials/places/';
 
 document.body.innerHTML = `
   <button id="favourite-add-btn"
           data-favourites-eligible="false"
           data-signin-url="${SIGNIN_URL}"
-          data-favourite-list-url="${LIST_URL}"></button>
+          data-favourite-places-url="${PLACES_URL}"></button>
   <div id="favourite-sheet" hidden></div>
   <template id="favourite-list-template">
     <div>
@@ -38,6 +38,7 @@ document.body.innerHTML = `
 globalThis.htmx = { ajax: vi.fn(() => Promise.resolve()), process: vi.fn() };
 
 await import('../../static/js/favourites.js');
+await import('../../static/js/saved_panel.js');
 
 const btn = document.getElementById('favourite-add-btn');
 const sheet = document.getElementById('favourite-sheet');
@@ -93,5 +94,21 @@ describe('anonymous tap on the favourites roundel', () => {
     expect(sheet.hasAttribute('hidden')).toBe(false);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(sheet.hasAttribute('hidden')).toBe(true);
+  });
+});
+
+describe('anonymous Save pin from the hold bar (SNOW-1485)', () => {
+  it('gets the same sign-in CTA, and arms no placement', () => {
+    window.pwaFavouritesSheet.close();
+    window.PlacePicker = { activate: vi.fn(), deactivate: vi.fn() };
+
+    window.pwaFavouritesSheet.createAt(46.25, 7.5);
+
+    expect(sheet.hidden).toBe(false);
+    expect(sheet.querySelector('#favourite-create-form')).toBeNull();
+    expect(sheet.querySelector(`a[href^="${SIGNIN_URL}?next="]`)).not.toBeNull();
+    expect(window.PlacePicker.activate).not.toHaveBeenCalled();
+    expect(Object.isFrozen(window.pwaFavouritesSheet)).toBe(true);
+    delete window.PlacePicker;
   });
 });

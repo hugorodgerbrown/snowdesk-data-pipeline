@@ -322,8 +322,8 @@ def test_error_reporter_loads_before_the_map_bundle() -> None:
 # SNOW-1460 — the winter map beyond Switzerland, after the bundle
 # ---------------------------------------------------------------------------
 
+# SNOW-1478 moved swisstopo_extent.js into the map bundle.
 _BEYOND_ORDER = [
-    "swisstopo_extent.js",
     "beyond_switzerland_core.js",
     "osm_clip_core.js",
     "alpine_relief_core.js",
@@ -336,10 +336,10 @@ _BEYOND_ORDER = [
 def test_beyond_switzerland_scripts_load_after_the_map_bundle_in_order(
     bundles: bool, settings: object
 ) -> None:
-    """SNOW-1460: the five load after the map bundle and the 3D view, in order.
+    """SNOW-1460: the four load after the map bundle and the 3D view, in order.
 
     ``map_beyond_switzerland.js`` takes ``window.snowdeskMap`` and hands the
-    3D view its coverage, so it follows both; the extent and the three cores
+    3D view its coverage, so it follows both; the three cores
     it reads come first. The same in development (one tag per member) and
     production (the built bundle).
     """
@@ -360,7 +360,7 @@ def test_beyond_switzerland_scripts_load_after_the_map_bundle_in_order(
         # The built bundle is the one ``/static/bundles/`` tag; everything in
         # ``rendered`` (``/static/js/``) after it is what follows it.
         bundle_at = content.index("/static/bundles/map.bundle.js")
-        assert bundle_at < content.index("/static/js/swisstopo_extent.js")
+        assert bundle_at < content.index("/static/js/beyond_switzerland_core.js")
     else:
         for before in (BOOT_FILE, *_map_bundle()):
             assert rendered.index(before) < first, before

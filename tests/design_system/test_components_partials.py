@@ -16,6 +16,8 @@ for partials, test client for full-page templates.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest
@@ -536,3 +538,223 @@ class TestComponentLibraryWeatherIcons:
         for bucket in WEATHER_ICON_BUCKETS_WITH_DAY_NIGHT:
             assert weather_icon_filename(bucket, "day") == f"{bucket}-day.svg"
             assert weather_icon_filename(bucket, "night") == f"{bucket}-night.svg"
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1479 — icon segmented options, the Saved tabs and their fixtures
+# ---------------------------------------------------------------------------
+
+
+class TestIconSegmentedOption:
+    """includes/_segmented_option.html with an ``icon_template``."""
+
+    def _render(self, checked: bool) -> str:
+        return render_to_string(
+            "includes/_segmented_option.html",
+            {
+                "name": "saved-tab",
+                "value": "routes",
+                "label": "Routes",
+                "icon_template": "includes/_icon_route.html",
+                "checked": checked,
+            },
+        )
+
+    def test_the_label_is_in_the_accessible_name_on_every_option(self) -> None:
+        """Inside the <label> that wraps the radio, so it names it, checked or not."""
+        for checked in (False, True):
+            html = self._render(checked)
+            assert html.index("<label") < html.index("Routes") < html.index("</label>")
+            assert '<span class="sr-only group-has-checked:not-sr-only">' in html
+
+    def test_the_label_is_shown_only_when_checked(self) -> None:
+        """Visually hidden until its radio is checked; the glyph always shows."""
+        html = self._render(False)
+        assert 'class="group cursor-pointer"' in html
+        assert "<svg" in html
+        assert 'aria-hidden="true"' in html
+
+    def test_a_text_option_is_unchanged(self) -> None:
+        html = render_to_string(
+            "includes/_segmented_option.html",
+            {"name": "theme", "value": "dark", "label": "Dark"},
+        )
+        assert "sr-only group-has-checked" not in html
+        assert 'class="cursor-pointer"' in html
+
+
+class TestSavedTabs:
+    """includes/_saved_tabs.html: four icon tabs, one checked (SNOW-1479)."""
+
+    def test_four_tabs_and_the_current_one_checked(self) -> None:
+        html = render_to_string(
+            "includes/_saved_tabs.html",
+            {"saved_tab": "trips", "favourites_eligible": True},
+        )
+        values = [
+            v
+            for v in ("places", "routes", "trips", "observations")
+            if f'value="{v}"' in html
+        ]
+        assert values == ["places", "routes", "trips", "observations"]
+        checked = re.findall(r'value="(\w+)"\s+class="peer sr-only"\s+checked', html)
+        assert checked == ["trips"]
+        # SNOW-1481: drawn on every screen, not the installed app alone.
+        assert "app-only" not in html
+
+    def test_no_trips_option_for_a_reader_who_is_not_signed_in(self) -> None:
+        html = render_to_string("includes/_saved_tabs.html", {"saved_tab": "places"})
+        assert 'value="trips"' not in html
+        assert 'value="observations"' in html
+
+    def test_the_preview_is_not_app_only(self) -> None:
+        html = render_to_string(
+            "includes/_saved_tabs.html", {"saved_tab": "places", "preview": True}
+        )
+        assert "app-only" not in html
+
+
+class TestOneSheetDesign:
+    """SNOW-1486: the Saved header's two layouts, the Help handle, the card."""
+
+    def _saved_header(self) -> str:
+        return render_to_string(
+            "includes/_sheet_header.html",
+            {
+                "title": "Saved items",
+                "close_action": "dismiss",
+                "title_class": "text-lg font-semibold",
+                "lead_template": "includes/_saved_tabs.html",
+                "actions_template": "includes/_saved_add_roundel.html",
+                "saved_tab": "places",
+                "cta_label": "Add a favourite",
+            },
+        )
+
+    def test_the_saved_header_is_title_and_close_over_tabs_and_plus(self) -> None:
+        html = self._saved_header()
+        assert "[grid-template-areas:'title_title_close'_'lead_actions_.']" in html
+        assert "sm:[grid-template-areas:'lead_actions_close']" in html
+        assert re.search(
+            r"\[grid-area:title\] sm:hidden[^\"]*\"\s*>\s*Saved items", html
+        )
+        assert html.index("[grid-area:lead]") < html.index("data-saved-tabs")
+        assert html.index("data-saved-tabs") < html.index("[grid-area:actions]")
+        assert html.index("[grid-area:actions]") < html.index(
+            'data-testid="saved-add-roundel"'
+        )
+        close = re.search(r'<button[^>]*data-action="dismiss"[^>]*>', html, re.S)
+        assert close
+        assert "[grid-area:close]" in close.group(0)
+        assert "app-hidden" not in html
+        assert "data-sheet-handle" not in html
+
+    def test_a_plain_header_is_unchanged(self) -> None:
+        """No lead_template: the one row of icon, title and × as before."""
+        html = render_to_string(
+            "includes/_sheet_header.html",
+            {"title": "Report", "close_action": "dismiss"},
+        )
+        assert (
+            '<div class="flex items-center justify-between gap-4 px-2 pt-1 pb-3">'
+            in html
+        )
+        assert '<span class="flex min-w-0 items-center gap-2.5">' in html
+        assert "grid-area" not in html
+        assert "data-sheet-handle" not in html
+        assert "data-sheet-drag" not in html
+
+    def test_the_help_header_draws_a_phone_handle(self) -> None:
+        html = render_to_string(
+            "includes/_sheet_header.html",
+            {"title": "Help", "close_action": "help-menu-close", "handle": True},
+        )
+        handle = re.search(r"<div\s+data-sheet-handle[^>]*>", html, re.S)
+        assert handle
+        assert "sm:hidden" in handle.group(0)
+        assert 'aria-hidden="true"' in handle.group(0)
+        assert html.index("data-sheet-handle") < html.index("Help")
+        assert 'data-action="help-menu-close"' in html
+
+    def test_the_tabs_carry_no_trim_of_their_own(self) -> None:
+        """The header gives the tabs' cell the -12px trim from sm."""
+        html = render_to_string("includes/_saved_tabs.html", {"saved_tab": "places"})
+        assert '<fieldset class="min-w-0 flex-1" data-saved-tabs>' in html
+
+
+@pytest.mark.django_db
+class TestSnow1479Fixtures:
+    """Every new component's fixtures render in the library."""
+
+    @pytest.mark.parametrize(
+        "slug",
+        [
+            "saved-tabs",
+            "saved-add-roundel",
+            "route-add-menu",
+            "trip-route-picker",
+            "places-list",
+            "trip-panel-rows",
+            "segmented-option",
+            "overflow-menu",
+            "sheet-header",
+            "overlay-sheet",
+        ],
+    )
+    def test_renders(self, admin_client: Client, slug: str) -> None:
+        response = admin_client.get(
+            f"/partials/_components/{slug}/", HTTP_HX_REQUEST="true"
+        )
+        assert response.status_code == 200, slug
+
+    def test_the_route_add_menu_shows_its_three_ways(
+        self, admin_client: Client
+    ) -> None:
+        response = admin_client.get(
+            "/partials/_components/route-add-menu/", HTTP_HX_REQUEST="true"
+        )
+        html = response.content.decode()
+        assert 'id="route-add-menu-trigger"' in html
+        for title in ("Find a route", "Create a route", "Upload a GPX"):
+            assert title in html
+
+    def test_the_trip_route_picker_is_previewed_with_its_label(
+        self, admin_client: Client
+    ) -> None:
+        response = admin_client.get(
+            "/partials/_components/trip-route-picker/", HTTP_HX_REQUEST="true"
+        )
+        html = response.content.decode()
+        assert 'id="trip-route-picker-trigger"' in html
+        assert "Plan a trip from" in html
+        assert "app-only" not in html
+
+
+class TestMapHoldBar:
+    """includes/_map_hold_bar.html: the hold bar's body (SNOW-1485)."""
+
+    def test_the_line_the_close_and_both_actions(self) -> None:
+        html = render_to_string("includes/_map_hold_bar.html")
+        assert "Move the map to fine-tune." in html
+        assert 'data-action="dismiss"' in html
+        actions = re.findall(r'data-hold-action="([\w-]+)"', html)
+        assert actions == ["save-pin", "report"]
+        assert "Save pin" in html
+        assert "Report" in html
+
+    def test_each_action_carries_its_roundel_glyph(self) -> None:
+        html = render_to_string("includes/_map_hold_bar.html")
+        save, report = re.split(r'data-hold-action="report"', html)
+        # The star is a 24-grid stroke; the binoculars a 512-grid fill.
+        assert 'viewBox="0 0 24 24"' in save.split('data-hold-action="save-pin"')[1]
+        assert 'viewBox="0 0 512' in report
+
+    @pytest.mark.django_db
+    def test_the_library_renders_it(self, admin_client: Client) -> None:
+        response = admin_client.get(
+            "/partials/_components/map-hold-bar/", HTTP_HX_REQUEST="true"
+        )
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert 'data-hold-action="save-pin"' in html
+        assert "Move the map to fine-tune." in html

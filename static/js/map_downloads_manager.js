@@ -324,11 +324,47 @@
     // action: a row cloned from a <template> has no name until buildRow
     // fills it.
     'sync-row-label': 'Sync %(name)s now',
-    'sync-failed': "That area couldn't be brought up to date. Try again.",
+    // SNOW-1487: the toast a sync ends on, one clause per area, in place
+    // of SNOW-951's one "couldn't be brought up to date" — see
+    // `syncOutcomeToast`.
+    'sync-done-ready': '%(name)s: up to date',
+    'sync-done-unfinished': "%(name)s: didn't finish",
+    'sync-done-stopped': '%(name)s: stopped',
+    'sync-done-absent': '%(name)s: download it again',
+    // SNOW-1487: the line under Sync all — see `paintSyncFoot`.
+    'sync-foot': 'Last synced %(when)s',
+    'sync-foot-unfinished-one': "Last synced %(when)s · 1 area didn't finish",
+    'sync-foot-unfinished': "Last synced %(when)s · %(count)s areas didn't finish",
+    // SNOW-1487: the row a sync is on, and the rows still to come — see
+    // `paintRowProgress`.
+    'row-step-map': 'Saving the map',
+    'row-step-terrain': 'Saving terrain',
+    'row-step-bulletins': 'Saving bulletins',
+    'row-step-weather': 'Saving weather',
+    'row-step-things': 'Saving your trips and pins',
+    'row-step-counts': '%(done)s of %(total)s',
+    'row-waiting': 'Waiting',
+    // SNOW-1487: the notice under a row whose last sync could not add the
+    // Swiss map or the terrain data — see `paintStepNotices`.
+    'step-part-basemap': 'The Swiss map',
+    'step-part-terrain': 'Terrain',
+    'step-notice-network': "%(part)s didn't finish: the connection dropped.",
+    'step-notice-interrupted': '%(part)s stopped part way.',
+    'step-notice-budget': '%(part)s would take you over your download limit.',
+    'step-notice-quota': "%(part)s won't fit: this phone is nearly full.",
+    'step-notice-plan': "%(part)s couldn't be reached.",
+    'step-remedy-network': 'Try again',
+    'step-remedy-interrupted': 'Carry on',
+    'step-remedy-plan': 'Try again',
+    'step-remedy-budget': 'Change limit',
+    // SNOW-1488: the header menu's Copy report.
+    'report-copied': 'Report copied. Paste it into a message to send it.',
+    'report-copy-failed': "The report couldn't be copied.",
     // SNOW-1420: each row's offline answer — see `paintRowAnswer`.
     'area-status-ready': 'Works offline',
     'area-reason-conditions': 'Bulletins out of date',
     'area-reason-things': 'Some trips or pins missing',
+    'area-reason-terrain': 'Terrain not saved',
     'area-status-open-map': 'Map data missing',
     'area-status-unknown': 'Not checked yet',
     'area-status-running': 'Syncing…',
@@ -351,6 +387,9 @@
     'inventory-status-partial': 'Needs a sync',
     'inventory-status-missing': 'Missing',
     'inventory-status-unknown': 'Not checked yet',
+    // SNOW-1487: the Swisstopo map an area in Switzerland still lacks.
+    'inventory-swiss': 'Swiss map',
+    'inventory-not-added': 'Not added yet',
     // SNOW-932: the subtitle clause for a row whose CONTENT half fell
     // short. A separate word from 'kind-incomplete' on purpose — this
     // row's map DRAWS and the area IS available offline; it is the
@@ -606,7 +645,10 @@
       if (row.orphaned || row.onDevice === false) continue;
       const isActive = !!activeKey && row.basemapKey === activeKey;
       const depURLs = [
-        ...bridge.areaRenderDependencyUrls(row.deps, isActive),
+        // SNOW-1478: over every map the row holds, where the bridge can.
+        ...(typeof bridge.areaAllRenderDependencyUrls === 'function'
+          ? bridge.areaAllRenderDependencyUrls(row)
+          : bridge.areaRenderDependencyUrls(row.deps, isActive)),
         // SNOW-1072: and the terrain-class tiles, for a row whose area
         // includes terrain data. Empty for every other row, so an area
         // downloaded without the opt-in is never judged on them. Derived
@@ -1187,6 +1229,88 @@
       running.classList.toggle('hidden', !state.running);
       if (state.running && state.label) running.textContent = state.label;
     }
+    // SNOW-1487: Stop, while it runs.
+    const stop = /** @type {HTMLElement|null} */ (sheet.querySelector('[data-downloads-sync-stop]'));
+    if (stop) stop.hidden = button.hidden || !state.running;
+    paintSyncFoot(rows, button.hidden || state.running);
+  }
+
+  /**
+   * SNOW-1487: the line under Sync all — when the areas on this device
+   * were last synced (the newest `verified.at`) and how many of them did
+   * not finish (a non-empty `verified.steps`). Read from the records, so
+   * it says the same after a reload; hidden while a run is going, and
+   * with nothing synced yet.
+   *
+   * @param {Array<{id: string, onDevice?: boolean, orphaned?: boolean}>} rows
+   * @param {boolean} hide
+   * @returns {void}
+   */
+  function paintSyncFoot(rows, hide) {
+    const foot = /** @type {HTMLElement|null} */ (sheet.querySelector('[data-downloads-sync-foot]'));
+    if (!foot) return;
+    const stamp = window.pwaCachedStampCore;
+    let newest = '';
+    let unfinished = 0;
+    for (const id of syncableIds(rows)) {
+      const record = /** @type {any} */ (areaRecords.get(id));
+      const verified = record && record.verified;
+      if (!verified || typeof verified.at !== 'string') continue;
+      if (Date.parse(verified.at) > (Date.parse(newest) || 0)) newest = verified.at;
+      if (Array.isArray(verified.steps) && verified.steps.length > 0) unfinished += 1;
+    }
+    const when = newest && stamp ? stamp.formatStamp(newest) : '';
+    foot.hidden = hide || !when;
+    if (foot.hidden) {
+      foot.textContent = '';
+      return;
+    }
+    let key = 'sync-foot';
+    if (unfinished === 1) key = 'sync-foot-unfinished-one';
+    else if (unfinished > 1) key = 'sync-foot-unfinished';
+    foot.textContent = interpolate(STRINGS[key], { when: when, count: unfinished });
+  }
+
+  /**
+   * SNOW-1487: the name a row is listed under, for the closing toast.
+   *
+   * @param {string} id
+   * @returns {string}
+   */
+  function listedLabel(id) {
+    const row = listedRows.find((entry) => entry && entry.id === id);
+    return (row && row.label) || id;
+  }
+
+  /**
+   * SNOW-1487: one area's outcome after a sync — `pwaDownloadsSyncAll`'s
+   * reading where it has loaded, else the two halves' own answer.
+   *
+   * @param {any} result `syncArea`'s answer, or null.
+   * @returns {string}
+   */
+  function syncOutcome(result) {
+    const syncAll = window.pwaDownloadsSyncAll;
+    if (syncAll && typeof syncAll.outcomeOf === 'function' && result) return syncAll.outcomeOf(result);
+    const ok = !!result && (result.tiles === 'ok' || result.tiles === 'none') && !!result.content;
+    return ok ? 'ready' : 'unfinished';
+  }
+
+  /**
+   * SNOW-1487: the toast a sync ends on — each area by name, with how it
+   * went ("Verbier: up to date. Zermatt: didn't finish"), then the queue
+   * line when edits are still waiting.
+   *
+   * @param {Array<{id: string, outcome: string}>} areas
+   * @param {string} [queue]
+   * @returns {string}
+   */
+  function syncOutcomeToast(areas, queue) {
+    const parts = areas
+      .map((area) => interpolate(STRINGS['sync-done-' + area.outcome] || '', { name: listedLabel(area.id) }))
+      .filter(Boolean);
+    if (queue) parts.push(queue);
+    return parts.join('. ');
   }
 
   /**
@@ -1227,12 +1351,54 @@
     }
     const ids = syncableIds(listedRows);
     if (ids.length === 0) return true;
-    syncAll.press(ids, render).then((result) => {
-      const shortfall = syncAll.shortfall(result);
-      if (shortfall) window.MapSheet?.toast(shortfall);
+    // SNOW-1487: a move of the counts alone repaints the row it is on.
+    const onChange = (/** @type {any} */ change) => {
+      if (change && change.progress) repaintRowProgress();
+      else render();
+    };
+    syncAll.press(ids, onChange).then((result) => {
+      if (result && typeof syncAll.closing === 'function') {
+        const closing = syncAll.closing(result, ids);
+        const text = syncOutcomeToast(closing.areas, closing.queue);
+        if (text) window.MapSheet?.toast(text);
+      }
       window.pwaLayerSyncStatus?.refresh();
       window.pwaRegionDownload?.refreshState();
     });
+    return true;
+  }
+
+  /**
+   * SNOW-1487: Stop, under Sync all while it runs.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was Stop.
+   */
+  function _handleSyncStopClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    if (!target || !target.closest || !target.closest('[data-downloads-sync-stop]')) return false;
+    window.pwaDownloadsSyncAll?.stop?.();
+    return true;
+  }
+
+  /**
+   * SNOW-1487: the remedy on a row's step notice — Try again or Carry on
+   * syncs that row, as its own Sync now does; Change limit takes the
+   * reader to the download limit in the header.
+   *
+   * @param {MouseEvent} event
+   * @returns {boolean} Whether this click was a remedy.
+   */
+  function _handleStepRemedyClick(event) {
+    const target = /** @type {HTMLElement} */ (event.target);
+    const button = target && target.closest ? target.closest('[data-row-step-remedy]') : null;
+    if (!button) return false;
+    if (button.getAttribute('data-row-step-remedy') === 'budget') {
+      /** @type {HTMLElement|null} */ (document.getElementById('map-downloads-budget'))?.focus();
+      return true;
+    }
+    const areaId = button.getAttribute('data-area-id') || '';
+    if (areaId) syncRow(areaId, /** @type {HTMLElement} */ (button));
     return true;
   }
 
@@ -1485,6 +1651,8 @@
     'open-map': 'bg-sync-blocked',
     unknown: 'bg-sync-off',
     running: 'bg-accent animate-pulse',
+    // SNOW-1487: a row Sync all has still to reach.
+    waiting: 'bg-sync-off',
   });
 
   // SNOW-1420: the stored area records, keyed by bucket id, as the last
@@ -1508,10 +1676,154 @@
     // A shell cached before SNOW-1420 has no verdict module: no answer,
     // rather than a "Not checked yet" nothing on that page can change.
     if (!syncAll) return null;
-    if (syncing.has(row.id) || syncAll.state().current === row.id) {
+    const state = syncAll.state();
+    if (syncing.has(row.id) || state.current === row.id) {
       return { verdict: 'running', reason: '' };
     }
+    // SNOW-1487: a row Sync all has still to reach says so.
+    if (state.running && Array.isArray(state.pending) && state.pending.indexOf(row.id) >= 0) {
+      return { verdict: 'waiting', reason: '' };
+    }
     return syncAll.verdict(areaRecords.get(row.id));
+  }
+
+  // SNOW-1487: the stage and counts a single row's own Sync now is on, by
+  // area id. Sync all keeps its own (`pwaDownloadsSyncAll.state().step`).
+  /** @type {Map<string, {name: string, done: (number|null), total: (number|null)}>} */
+  var rowSteps = new Map();
+
+  /**
+   * SNOW-1487: the stage and counts the sync running on one row is on, or
+   * null when none is, or it has not said yet.
+   *
+   * @param {string} id
+   * @returns {{name: string, done: (number|null), total: (number|null)}|null}
+   */
+  function rowStep(id) {
+    const syncAll = window.pwaDownloadsSyncAll;
+    const state = syncAll ? syncAll.state() : null;
+    if (state && state.running && state.current === id && state.step) return state.step;
+    return rowSteps.get(id) || null;
+  }
+
+  /**
+   * SNOW-1487: paint the step, "212 of 528" and a bar under the row a
+   * sync is on, from `map-downloads-row-progress-template`, in place of
+   * its "Syncing…" line. Anything else loses it.
+   *
+   * @param {ParentNode} root The row's fragment, or its rendered `<li>`.
+   * @param {string} id
+   * @param {boolean} running Whether a sync is on this row.
+   * @returns {void}
+   */
+  function paintRowProgress(root, id, running) {
+    const template = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById('map-downloads-row-progress-template')
+    );
+    const existing = root.querySelector('[data-row-progress]');
+    const step = running ? rowStep(id) : null;
+    const label = step ? STRINGS['row-step-' + step.name] || '' : '';
+    if (!template || !step || !label) {
+      if (existing) existing.remove();
+      return;
+    }
+    let progress = existing;
+    if (!progress) {
+      const notice = root.querySelector('[data-row-notice]');
+      if (!notice) return;
+      const clone = /** @type {DocumentFragment} */ (template.content.cloneNode(true));
+      progress = clone.querySelector('[data-row-progress]');
+      if (!progress) return;
+      notice.after(progress);
+      // The step says it in words; "Syncing…" would say it twice.
+      notice.classList.add('hidden');
+    }
+    const counted = Number.isFinite(step.done) && Number.isFinite(step.total) && Number(step.total) > 0;
+    const stepEl = progress.querySelector('[data-row-progress-step]');
+    if (stepEl) stepEl.textContent = label;
+    const counts = progress.querySelector('[data-row-progress-counts]');
+    if (counts) {
+      counts.textContent = counted
+        ? interpolate(STRINGS['row-step-counts'], { done: step.done, total: step.total })
+        : '';
+    }
+    const pct = counted ? Math.min(100, Math.round((Number(step.done) / Number(step.total)) * 100)) : 0;
+    const track = progress.querySelector('[data-row-progress-track]');
+    if (track) {
+      track.setAttribute('aria-valuenow', String(pct));
+      track.setAttribute('aria-label', label);
+    }
+    const bar = /** @type {HTMLElement|null} */ (progress.querySelector('[data-row-progress-bar]'));
+    if (bar) bar.style.width = pct + '%';
+  }
+
+  /**
+   * SNOW-1487: repaint the progress of every row a sync is on, in place —
+   * what a move of the counts alone needs, rather than a whole render.
+   *
+   * @returns {void}
+   */
+  function repaintRowProgress() {
+    for (const item of sheet.querySelectorAll('li[data-row-area]')) {
+      const id = item.getAttribute('data-row-area') || '';
+      const answer = rowAnswer({ id: id });
+      paintRowProgress(item, id, !!answer && answer.verdict === 'running');
+    }
+  }
+
+  /**
+   * SNOW-1487: the notice under a row whose last sync could not add the
+   * Swiss map or the terrain data, one per step, from
+   * `map-downloads-step-notice-template`. The map the area holds still
+   * draws, so the dot is left as it reads
+   * (docs/decisions/a-failed-addition-never-hides-a-working-map.md); the
+   * notice says why, with the one thing to do:
+   *
+   *   network, plan    Try again — Sync now, for this row
+   *   interrupted      Carry on — the same; what landed is kept
+   *   budget           Change limit — focuses the limit in the header
+   *   quota            nothing: the phone needs space this sheet cannot free
+   *
+   * @param {DocumentFragment} fragment
+   * @param {{id: string}} row
+   * @param {{verdict: string}|null} answer The row's answer.
+   * @returns {void}
+   */
+  function paintStepNotices(fragment, row, answer) {
+    const template = /** @type {HTMLTemplateElement|null} */ (
+      document.getElementById('map-downloads-step-notice-template')
+    );
+    const notice = fragment.querySelector('[data-row-notice]');
+    if (!template || !notice || !answer) return;
+    if (answer.verdict === 'running' || answer.verdict === 'waiting') return;
+    const record = /** @type {any} */ (areaRecords.get(row.id));
+    const steps = record && record.verified && Array.isArray(record.verified.steps) ? record.verified.steps : [];
+    let after = notice;
+    for (const step of steps) {
+      if (!step || (step.step !== 'basemap' && step.step !== 'terrain')) continue;
+      const text = STRINGS['step-notice-' + step.reason];
+      if (!text) continue;
+      const clone = /** @type {DocumentFragment} */ (template.content.cloneNode(true));
+      const item = clone.querySelector('[data-row-step-notice]');
+      if (!item) continue;
+      item.setAttribute('data-step', step.step);
+      item.setAttribute('data-reason', step.reason);
+      const words = item.querySelector('[data-row-step-notice-text]');
+      if (words) words.textContent = interpolate(text, { part: STRINGS['step-part-' + step.step] || '' });
+      const remedy = item.querySelector('[data-row-step-remedy]');
+      if (remedy) {
+        const label = STRINGS['step-remedy-' + step.reason];
+        if (!label) {
+          remedy.remove();
+        } else {
+          remedy.textContent = label;
+          remedy.setAttribute('data-row-step-remedy', step.reason === 'budget' ? 'budget' : 'sync');
+          remedy.setAttribute('data-area-id', row.id);
+        }
+      }
+      after.after(item);
+      after = item;
+    }
   }
 
   /**
@@ -1519,7 +1831,7 @@
    * remove both when it has none.
    *
    * The reason's words are the sheet's own strings: "Bulletins out of
-   * date", "Some trips or pins missing", "Map data missing", "Not checked
+   * date", "Some trips or pins missing", "Terrain not saved", "Map data missing", "Not checked
    * yet", "Syncing…". A yes says nothing on screen, and "Works offline" to
    * a screen reader.
    *
@@ -1541,8 +1853,9 @@
       dot.setAttribute('data-area-verdict', answer.verdict);
     }
     if (!notice) return;
-    const key =
+    let key =
       answer.verdict === 'refresh' ? `area-reason-${answer.reason}` : `area-status-${answer.verdict}`;
+    if (answer.verdict === 'waiting') key = 'row-waiting';
     notice.textContent = STRINGS[key] || '';
     notice.classList.toggle('hidden', !notice.textContent);
     // A yes has no visible line; a screen reader still hears it.
@@ -1649,6 +1962,12 @@
     // nothing to answer for (account-only, orphaned) has neither.
     const answer = rowAnswer(row);
     paintRowAnswer(fragment, answer);
+    // SNOW-1487: and what a sync on it is doing, or what its last sync
+    // could not add.
+    const rowItem = fragment.querySelector('li');
+    if (rowItem) rowItem.setAttribute('data-row-area', row.id);
+    paintRowProgress(fragment, row.id, !!answer && answer.verdict === 'running');
+    paintStepNotices(fragment, row, answer);
     // Hugo, 2026-11-04: a row whose reason line shows says nothing more
     // about its bulletins in the meta — the reason is the one caveat.
     const reasonShown = !!answer && answer.verdict !== 'ready';
@@ -2035,7 +2354,6 @@
     panel.id = panelId;
     toggle.setAttribute('aria-controls', panelId);
     toggle.setAttribute('data-row-disclosure', row.id);
-    toggle.setAttribute('data-inventory-size', row.size || '');
     toggle.setAttribute(
       'aria-label',
       interpolate(STRINGS['inventory-toggle-label'], { name: row.label }),
@@ -2043,7 +2361,7 @@
     const open = openInventory === row.id;
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (open) {
-      fillInventory(panel, row.id, row.size);
+      fillInventory(panel, row.id);
       // A render follows a sync or a removal, either of which can change
       // what is held, so the open row is read again.
       readInventory(row.id);
@@ -2070,6 +2388,7 @@
    */
   function inventoryValue(item, size) {
     if (item.key === 'map') return size.map || '';
+    if (item.key === 'swiss') return STRINGS['inventory-not-added'] || '';
     if (item.key === 'terrain') {
       return item.status === 'missing' ? STRINGS['inventory-never'] || '' : size.terrain;
     }
@@ -2090,42 +2409,24 @@
   }
 
   /**
-   * The map and terrain sizes the inventory shows. The run records one
-   * total, so the terrain figure is the estimate the download was priced
-   * at (`terrainClassMb` over the area's class tiles, plus `elevationMb`
-   * over its elevation tiles since SNOW-1453) and the map is what is left
-   * of the total.
+   * The map and terrain sizes the inventory shows.
    *
-   * @param {any} record The area's stored record.
-   * @param {string} size The row's formatted total, the fallback.
-   * @param {boolean} terrainAvailable Whether this page fetches terrain.
-   * @returns {{map: string, terrain: string}} `terrain` is '' when no
-   *   figure can be given.
+   * SNOW-1487: measured from the area's bucket by URL class
+   * (`pwaBasemapDownloads.measureAreaInventory`), never split from the
+   * record's one total by an estimate, which read "0 MB" for a map
+   * whenever the estimate ran over the total. Until the bucket has been
+   * measured, and for a class with nothing measured in it, no size is
+   * shown: a blank is true, a zero is not.
+   *
+   * @param {{mapBytes?: number, terrainBytes?: number}|null|undefined} measured
+   * @returns {{map: string, terrain: string}}
    */
-  function inventorySizes(record, size, terrainAvailable) {
+  function inventorySizes(measured) {
     const core = manageCore();
-    const downloadCore = self.pwaBasemapDownloadCore;
-    const bridge = window.pwaBasemapDownloads;
-    const bytes = Number(record && record.bytes) || 0;
-    if (!terrainAvailable || !record || !record.terrain || !core || !downloadCore || !bridge) {
-      return { map: size, terrain: '' };
-    }
-    const urls = typeof bridge.areaTerrainClassTileUrls === 'function'
-      ? bridge.areaTerrainClassTileUrls(record)
-      : [];
-    // SNOW-1453: only for a record whose run (or sync) stamped them: one
-    // downloaded before elevation joined terrain data holds none.
-    const elevationUrls = record.elevation && typeof bridge.areaElevationTileUrls === 'function'
-      ? bridge.areaElevationTileUrls(record)
-      : [];
-    const terrainMb =
-      downloadCore.terrainClassMb(urls.length) + downloadCore.elevationMb(elevationUrls.length);
-    const terrainBytes = Math.min(bytes, terrainMb * 1024 * 1024);
-    if (!bytes || !terrainBytes) return { map: size, terrain: '' };
-    return {
-      map: core.formatMegabytes(bytes - terrainBytes),
-      terrain: core.formatMegabytes(terrainBytes),
-    };
+    /** @param {number|undefined} bytes */
+    const size = (bytes) => (core && Number(bytes) > 0 ? core.formatMegabytes(Number(bytes)) : '');
+    if (!measured) return { map: '', terrain: '' };
+    return { map: size(measured.mapBytes), terrain: size(measured.terrainBytes) };
   }
 
   /**
@@ -2134,10 +2435,9 @@
    *
    * @param {Element} panel
    * @param {string} id
-   * @param {string} size
    * @returns {void}
    */
-  function fillInventory(panel, id, size) {
+  function fillInventory(panel, id) {
     const template = /** @type {HTMLTemplateElement|null} */ (
       document.getElementById(INVENTORY_TEMPLATE_ID)
     );
@@ -2147,10 +2447,19 @@
     const readings = inventoryReadings.get(id) || {};
     const record = areaRecords.get(id);
     const bridge = window.pwaBasemapDownloads;
-    const terrainAvailable = !!(bridge && bridge.terrainDataAvailable && bridge.terrainDataAvailable());
-    const sizes = inventorySizes(record, size, terrainAvailable);
+    // SNOW-1483: the Terrain row only where the area should hold terrain
+    // data, the same test the row's dot reads, so the two cannot disagree
+    // and an area outside the tiles' coverage lists no row it cannot fill.
+    const terrainAvailable = !!(
+      bridge && typeof bridge.terrainExpected === 'function' && bridge.terrainExpected(record)
+    );
+    const measured = readings.measured || null;
+    const sizes = inventorySizes(measured);
     const rows = journey.inventoryFor(record, new Date(), {
       terrainAvailable: terrainAvailable,
+      // SNOW-1487: the terrain row's own reading, and the Swiss map line.
+      terrainHeld: measured ? measured.terrainHeld : null,
+      swissMissing: !!(bridge && typeof bridge.swissMapMissing === 'function' && bridge.swissMapMissing(record)),
       signedIn: !!principal,
       principal: principal,
       origin: window.location.origin,
@@ -2277,6 +2586,18 @@
         return null;
       }
     };
+    // SNOW-1487: and the bucket itself, measured by URL class.
+    const measure = async () => {
+      if (!downloads || typeof downloads.measureAreaInventory !== 'function') return null;
+      try {
+        return await downloads.measureAreaInventory(id, record);
+      } catch (_err) {
+        return null;
+      }
+    };
+    // The measurement walks the bucket, so it is not waited for: the
+    // panel paints from the other readings, and again once it lands.
+    const measuring = measure();
     const [held, routes, reports] = await Promise.all([
       urls.length && downloads && typeof downloads.heldContent === 'function'
         ? downloads.heldContent(urls)
@@ -2284,7 +2605,16 @@
       idsIn('routes', 'uuid'),
       idsIn('community_reports', 'submission'),
     ]);
-    inventoryReadings.set(id, { held: held, overlayIds: { routes: routes, reports: reports } });
+    const reading = {
+      held: held,
+      overlayIds: { routes: routes, reports: reports },
+      measured: /** @type {any} */ (null),
+    };
+    inventoryReadings.set(id, reading);
+    repaintInventory(id);
+    const measured = await measuring;
+    if (!measured || inventoryReadings.get(id) !== reading) return;
+    reading.measured = measured;
     repaintInventory(id);
   }
 
@@ -2299,8 +2629,7 @@
     const toggle = toggleFor(id);
     const item = toggle && toggle.closest('li');
     const panel = item && item.querySelector('[data-row-panel]');
-    const size = toggle && toggle.getAttribute('data-inventory-size');
-    if (panel) fillInventory(panel, id, size || '');
+    if (panel) fillInventory(panel, id);
   }
 
   /**
@@ -2447,6 +2776,12 @@
       toggleInventory(inventoryToggle);
       return;
     }
+    // SNOW-1488: the header menu's Copy report. Works with no signal: the
+    // report reads only what this device holds.
+    if (target.closest('[data-downloads-copy-report]')) {
+      copyOfflineReport();
+      return;
+    }
     // SNOW-1414: "Download a region" — the same two gates as the custom
     // area below, then the pick task (static/js/map_region_pick.js).
     if (target.closest('[data-panel-add-region]')) {
@@ -2509,12 +2844,32 @@
     }
     if (_handleDownloadAllClick(event)) return;
     if (_handleSyncAllClick(event)) return;
+    if (_handleSyncStopClick(event)) return;
+    if (_handleStepRemedyClick(event)) return;
     if (_handleSyncClick(event)) return;
     if (_handleDownloadHereClick(event)) return;
     if (_handleRenameClick(event)) return;
     if (_handleForgetClick(event)) return;
     _handleDeleteClick(event);
   });
+
+  /**
+   * SNOW-1488: the header menu's Copy report — the offline report
+   * /offline/ gives, on the clipboard, toasted either way. The installed
+   * app has no address bar, so this is how its reader reaches the report.
+   *
+   * Collected against the sheet's hidden `[data-offline-audit-host]`
+   * (`_map_downloads_sheet.html`), which carries the inputs /offline/'s
+   * panel does, so both copies run the same checks.
+   *
+   * @returns {Promise<void>}
+   */
+  async function copyOfflineReport() {
+    const audit = window.pwaOfflineAudit;
+    const host = /** @type {HTMLElement|null} */ (document.querySelector('[data-offline-audit-host]'));
+    const copied = audit && typeof audit.copyReport === 'function' ? await audit.copyReport(host) : false;
+    window.MapSheet?.toast(STRINGS[copied ? 'report-copied' : 'report-copy-failed']);
+  }
 
   /**
    * SNOW-951: "Sync now" — make one area wholly current, both halves, in
@@ -2555,19 +2910,31 @@
 
     const areaId = button.getAttribute('data-downloads-sync');
     if (!areaId) return true;
+    syncRow(areaId, /** @type {HTMLElement} */ (button));
+    return true;
+  }
 
+  /**
+   * Sync one row's area: its Sync now, and SNOW-1487's Try again and
+   * Carry on on a step notice.
+   *
+   * @param {string} areaId
+   * @param {HTMLElement} button The control pressed, disabled while it runs.
+   * @returns {void}
+   */
+  function syncRow(areaId, button) {
     // SNOW-748: the mode, not the radio — a forced offline mode leaves
     // `navigator.onLine` true, and a sync is network use.
     if (!networkInUse()) {
       window.MapSheet?.toast(STRINGS['sync-offline']);
-      return true;
+      return;
     }
 
     // Already running for this area: a second press would dispatch a
     // second warm run for documents the first is still fetching. Tracked
     // by AREA rather than by element, because the render below re-clones
     // the row and the element this one disabled is gone by then.
-    if (syncing.has(areaId)) return true;
+    if (syncing.has(areaId)) return;
     syncing.add(areaId);
     button.setAttribute('disabled', '');
 
@@ -2592,18 +2959,15 @@
      */
     const settleSync = (result) => {
       syncing.delete(areaId);
-      // One toast, for either half falling short. The user asked for the
-      // area to be current and it is not; which of the two halves missed
-      // is a distinction they can act on nowhere — the remedy is the same
-      // press again, on a better connection.
-      //
-      // SNOW-951 review: the tile half is judged on what it CLAIMS, not on
-      // the absence of a failure. `'ok'` mended what was missing and
-      // `'none'` found nothing to mend; `'unknown'` and `'absent'` are
-      // both "this was never established", and reporting either as a
-      // success is the false all-clear the whole control exists to avoid.
-      const ok = !!result && (result.tiles === 'ok' || result.tiles === 'none') && result.content;
-      if (!ok) window.MapSheet?.toast(STRINGS['sync-failed']);
+      rowSteps.delete(areaId);
+      // One toast, naming the area, for anything short of up to date
+      // (SNOW-1487; SNOW-951 said the same without the name). The tile
+      // half is judged on what it CLAIMS, not on the absence of a
+      // failure: `'unknown'` and `'absent'` are both "this was never
+      // established", and reporting either as a success is the false
+      // all-clear the whole control exists to avoid (SNOW-951 review).
+      const outcome = syncOutcome(result || null);
+      if (outcome !== 'ready') window.MapSheet?.toast(syncOutcomeToast([{ id: areaId, outcome: outcome }]));
       // Re-render either way, from real cache state and the record as it
       // stands now — a run that half landed has still changed what is on
       // disk, and the row must say what is true now rather than what it
@@ -2622,6 +2986,17 @@
       window.pwaRegionDownload?.refreshState();
     };
 
+    // SNOW-1487: the row says what the sync is saving, and how far.
+    const onStage = (/** @type {string} */ name, /** @type {any} */ counts) => {
+      const known = !!counts && Number.isFinite(counts.done) && Number.isFinite(counts.total);
+      rowSteps.set(areaId, {
+        name: name,
+        done: known ? counts.done : null,
+        total: known ? counts.total : null,
+      });
+      repaintRowProgress();
+    };
+
     // `Promise.resolve` around the call, not a bare `.then`: an older
     // cached shell can carry a bridge with no `syncArea` at all, and
     // `?.syncArea(areaId)` yields `undefined` there — on which `.then`
@@ -2635,13 +3010,12 @@
     Promise.resolve(contentRun ? contentRun.take() : true)
       .then((took) => {
         if (!took) return null;
-        return Promise.resolve(window.pwaBasemapDownloads?.syncArea(areaId)).finally(() =>
+        return Promise.resolve(window.pwaBasemapDownloads?.syncArea(areaId, onStage)).finally(() =>
           contentRun?.release('user'),
         );
       })
       .then(settleSync)
       .catch(() => settleSync(null));
-    return true;
   }
 
   /**
@@ -3339,14 +3713,46 @@
     document.getElementById(NOTICE_ID)?.classList.add('hidden');
   }
 
-  // The layers menu's Downloaded areas row: its left half opens the sheet
-  // (public/partials/_map_layers_downloads_row.html). The installed phone
-  // app hides the roundel, so this is its way in.
+  // Two openers carry `data-downloads-open`: the layers menu's Downloaded
+  // areas row, whose left half opens the sheet
+  // (public/partials/_map_layers_downloads_row.html), and the account
+  // menu's Downloads link (includes/_account_menu_items.html). The installed
+  // phone app hides the roundel, so these are its way in. The link is an
+  // anchor to `/map/?downloads=open` so it works from every page; here, on
+  // the map, it opens the sheet in place and closes its menu instead.
   document.addEventListener('click', function (event) {
     var target = event.target instanceof Element ? event.target : null;
-    if (!target || !target.closest('[data-downloads-open]')) return;
+    var opener = target ? target.closest('[data-downloads-open]') : null;
+    if (!opener) return;
+    if (opener.tagName === 'A') event.preventDefault();
+    var menu = opener.closest('details');
+    if (menu) menu.removeAttribute('open');
     open();
   });
+
+  /**
+   * Open the sheet when the page was reached with `?downloads=open`, the
+   * account menu's Downloads link from a page other than the map, and drop
+   * the parameter so a reload or a shared link does not reopen it.
+   *
+   * @returns {void}
+   */
+  function _openFromUrl() {
+    var url;
+    try {
+      url = new URL(window.location.href);
+    } catch (_err) {
+      return;
+    }
+    if (url.searchParams.get('downloads') !== 'open') return;
+    url.searchParams.delete('downloads');
+    try {
+      window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    } catch (_err) {
+      // A sandboxed frame can refuse; the sheet still opens.
+    }
+    open();
+  }
 
   // The CTA opens the sheet; the × is overlays.js's shared dismiss.
   document.getElementById(NOTICE_ID + '-open')?.addEventListener('click', function () {
@@ -3369,8 +3775,10 @@
   // DOMContentLoaded is the first moment every deferred script has run.
   if (document.readyState === 'complete') {
     _adoptLocalAreas();
+    _openFromUrl();
   } else {
     document.addEventListener('DOMContentLoaded', _adoptLocalAreas);
+    document.addEventListener('DOMContentLoaded', _openFromUrl);
   }
 
   window.pwaDownloadsManager = Object.freeze({

@@ -998,12 +998,15 @@ const PRECACHE_URLS = [OFFLINE_FALLBACK, RESET_SCRIPT, NETWORK_MODE_SCRIPT];
 // SNOW-1308: and the per-area panels painted above the report, with the
 // shared removal they offer — so a device's downloaded areas never vanish
 // from the fallback page. The removal stays inert there (it needs the
-// download core and the IndexedDB layer, which that page does not load),
-// and offers no control rather than a dead one.
+// IndexedDB layer, which that page does not load), and offers no control
+// rather than a dead one.
 const AUDIT_SCRIPTS = [
   '/static/js/offline_audit_core.js',
   '/static/js/offline_audit.js',
   '/static/js/basemap_area_removal.js',
+  // SNOW-1483: the tile arithmetic `offline_journey_core.js`'s
+  // `tileReading` needs, so the fallback page answers each area's map.
+  '/static/js/basemap_download_core.js',
   '/static/js/offline_journey_core.js',
   '/static/js/offline_journey.js',
 ];
@@ -3569,9 +3572,8 @@ async function _basemapStaleWhileRevalidate(request) {
 //      ``@never_cache`` (apps/accounts/views.py), and
 //      ``AdminSite.admin_view``, which already applies ``never_cache`` to
 //      every Django admin view and which templates/admin/base_site.html
-//      registers this same worker on. Note that ``manage_view`` is
-//      deliberately NOT in that set: the offline favourites roster reads
-//      it out of this cache, so it relies on guard 2 instead.
+//      registers this same worker on. ``manage_view`` is not in that set
+//      and relies on guard 2 instead.
 //
 //   2. Every cached navigation carries an ``X-SW-Principal`` header naming
 //      the account its HTML was rendered for, and the offline read serves

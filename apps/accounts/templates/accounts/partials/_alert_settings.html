@@ -51,7 +51,7 @@ govern yet.
         </div>
         <fieldset>
             <legend class="sr-only">{% trans "Bulletin alerts" %}</legend>
-            <div class="inline-flex flex-wrap rounded-pill border border-border bg-card p-0.5">
+            <div class="inline-flex flex-wrap rounded-full border border-border bg-card p-0.5">
                 {% for value, label in notify_choices %}
                     {% if value == account.notify_when %}
                         {% include "includes/_segmented_option.html" with name="notify_when" value=value label=label checked=True %}
@@ -74,7 +74,7 @@ govern yet.
             </div>
             <fieldset>
                 <legend class="sr-only">{% trans "Email" %}</legend>
-                <div class="inline-flex flex-wrap rounded-pill border border-border bg-card p-0.5">
+                <div class="inline-flex flex-wrap rounded-full border border-border bg-card p-0.5">
                     {% for value, label in email_choices %}
                         {% if value == account.alert_email %}
                             {% include "includes/_segmented_option.html" with name="alert_email" value=value label=label checked=True %}

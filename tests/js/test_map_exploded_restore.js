@@ -233,6 +233,24 @@ describe('map_exploded.js hands the map back as it found it', () => {
     expect(window.snowdeskLayerExplainer.focusSwitzerland).toHaveBeenCalledTimes(1);
     expect(restoreCountries).toHaveBeenCalledTimes(1);
   });
+
+  it('lifts the resorts zoom gate for its sheet, then puts it back', async () => {
+    // The demo frames all of Switzerland below z8, where map.js's filter
+    // draws only pinned resorts; its resorts sheet would capture empty.
+    const gate = ['>=', ['zoom'], 8];
+    mount();
+    const prepare = window.snowdeskLayerExplainer.prepare;
+    window.snowdeskLayerExplainer.prepare = vi.fn(async (key) => {
+      const metadata = await prepare(key);
+      if (key === 'resorts') map.getLayer('resorts-pin').filter = gate;
+      return metadata;
+    });
+    const setFilter = vi.spyOn(map, 'setFilter');
+    await runDemo();
+
+    expect(setFilter).toHaveBeenCalledWith('resorts-pin', null);
+    expect(map.getLayer('resorts-pin').filter).toEqual(gate);
+  });
 });
 
 describe('map_exploded.js has no slope sheet (SNOW-1073)', () => {

@@ -246,7 +246,7 @@ class TestNavAccountMenuEntries:
     def test_every_entry_is_present(
         self, rf: RequestFactory, regular_user: User
     ) -> None:
-        """Trips, Settings and Sign out — each asserted by name.
+        """Trips, Downloads, Settings and Sign out — each asserted by name.
 
         SNOW-803 removed Favourites, Routes and Observations and SNOW-802
         Subscriptions: those are map sheets now, reached from the map's
@@ -286,6 +286,66 @@ class TestNavAccountMenuEntries:
         assert html.index(f'href="{reverse("accounts:settings")}"') < html.index(
             f'action="{reverse("accounts:sign_out")}"'
         )
+
+    def test_trips_is_hidden_in_the_installed_app(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Trips carries `app-hidden`; Settings does not (SNOW-1479).
+
+        In the installed phone app the trips are a tab of Saved, so the avatar
+        menu would be a second way to the same list. On the web it stays.
+        """
+        html = _render_nav_for(rf, regular_user)
+
+        trips = re.search(
+            r'<a[^>]*href="' + re.escape(reverse("trips:list")) + r'"[^>]*>',
+            html,
+            re.S,
+        )
+        settings = re.search(
+            r'<a[^>]*href="' + re.escape(reverse("accounts:settings")) + r'"[^>]*>',
+            html,
+            re.S,
+        )
+        assert trips and "app-hidden" in trips.group(0)
+        assert settings and "app-hidden" not in settings.group(0)
+
+    def test_downloads_sits_between_trips_and_settings(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Downloads comes after Trips and before Settings (Hugo, 11 Nov 2026).
+
+        He looked in this menu first for his downloaded areas; the layers
+        menu's Downloaded areas row was the only way in.
+        """
+        html = _render_nav_for(rf, regular_user)
+        downloads = f'href="{reverse("public:map")}?downloads=open"'
+
+        assert html.index(f'href="{reverse("trips:list")}"') < html.index(downloads)
+        assert html.index(downloads) < html.index(
+            f'href="{reverse("accounts:settings")}"'
+        )
+
+    def test_downloads_opens_the_sheet_and_shows_in_the_app(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """The link carries the sheet's opener hook and is not `app-hidden`.
+
+        `data-downloads-open` lets the map open the sheet in place; the
+        installed app is where the entry is needed most, so it stays visible.
+        """
+        html = _render_nav_for(rf, regular_user)
+
+        link = re.search(
+            r'<a[^>]*href="'
+            + re.escape(reverse("public:map") + "?downloads=open")
+            + r'"[^>]*>\s*Downloads\s*</a>',
+            html,
+            re.S,
+        )
+        assert link
+        assert "data-downloads-open" in link.group(0)
+        assert "app-hidden" not in link.group(0)
 
     def test_the_three_list_entries_are_gone(
         self, rf: RequestFactory, regular_user: User

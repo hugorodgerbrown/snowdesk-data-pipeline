@@ -50,10 +50,11 @@ import re
 
 import pytest
 from django.template.loader import render_to_string
-from django.test import Client
+from django.test import Client, RequestFactory
 from django.urls import reverse
 
 from apps.public.templatetags.components import icon_button_classes
+from tests.factories import UserFactory
 
 # The three panel bodies, by the <template> id each surface renders them
 # in, each with the glyph its own roundel carries — one distinctive path
@@ -153,6 +154,24 @@ DEMO_ROWS_TEMPLATE = "public/partials/_ugc_panel_demo_rows.html"
 
 _CLASS_RE = re.compile(r"""class=(?:"([^"]*)"|'([^']*)')""")
 
+# SNOW-1479: tokens that say where a part is drawn or how it is trimmed
+# rather than what it is. A Saved panel's × carries `app-hidden` (the
+# installed phone app's tab bar closes it); its section label is `hidden`
+# on every screen since SNOW-1481, as its title and strip are by the
+# attribute; and its × sits in the header's action group, which takes the
+# ×'s own -12px trim. None makes the chrome a different chrome.
+_PLACEMENT_TOKENS = frozenset({"app-hidden", "hidden", "-mt-3", "-mr-3"})
+
+# SNOW-1479: the Saved tabs and the + roundel a Saved panel's header carries
+# (on every screen since SNOW-1481). Taken out of a panel's body before it
+# is read, so these guards check the skeleton the panels share: its own
+# glyph, one add control, the five parts in order.
+_APP_ONLY_HEADER_RE = re.compile(
+    r"<fieldset[^>]*data-saved-tabs.*?</fieldset>"
+    r"|<button(?:(?!</button>).)*?data-testid=\"saved-add-roundel\".*?</button>",
+    re.S,
+)
+
 
 def _class_strings(html: str) -> set[str]:
     """Return every ``class`` attribute value in ``html``.
@@ -169,7 +188,10 @@ def _class_strings(html: str) -> set[str]:
         The set of class-attribute values found.
 
     """
-    return {double or single for double, single in _CLASS_RE.findall(html)}
+    return {
+        " ".join(t for t in (double or single).split() if t not in _PLACEMENT_TOKENS)
+        for double, single in _CLASS_RE.findall(html)
+    }
 
 
 def _panel_body(html: str, template_id: str) -> str:
@@ -180,12 +202,17 @@ def _panel_body(html: str, template_id: str) -> str:
         template_id: The template element's DOM id.
 
     Returns:
-        Everything between that element's open and close tags.
+        Everything between that element's open and close tags, less the
+        Saved tabs and + roundel and their `app-hidden` and `hidden` class
+        marks (SNOW-1479, SNOW-1481).
 
     """
     opener = f'<template id="{template_id}">'
     start = html.index(opener) + len(opener)
-    return html[start : html.index("</template>", start)]
+    body = html[start : html.index("</template>", start)]
+    body = _APP_ONLY_HEADER_RE.sub("", body)
+    body = body.replace("app-hidden ", "").replace(" app-hidden", "")
+    return re.sub(r'(class="[^"]*?) hidden\b', r"\1", body)
 
 
 @pytest.fixture(scope="module")
@@ -215,6 +242,39 @@ def skeleton_classes() -> set[str]:
             "cta_label": "Add one",
             "toggle_id": "skeleton-toggle",
         },
+    )
+    rows = render_to_string(DEMO_ROWS_TEMPLATE, {})
+    return _class_strings(panel) - _class_strings(rows)
+
+
+@pytest.fixture(scope="module")
+def saved_skeleton_classes() -> set[str]:
+    """Return every class string a Saved panel's ``_ugc_panel.html`` renders.
+
+    SNOW-1486: a Saved panel's header is the Saved grid (title and × over
+    the tabs and +), not the icon-and-title row the others share, so its
+    skeleton is derived the same way from a render that passes
+    ``saved_tab``, less the tabs and + the page's bodies drop too.
+
+    Returns:
+        The Saved skeleton's class-attribute values.
+
+    """
+    rendered = render_to_string(
+        "includes/_ugc_panel.html",
+        {
+            "title": "Title",
+            "icon_template": "includes/_icon_favourite.html",
+            "context_line": "Where this panel's data lives.",
+            "rows_template": DEMO_ROWS_TEMPLATE,
+            "cta_label": "Add one",
+            "toggle_id": "skeleton-toggle",
+            "saved_tab": "places",
+            "header_actions_template": "includes/_saved_add_roundel.html",
+        },
+    )
+    panel = re.sub(
+        r'(class="[^"]*?) hidden\b', r"\1", _APP_ONLY_HEADER_RE.sub("", rendered)
     )
     rows = render_to_string(DEMO_ROWS_TEMPLATE, {})
     return _class_strings(panel) - _class_strings(rows)
@@ -263,16 +323,26 @@ class TestUgcPanelSkeleton:
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_panel_carries_the_whole_shared_skeleton(
-        self, home_html: str, skeleton_classes: set[str], template_id: str
+        self,
+        home_html: str,
+        skeleton_classes: set[str],
+        saved_skeleton_classes: set[str],
+        template_id: str,
     ) -> None:
         """Every class string the shared partial renders is in this panel.
 
         A panel that stops including the partial — or that reproduces most
         of it by hand and gets one wrapper subtly different — fails here.
+        A Saved panel is held to the Saved header's skeleton (SNOW-1486).
         """
         body = _panel_body(home_html, template_id)
         present = _class_strings(body)
-        assert skeleton_classes <= present, skeleton_classes - present
+        expected = (
+            saved_skeleton_classes
+            if template_id in SAVED_LIST_TEMPLATES
+            else skeleton_classes
+        )
+        assert expected <= present, expected - present
 
     @pytest.mark.parametrize("template_id", PANEL_TEMPLATE_IDS)
     def test_panel_runs_the_five_parts_in_that_order(
@@ -312,6 +382,13 @@ class TestUgcPanelSkeleton:
         carries another's.
         """
         body = _panel_body(home_html, template_id)
+        if template_id in SAVED_LIST_TEMPLATES:
+            # SNOW-1486: a Saved sheet is titled "Saved items" and its tab
+            # names the list, so it wears no roundel's glyph.
+            assert "Saved items" in body
+            for path in PANEL_ICONS.values():
+                assert path not in body
+            return
         assert PANEL_ICONS[template_id] in body
         for other_id, path in PANEL_ICONS.items():
             if other_id != template_id:
@@ -532,6 +609,228 @@ class TestUgcPanelSkeleton:
             body = _panel_body(home_html, template_id)
             assert "text-lg font-semibold text-text-1" in body
             assert "text-sm font-semibold text-text-1" not in body
+
+
+# SNOW-1481: Saved — the four sheets behind the star and the app's Saved tab.
+SAVED_LIST_TEMPLATES = (
+    "favourite-list-template",
+    "route-list-template",
+    "trips-sheet-template",
+    "report-list-template",
+)
+SAVED_SHEET_IDS = ("favourite-sheet", "route-sheet", "trips-sheet", "report-sheet")
+
+
+@pytest.fixture()
+def signed_in_home_html(db: None) -> str:
+    """Return the map page for a signed-in reader, who has the trips sheet.
+
+    Args:
+        db: pytest-django's database fixture.
+
+    Returns:
+        The decoded response body.
+
+    """
+    client = Client(SERVER_NAME="localhost")
+    client.force_login(UserFactory.create())
+    return client.get(reverse("public:map")).content.decode()
+
+
+class TestSavedOnEveryScreen:
+    """SNOW-1481: Saved is one panel on every screen, not the app's alone."""
+
+    @pytest.mark.parametrize("template_id", SAVED_LIST_TEMPLATES)
+    def test_the_tabs_and_plus_are_not_app_only(
+        self, signed_in_home_html: str, template_id: str
+    ) -> None:
+        """The tabs and the header's + draw on a desktop and a phone browser."""
+        opener = f'<template id="{template_id}">'
+        start = signed_in_home_html.index(opener)
+        body = signed_in_home_html[
+            start : signed_in_home_html.index("</template>", start)
+        ]
+        assert "data-saved-tabs" in body
+        assert "app-only" not in body
+
+    @pytest.mark.parametrize("template_id", SAVED_LIST_TEMPLATES)
+    def test_the_close_shows_on_every_screen(
+        self, signed_in_home_html: str, template_id: str
+    ) -> None:
+        """SNOW-1486: nothing is app-hidden; the × closes Saved on a phone too."""
+        body = _saved_body(signed_in_home_html, template_id)
+        assert "app-hidden" not in body
+        close = re.search(r'<button[^>]*data-action="dismiss"[^>]*>', body, re.S)
+        assert close, template_id
+        assert "sm:hidden" not in close.group(0)
+
+    @pytest.mark.parametrize("sheet_id", SAVED_SHEET_IDS)
+    def test_each_sheet_docks_left_and_is_the_phone_card(
+        self, signed_in_home_html: str, sheet_id: str
+    ) -> None:
+        """Under search on a desktop; on a phone the card at half or full.
+
+        SNOW-1486: half and full, opening at half, the card variant, and the
+        handle rendered as the sheet's first child (phone-only).
+        """
+        match = re.search(
+            rf'<div[^>]*\bid="{sheet_id}"[^>]*>', signed_in_home_html, re.S
+        )
+        assert match, sheet_id
+        tag = match.group(0)
+        assert 'data-sheet-side="left"' in tag
+        assert 'data-detents="half,full"' in tag
+        assert 'data-detent-initial="half"' in tag
+        assert "data-sheet-card" in tag
+        after = signed_in_home_html[match.end() : match.end() + 400]
+        handle = re.search(r"<button[^>]*data-sheet-handle[^>]*>", after, re.S)
+        assert handle, sheet_id
+        assert "sm:hidden" in handle.group(0)
+
+    @pytest.mark.parametrize("template_id", SAVED_LIST_TEMPLATES)
+    def test_the_header_is_title_and_close_over_the_tabs_and_plus(
+        self, signed_in_home_html: str, template_id: str
+    ) -> None:
+        """SNOW-1486: the phone grid "title close" / "lead actions .".
+
+        From sm the grid is one row, "lead actions close", and the title is
+        not drawn, so the desktop header is the row of tabs, + and × it was.
+        The row is a drag surface for the sheet.
+        """
+        body = _saved_body(signed_in_home_html, template_id)
+        grid = re.search(r"<div\s+data-sheet-drag\s+class=\"([^\"]*)\"", body)
+        assert grid, template_id
+        classes = grid.group(1)
+        assert "[grid-template-areas:'title_title_close'_'lead_actions_.']" in classes
+        assert "sm:[grid-template-areas:'lead_actions_close']" in classes
+        title = re.search(
+            r'<span\s+class="([^"]*\[grid-area:title\][^"]*)"\s*>\s*Saved items', body
+        )
+        assert title, template_id
+        assert "sm:hidden" in title.group(1)
+        lead = body.index("[grid-area:lead]")
+        actions = body.index("[grid-area:actions]")
+        close = body.index("[grid-area:close]")
+        assert lead < body.index("data-saved-tabs") < actions < close
+        # The + sits in the actions cell, right of the tabs, not after the ×.
+        plus = re.search(
+            r"saved-add-roundel|trip-route-picker-trigger|route-add-menu-trigger", body
+        )
+        assert plus and actions < plus.start() < close
+
+    def test_the_saved_header_has_no_title_icon(self, signed_in_home_html: str) -> None:
+        """The Saved grid draws no icon box; the other headers keep theirs."""
+        body = _saved_body(signed_in_home_html, "favourite-list-template")
+        assert "h-6.5 w-6.5" not in body
+
+
+def _saved_body(html: str, template_id: str) -> str:
+    """Return the raw body of a Saved ``<template>``, tabs and all.
+
+    Args:
+        html: The rendered map page.
+        template_id: The template element's DOM id.
+
+    Returns:
+        Everything between the template's open and close tags.
+
+    """
+    opener = f'<template id="{template_id}">'
+    start = html.index(opener)
+    return html[start : html.index("</template>", start)]
+
+
+class TestOnePhoneSheet:
+    """SNOW-1486: New pin, the report form and Help on the phone card."""
+
+    def test_new_pin_is_titled_and_has_no_cancel(self, home_html: str) -> None:
+        """Title "New pin", a sr-only label, a full-width primary Save, no Cancel."""
+        form = _saved_body(home_html, "favourite-create-template")
+        assert "New pin" in form
+        assert "Add favourite" not in form
+        assert "Cancel" not in form
+        assert re.search(
+            r'<label class="sr-only" for="favourite-name-input">\s*Name \(optional\)',
+            form,
+        )
+        assert (
+            'placeholder="Name (optional)"' in form
+            or "placeholder='Name (optional)'" in form
+        )
+        submit = re.search(r'<button\s+type="submit"\s+class="([^"]*)"', form)
+        assert submit
+        assert "w-full" in submit.group(1)
+        assert 'data-action="dismiss"' in form  # the header's ×
+
+    def test_tasks_mark_themselves_fit(self, home_html: str) -> None:
+        """The New pin form and the saved confirmations fit their content."""
+        form = _saved_body(home_html, "favourite-create-template")
+        assert re.search(
+            r'<form\s+id="favourite-create-form"[^>]*\bdata-sheet-fit\b', form, re.S
+        )
+        for template_id in (
+            "favourite-confirmation-template",
+            "route-confirmation-template",
+        ):
+            assert "data-sheet-fit" in _saved_body(home_html, template_id), template_id
+
+    def test_the_help_menu_has_a_phone_header_with_a_handle(
+        self, home_html: str
+    ) -> None:
+        """A sm:hidden header: handle, "Help" and a × the menu closes on.
+
+        From sm the eyebrow and the corner × are still the menu's own, so a
+        desktop draws it as before.
+        """
+        start = home_html.index('id="map-help-menu"')
+        menu = home_html[start : home_html.index("map-tour-offer-options", start)]
+        phone = re.search(
+            r'<div class="sm:hidden" data-help-menu-drag>(.*?)</button>', menu, re.S
+        )
+        assert phone
+        header = phone.group(1)
+        handle = re.search(r"<div\s+data-sheet-handle[^>]*>", header, re.S)
+        assert handle
+        assert "sm:hidden" in handle.group(0)
+        assert "Help" in header
+        assert 'data-action="help-menu-close"' in menu
+        assert 'class="map-tour-offer-close"' in menu
+        assert 'class="map-tour-offer-eyebrow" id="map-help-menu-title"' in menu
+
+
+class TestOverlaySheetHandle:
+    """SNOW-1486: the card path renders the handle with or without detents."""
+
+    def test_a_card_sheet_without_detents_draws_the_handle(self) -> None:
+        sheet = render_to_string(
+            "includes/_overlay_sheet.html",
+            {"id": "s", "aria_label": "S", "card": True},
+        )
+        assert "data-sheet-card" in sheet
+        assert "data-detents" not in sheet
+        assert re.search(r"<button[^>]*data-sheet-handle[^>]*sm:hidden", sheet, re.S)
+
+    def test_a_plain_sheet_draws_no_handle(self) -> None:
+        """Desktop and every other sheet unchanged: no card, no handle."""
+        sheet = render_to_string(
+            "includes/_overlay_sheet.html", {"id": "s", "aria_label": "S"}
+        )
+        assert "data-sheet-card" not in sheet
+        assert "data-sheet-handle" not in sheet
+
+    def test_the_report_form_is_fit(self) -> None:
+        """The report form, placing state and all, fits its content."""
+        form = render_to_string(
+            "observations/partials/_report_form.html",
+            {"families": [], "submit_url": "/x/", "has_coords": True},
+            request=RequestFactory().get("/"),
+        )
+        assert re.search(r'<form\s+id="report-form"[^>]*\bdata-sheet-fit\b', form, re.S)
+        assert "data-report-placing" in form
+        confirmation = render_to_string(
+            "observations/partials/_report_confirmation.html", {}
+        )
+        assert "data-sheet-fit" in confirmation
 
 
 class TestRowDisclosureSlot:

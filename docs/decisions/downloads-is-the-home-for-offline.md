@@ -2,7 +2,7 @@
 name: downloads-is-the-home-for-offline
 description: Downloads sheet is the home for offline — row verdict dot, inventory reveal (inventoryFor), Sync all, /offline/ unlinked
 status: current
-last-reviewed: 2026-11-04
+last-reviewed: 2026-11-11
 ---
 
 # The Downloads sheet is the one home for offline
@@ -17,8 +17,10 @@ asks "will this work offline?" and does something about it:
 - each row this device holds carries its area's verdict as a dot
   (`includes/_ugc_panel_row.html` with `status_dot=True`): green with nothing
   on screen for a yes, amber or red with one reason line ("Bulletins out of
-  date", "Some trips or pins missing", "Map data missing"), grey for "Not
-  checked yet". An account-only row and an orphaned bucket have no dot.
+  date", "Some trips or pins missing", "Terrain not saved", "Map data
+  missing"), grey for "Not checked yet". Terrain counts (SNOW-1483): an area
+  that should hold terrain data and was saved without it is amber, and Sync
+  adds it. 3D does not count. An account-only row and an orphaned bucket have no dot.
   While a reason line shows, the meta drops its bulletins clause ("Bulletins
   saved 3 Nov", "Bulletins not saved"), so the row states one caveat, not
   two (Hugo, 4 Nov 2026);
@@ -27,7 +29,11 @@ asks "will this work offline?" and does something about it:
   and syncs every area on the device in the sheet's order
   (`offline_ready_core.run` over `pwaBasemapDownloads.syncArea`). It is
   refused offline, shows its progress as its label, marks the row it is on
-  as syncing, and toasts once if any area fell short.
+  as syncing, and toasts once if any area fell short. SNOW-1487: the label
+  is "Syncing 2 of 5 areas", the row it is on shows its step and counts,
+  the rest say "Waiting", Stop ends it, and the closing toast names every
+  area with its outcome
+  ([a-failed-addition-never-hides-a-working-map.md](a-failed-addition-never-hides-a-working-map.md)).
 
 `static/js/map_downloads_sync_all.js` (`window.pwaDownloadsSyncAll`) owns the
 verdict and the run; `map_downloads_manager.js` paints them on every render.
@@ -102,9 +108,13 @@ resorts and the community reports. Each has a `sync-*` dot and one value.
   mockup. The name keeps its job of framing the area on the map (SNOW-811),
   and the trailing chevron is the system's one row disclosure.
 - **The size lives in the inventory** (Hugo, 4 Nov 2026), split into Map and
-  Terrain. The row's meta line is the kind and the basemap. A run records
-  one total, so the terrain figure is the estimate the download was priced
-  at (`terrainClassMb` over the area's class tiles) and the map is the rest.
+  Terrain. The row's meta line is the kind and the basemap. SNOW-1487: both
+  are measured from the area's bucket by URL class
+  (`pwaBasemapDownloads.measureAreaInventory`), and no size shows until
+  they are; the estimate split this replaced could read "0 MB" for a map.
+  The Terrain line reads its own tiles, and an area in Switzerland still to
+  gain the Swiss map lists "Swiss map: Not added yet"
+  ([a-failed-addition-never-hides-a-working-map.md](a-failed-addition-never-hides-a-working-map.md)).
 
 ## Every download includes terrain data
 
@@ -120,3 +130,14 @@ A download that completes stamps `verified` on its new record
 (`downloadVerified` in `map_basemap_downloads.js`), with the same tile-grid
 reading and content answer `syncArea` stamps. Before this, a new row read
 "Not checked yet" until a Sync that fetched nothing turned it green.
+
+## Two ways in
+
+Hugo, 11 Nov 2026: with a custom area downloaded he could not find the
+sheet. The installed app hides the capsule roundel, so the layers menu's
+"Downloaded areas" row was the only way in, and he looked in the account
+menu first. The account menu now lists Downloads above Settings
+(`templates/includes/_account_menu_items.html`). It links to
+`/map/?downloads=open`, so it works from every page; on the map
+`[data-downloads-open]` opens the sheet in place and closes the menu. The
+layers row stays as the second way in.

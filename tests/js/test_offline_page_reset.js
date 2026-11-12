@@ -101,7 +101,8 @@ describe('the shipped offline page', () => {
 
     // SNOW-907 added two more, for the offline-content report; SNOW-922 a
     // fourth, for the Offline mode switch; SNOW-1308 three, for the
-    // per-area panels and their removal. Each subresource here is admitted
+    // per-area panels and their removal; SNOW-1483 the tile arithmetic
+    // those panels read the map with. Each subresource here is admitted
     // on the same ground the reset script was: it carries a control that
     // has to reach a user whose only reachable page is this one, and the
     // worker precaches it by this exact path.
@@ -111,6 +112,7 @@ describe('the shipped offline page', () => {
       '/static/js/offline_audit_core.js',
       '/static/js/offline_audit.js',
       '/static/js/basemap_area_removal.js',
+      '/static/js/basemap_download_core.js',
       '/static/js/offline_journey_core.js',
       '/static/js/offline_journey.js',
     ]);

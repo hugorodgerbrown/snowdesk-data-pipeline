@@ -7,6 +7,9 @@ surface reads, and as ``FAMILY_COLOURS`` in
 ``static/js/community_reports_core.js``, because MapLibre paint cannot read
 a CSS custom property. A drift would draw a pin one colour and its legend
 swatch and region-panel row another, so this reads both files and compares.
+
+The reader's own reports are drawn in ``MINE_COLOUR`` (SNOW-1480), the JS
+copy of ``--color-accent`` — the same parity, for the same reason.
 """
 
 import re
@@ -51,3 +54,12 @@ def test_every_family_has_a_token() -> None:
 def test_map_colours_match_the_tokens() -> None:
     """The pins are drawn in exactly the token colours."""
     assert _js_colours() == _css_colours()
+
+
+def test_mine_colour_matches_the_accent_token() -> None:
+    """The reader's own pins are drawn in the light theme's --color-accent."""
+    accent = re.search(r"--color-accent:\s*(#[0-9a-fA-F]{6})", CSS.read_text())
+    assert accent, "--color-accent not found in main.css"
+    mine = re.search(r"MINE_COLOUR = '(#[0-9a-fA-F]{6})'", JS.read_text())
+    assert mine, "MINE_COLOUR not found in community_reports_core.js"
+    assert mine.group(1).lower() == accent.group(1).lower()

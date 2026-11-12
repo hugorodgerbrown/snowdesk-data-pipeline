@@ -393,6 +393,10 @@
       for (const layer of map.getStyle().layers) {
         map.setLayoutProperty(layer.id, 'visibility', ids.includes(layer.id) ? 'visible' : 'none');
       }
+      // The resort dots are zoom-gated (from z8, map.js resortPinFilter) and
+      // this demo frames all of Switzerland below that, so its resorts sheet
+      // drops the gate; the restore below puts the filter back.
+      if (ids.includes('resorts-pin') && map.getLayer('resorts-pin')) map.setFilter('resorts-pin', null);
     };
     remember();
     const oldFill = map.getPaintProperty('regions-fill', 'fill-opacity');

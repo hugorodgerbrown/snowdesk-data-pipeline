@@ -31,6 +31,15 @@ weather belongs to the places in it.
 ``no_rating`` is no bulletin. The panel once said how each level moved since
 yesterday; that line went with the rest of the region's subtext when the
 panel became a bare snapshot of today (Hugo, 3 Nov 2026).
+
+PLACES (SNOW-1479). The installed phone app folds Today into the Saved
+tab's Places list: ``build_places`` takes ``build_today``'s regions and hangs
+each region's dropped pins under it too, with their height
+(``Favourite.pin_elevation``), and puts the pins outside every region last,
+under "Elsewhere". A region is listed because it is pinned, or holds a
+pinned resort or a pin; only a pinned one carries the region pin's uuid,
+which is what gives its row a menu. The desktop's Today panel is
+unchanged and still lists no pins.
 """
 
 from __future__ import annotations
@@ -272,3 +281,216 @@ def _resort_row(favourite: Favourite, source: NearestForecast | None) -> TodayRe
         temp_max=row.temperature_2m_max if row is not None else None,
         source=source,
     )
+
+
+@dataclass(frozen=True)
+class TodayPin:
+    """One dropped pin in the Places list (SNOW-1479), with its height.
+
+    Attributes:
+        favourite: The pin itself, rendered through
+            ``favourites/partials/_favourite.html`` so it keeps that row's
+            menu (Share, Rename, Delete) and its wiring.
+        height: The pin's height in metres (``Favourite.pin_elevation``),
+            or None when its Location has none yet.
+
+    """
+
+    favourite: Favourite
+    height: float | None
+
+    @property
+    def uuid(self) -> str:
+        """Return the pin's uuid, as a string."""
+        return str(self.favourite.uuid)
+
+    def to_string(self) -> str:
+        """Return the row in one line, for logs and test failures."""
+        return f"pin {self.favourite.name or self.uuid}: {self.height}"
+
+    def __str__(self) -> str:
+        """Delegate to ``to_string``."""
+        return self.to_string()
+
+
+@dataclass(frozen=True)
+class PlacesRegion:
+    """One region in the Places list: Today's row plus the pins in it.
+
+    Attributes:
+        today: The region's Today row — its danger and its pinned resorts.
+        pin_uuid: The region pin's uuid when the user pinned this region,
+            else "". A region listed only because a resort or a pin of the
+            user's sits in it has nothing of its own to share or delete, so
+            its row has no menu.
+        pins: The user's dropped pins in this region, by name.
+
+    """
+
+    today: TodayRegion
+    pin_uuid: str = ""
+    pins: list[TodayPin] = field(default_factory=list)
+
+    def to_string(self) -> str:
+        """Return the group in one line, for logs and test failures."""
+        return f"{self.today.to_string()} (+{len(self.pins)} pins)"
+
+    def __str__(self) -> str:
+        """Delegate to ``to_string``."""
+        return self.to_string()
+
+
+@dataclass(frozen=True)
+class Places:
+    """The Places list: regions in name order, then the pins outside them.
+
+    Attributes:
+        regions: Every region the user pinned, or holds a pinned resort or
+            a dropped pin in, in name order.
+        elsewhere: The dropped pins that fall in no region, by name.
+
+    """
+
+    regions: list[PlacesRegion] = field(default_factory=list)
+    elsewhere: list[TodayPin] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether there is nothing at all to list."""
+        return not self.regions and not self.elsewhere
+
+    def to_string(self) -> str:
+        """Return the list in one line, for logs and test failures."""
+        return f"places: {len(self.regions)} regions, {len(self.elsewhere)} elsewhere"
+
+    def __str__(self) -> str:
+        """Delegate to ``to_string``."""
+        return self.to_string()
+
+
+def places_region_pks(favourites: Iterable[Favourite]) -> set[int]:
+    """Return the pks of every region the Places list will name.
+
+    ``today_region_pks`` for the region pins and resorts, plus each dropped
+    pin's own region, so the caller reads today's ratings for all of them
+    in one query.
+
+    Args:
+        favourites: Any of a user's favourites, with ``region``, ``resort``
+            and ``resort__region`` joined.
+
+    Returns:
+        The regions' primary keys.
+
+    """
+    favourites = list(favourites)
+    pks = today_region_pks(today_subjects(favourites))
+    for favourite in favourites:
+        if _is_pin(favourite) and favourite.region_id is not None:
+            pks.add(favourite.region_id)
+    return pks
+
+
+def _is_pin(favourite: Favourite) -> bool:
+    """Whether a favourite is listed as a pin: a dropped pin, or a retired resort.
+
+    A saved resort that was retired (SNOW-1404) has left the map and
+    search, so it is listed as a pin — the "No longer listed" row the
+    Favourites panel gives it, with Remove as its one control.
+    """
+    if favourite.location_id is None:
+        return False
+    return favourite.resort_id is None or favourite.is_retired_resort
+
+
+def _pin_key(pin: TodayPin) -> tuple[str, str]:
+    """Order pins by name, an unnamed pin after the named ones."""
+    name = pin.favourite.name
+    return ("\uffff" if not name else name.casefold(), pin.uuid)
+
+
+def build_places(
+    favourites: Iterable[Favourite],
+    day: datetime.date,
+    today_ratings: Mapping[int, RegionDayRating],
+) -> Places:
+    """Build the Places list: Today's regions with the pins in each.
+
+    Args:
+        favourites: Every one of a user's favourites, with ``region``,
+            ``location``, ``resort``, ``resort__region`` and
+            ``resort__location`` joined, so reading them queries nothing.
+        day: Today.
+        today_ratings: Today's ``RegionDayRating`` rows by region pk, read
+            once by the caller for ``places_region_pks``.
+
+    Returns:
+        The regions in name order — each with Today's row, its region pin's
+        uuid when it is pinned, and its pins by name — then the pins in no
+        region, by name. ``build_today``'s order, so a place is where it was
+        yesterday.
+
+    """
+    favourites = list(favourites)
+    pins = [f for f in favourites if _is_pin(f)]
+    # A retired resort is listed as a pin, never as Today's resort row.
+    subjects = [f for f in today_subjects(favourites) if not _is_pin(f)]
+    region_pins = {
+        f.region_id: str(f.uuid)
+        for f in subjects
+        if f.location_id is None and f.region_id is not None
+    }
+
+    regions_by_pk: dict[int, MicroRegion] = {}
+    pins_by_region: dict[int, list[TodayPin]] = {}
+    elsewhere: list[TodayPin] = []
+    for favourite in pins:
+        pin = TodayPin(favourite=favourite, height=favourite.pin_elevation)
+        region = favourite.region
+        if region is None:
+            elsewhere.append(pin)
+            continue
+        regions_by_pk[region.pk] = region
+        pins_by_region.setdefault(region.pk, []).append(pin)
+
+    today_rows = {
+        row.region_id: row for row in build_today(subjects, day, today_ratings)
+    }
+    # A region holding only pins has no Today row of its own; make one,
+    # from the same rating, so it reads like every other region.
+    for pk, region in regions_by_pk.items():
+        if region.region_id in today_rows:
+            continue
+        rating = today_ratings.get(pk)
+        if not _rank(rating):
+            rating = None
+        today_rows[region.region_id] = TodayRegion(
+            region_id=region.region_id,
+            name=region.name,
+            url=region.get_absolute_url(),
+            level=rating.max_rating if rating else None,
+            subdivision=(rating.max_subdivision or "") if rating else "",
+            rating=rating,
+        )
+
+    pk_by_region_id = {r.region_id: pk for pk, r in regions_by_pk.items()}
+    pk_by_region_id.update(
+        {
+            region.region_id: region.pk
+            for f in subjects
+            if (region := _parent(f)) is not None
+        }
+    )
+    groups = [
+        PlacesRegion(
+            today=row,
+            pin_uuid=region_pins.get(pk_by_region_id.get(region_id, -1), ""),
+            pins=sorted(
+                pins_by_region.get(pk_by_region_id.get(region_id, -1), []),
+                key=_pin_key,
+            ),
+        )
+        for region_id, row in today_rows.items()
+    ]
+    groups.sort(key=lambda g: (g.today.name.casefold(), g.today.region_id))
+    return Places(regions=groups, elsewhere=sorted(elsewhere, key=_pin_key))

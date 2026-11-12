@@ -323,8 +323,13 @@
 
     if (!UPLOAD_ELIGIBLE) {
       // Uploading needs an account either way, so the add CTA goes.
-      const addButton = sheet.querySelector('[data-panel-add]');
-      if (addButton) addButton.remove();
+      // With route drawing on it is an item in the header's add menu, so
+      // its <li> goes with it.
+      // SNOW-1479: every add control — the foot's button, the add menu's
+      // Upload item, or the app's + roundel in the header.
+      sheet.querySelectorAll('[data-panel-add]').forEach(function (addButton) {
+        (addButton.closest('li[role="none"]') || addButton).remove();
+      });
 
       if (!SHARE_PENDING) {
         const rows = sheet.querySelector('[data-routes-rows]');
@@ -366,6 +371,9 @@
     const foot = sheet.querySelector('[data-panel-foot]');
     const host = foot || sheet.querySelector('[data-routes-rows]');
     if (!host) return;
+    // The foot is rendered hidden when the add menu sits in the header.
+    // So is a Saved tab's foot holding only the add button (SNOW-1481).
+    if (foot) foot.hidden = false;
     host.appendChild(buildSigninCta());
   }
 

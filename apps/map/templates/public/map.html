@@ -161,6 +161,8 @@ in addition to the shared map assets.
         {# SNOW-1366: the Today panel, opened from the date row's sun. Before  #}
         {# the trail surface, whose module reopens it from a back pill.        #}
         {% include "public/partials/_today_surface.html" %}
+        {# SNOW-1479: the installed phone app's Saved → Trips sheet. #}
+        {% include "public/partials/_trips_surface.html" %}
         {# The back pill between the three place panels (Hugo, 25 Oct 2026). #}
         {% include "public/partials/_panel_trail_surface.html" %}
         {# SNOW-1119: help mode — the "?" roundel names every control and guides #}
@@ -211,12 +213,13 @@ in addition to the shared map assets.
     {% endif %}
     {# SNOW-1460: the winter map past the Swiss border, in 2D and 3D, for a #}
     {# reader in map_beyond_switzerland. Outside the map bundle, so a reader #}
-    {# without the flag downloads none of it. The extent first, the three   #}
-    {# cores, then the script that registers the protocols and splices the  #}
+    {# without the flag downloads none of it. The three cores, then the     #}
+    {# script that registers the protocols and splices the                 #}
     {# style on every style.load; after the 3D view, which it hands the     #}
     {# Alpine coverage to.                                                  #}
     {% if map_beyond_switzerland %}
-        <script defer src="{% static 'js/swisstopo_extent.js' %}"></script>
+        {# SNOW-1478: the extent itself is in the map bundle now, for every #}
+        {# reader; it has loaded by the time these run.                   #}
         <script defer src="{% static 'js/beyond_switzerland_core.js' %}"></script>
         <script defer src="{% static 'js/osm_clip_core.js' %}"></script>
         <script defer src="{% static 'js/alpine_relief_core.js' %}"></script>

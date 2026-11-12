@@ -70,9 +70,7 @@ WHAT THIS SURFACE DOES NOT HAVE, and why each absence is deliberate:
   No offline cache SIDECAR, but the panel does read offline. SNOW-950 gave
   it static/js/routes_offline.js, which stores each list response's rendered
   body verbatim in ``data:panel_rows`` and lets routes.js repaint it over a
-  failed load — the shape SNOW-661 built for the observations panel, and not
-  _favourite_list_map.html's ``roster_payload``, which hands
-  favourites_offline.js a record per row to rebuild. The MAP LAYER caches
+  failed load — the shape SNOW-661 built for the observations panel. The MAP LAYER caches
   separately, as it has since SNOW-687: routes:geojson is write-through
   cached by static/js/map_overlay_offline_cache.js, principal-scoped so one
   account's tracks can never read back into another's session — but that
@@ -89,7 +87,9 @@ Context expected:
 {# scrolls, which is why every body rendered into it carries               #}
 {# `min-h-0 flex-1` and owns its own scroll region.                        #}
 {% trans "Routes" as route_sheet_aria_label %}
-{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True %}
+{# SNOW-1481: a Saved sheet, docked left like the other three; SNOW-1486: #}
+{# the phone card at half or full, as they are.                           #}
+{% include "includes/_overlay_sheet.html" with id="route-sheet" aria_label=route_sheet_aria_label scroll_body=True side="left" detents="half,full" initial="half" card=True %}
 {# The panel the roundel opens — the user's saved routes and a CTA to add   #}
 {# another. Cloned by routes.js on every open (so a stale row can never     #}
 {# survive a re-open), which then loads the rows themselves over HTMX from  #}
@@ -100,10 +100,16 @@ Context expected:
 <template id="route-list-template">
     {% trans "Routes" as route_list_title %}
     {# SNOW-1278: with route drawing on there are three ways to add a     #}
-    {# route — find, create, upload — and the three rows replace the       #}
-    {# panel's own add button (the upload row carries its hook).           #}
+    {# route — find, create, upload. They sit in a menu behind a + beside  #}
+    {# the × and replace the panel's own add button (the upload item       #}
+    {# carries its hook), so the foot gives its room to the list.          #}
+    {# SNOW-1479: the menu shows everywhere. Without it the Saved tab    #}
+    {# still needs a + in the header (its foot is not drawn), so the     #}
+    {# panel gets the bare + roundel, which uploads.                     #}
     {% if route_drawing_enabled %}
-        {% firstof "public/partials/_route_add_rows.html" as route_add_rows_template %}
+        {% firstof "public/partials/_route_add_menu.html" as route_add_menu_template %}
+    {% else %}
+        {% firstof "includes/_saved_add_roundel.html" as route_add_menu_template %}
     {% endif %}
     {% trans "Add a route" as route_add_label %}
     {# The context strip — where this panel's data lives.                   #}
@@ -125,7 +131,7 @@ Context expected:
     {# SNOW-904 took it away; the two-capsule column brought it back as    #}
     {# "Show on the map", bound to the layers menu's Routes row by         #}
     {# static/js/map_panel_overlay_switch.js, which finds it by this id.   #}
-    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label toggle_id="map-routes-overlay-toggle" foot_template=route_add_rows_template foot_replaces_add=route_drawing_enabled saved_tab="routes" %}
+    {% include "includes/_ugc_panel.html" with title=route_list_title icon_template="includes/_icon_route.html" context_line=routes_context_line section_label=routes_section_label rows_template="public/partials/_routes_panel_rows.html" cta_label=route_add_label toggle_id="map-routes-overlay-toggle" header_actions_template=route_add_menu_template foot_replaces_add=route_drawing_enabled saved_tab="routes" %}
 </template>
 {# Optimistic-confirmation template (SNOW-886) — cloned into #route-sheet  #}
 {# by routes.js the instant route_create answers 200, modelled on           #}
@@ -166,7 +172,8 @@ Context expected:
     {# `min-h-0 flex-1 overflow-y-auto` — the sheet is scroll_body=True, so #}
     {# every body rendered into it owns its own scroll region rather than   #}
     {# overflowing the bounded sheet.                                       #}
-    <div class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
+    {# SNOW-1486: a confirmation fits its content (`data-sheet-fit`).    #}
+    <div data-sheet-fit class="flex min-h-0 flex-1 flex-col items-center gap-4 overflow-y-auto py-4 text-center">
         <div class="text-4xl text-status-low-text" aria-hidden="true">✓</div>
         <p class="text-base font-medium text-text-1">{% trans "Route saved!" %}</p>
         <p class="text-sm text-text-2">

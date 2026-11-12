@@ -2,7 +2,7 @@
 name: architecture
 description: Architecture diagrams and repo map — Render services, Postgres, snowdesk-tiles origin, the nineteen apps, track/, boundaries
 status: current
-last-reviewed: 2026-11-06
+last-reviewed: 2026-11-10
 ---
 
 # Architecture
@@ -162,9 +162,9 @@ apps/            Parent package for the nineteen Django apps (SNOW-557 — moved
                  saved resort, or a region pin (a region with no
                  coordinate, SNOW-802) — plus its relevance scoring and the
                  HTMX partials under /favourites/. The kinds are listed
-                 on two surfaces: dropped pins in the map's pins sheet
-                 (``favourites:list``, ``dropped_pins()`` only), and all
-                 three in search — dropped pins (SNOW-1264, "Pinned
+                 on two surfaces: all three in Saved › Places
+                 (``favourites:places``; the pins-only ``favourites:list``
+                 was retired by SNOW-1481), and all three in search — dropped pins (SNOW-1264, "Pinned
                  places", matched by name), regions (SNOW-814,
                  ``favourites:region_list``) and resorts (SNOW-1229),
                  the pins and resorts read from favourites.geojson. A

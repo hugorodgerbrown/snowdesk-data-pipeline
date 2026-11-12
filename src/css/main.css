@@ -2564,6 +2564,12 @@ a.season-day:focus-visible {
   color: var(--color-sync-blocked);
 }
 
+/* SNOW-1483: a state, not a capability (Offline mode on, no signal):
+   neutral, neither a Yes nor a No. */
+[data-offline-audit] [data-audit-check][data-audit-status='info'] [data-audit-value] {
+  color: var(--color-text-2);
+}
+
 [data-offline-audit] [data-audit-check][data-audit-status='unknown'] [data-audit-value],
 [data-offline-audit] [data-audit-check][data-audit-status='pending'] [data-audit-value] {
   color: var(--color-text-3);
@@ -3020,7 +3026,8 @@ a.season-day:focus-visible {
   border-radius: var(--radius-sm);
 }
 
-/* Today's alert dot, mirrored from the sun roundel's (static/js/app_tabbar.js). */
+/* The alert dot on the Saved tab (Today's until SNOW-1479), mirrored from
+   the sun roundel's (static/js/app_tabbar.js). */
 .app-tab-dot {
   position: absolute;
   top: 8px;
@@ -3036,23 +3043,14 @@ a.season-day:focus-visible {
   display: none;
 }
 
-/* The Saved chip row is the tab bar's, so it is drawn only where the bar is. */
-.app-saved-chips {
-  display: none;
-}
-
 /* Shown only in the installed app on a phone: the "?" menu's Map key and
    legal line, which stand in for the (i) roundel and the footer the bar
-   hides. Hidden by the negated gate, so each
-   keeps its own display inside it. */
+   hides, and the Saved tabs and their + roundel (SNOW-1479). Hidden by the
+   negated gate, so each keeps its own display inside it. */
 @media not ((display-mode: standalone) and (max-width: 639.98px)) {
   .app-only {
     display: none !important;
   }
-}
-
-.app-saved-chips.app-saved-chips--preview {
-  display: block;
 }
 
 @media (display-mode: standalone) and (max-width: 639.98px) {
@@ -3081,7 +3079,11 @@ a.season-day:focus-visible {
     display: none;
   }
 
-  .app-saved-chips {
-    display: block;
+  /* The reverse of `.app-only` (SNOW-1479): what the app does without. A
+     Saved tab's title, context line, section label, × and foot add button,
+     which its tabs and + roundel replace, and the avatar menu's Trips,
+     which is a Saved tab there. */
+  .app-hidden {
+    display: none !important;
   }
 }

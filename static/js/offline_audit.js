@@ -306,6 +306,9 @@
     'answer-no': 'No',
     'answer-unknown': '—',
     'answer-pending': '…',
+    // SNOW-1483: the network row's `info` answers, one per state.
+    'answer-info-forced': 'Offline mode on',
+    'answer-info-latched': 'No signal',
 
     'note-sw-unsupported': 'this browser has no offline mode at all',
     'note-sw-starting': 'offline mode is starting up and will be ready on the next load',
@@ -1332,8 +1335,14 @@
           // the account the area was stamped for (SNOW-1142), so those
           // things are never named to another account.
           template: record.template || null,
+          // SNOW-1478: every map the area holds, when its download saved
+          // more than one or a sync added Swisstopo; null before that.
+          basemaps: Array.isArray(record.basemaps) ? record.basemaps : null,
           items: record.items || null,
           principal: typeof record.principal === 'string' ? record.principal : null,
+          // SNOW-1487: what the last sync learned, its unfinished steps
+          // among it, for the copied report.
+          verified: record.verified && typeof record.verified === 'object' ? record.verified : null,
         });
       });
     }
@@ -1367,8 +1376,14 @@
           band: Array.isArray(record.band) ? record.band : null,
           // SNOW-1308: see the region branch above.
           template: record.template || null,
+          // SNOW-1478: every map the area holds, when its download saved
+          // more than one or a sync added Swisstopo; null before that.
+          basemaps: Array.isArray(record.basemaps) ? record.basemaps : null,
           items: record.items || null,
           principal: typeof record.principal === 'string' ? record.principal : null,
+          // SNOW-1487: what the last sync learned, its unfinished steps
+          // among it, for the copied report.
+          verified: record.verified && typeof record.verified === 'object' ? record.verified : null,
         });
       });
     }
@@ -2998,11 +3013,7 @@
     if (copyButton) {
       copyButton.addEventListener('click', async function () {
         if (!lastReport) return;
-        var text = self.pwaOfflineAuditCore.reportText(lastReport, {
-          url: self.location ? self.location.href : '',
-          userAgent: navigator.userAgent,
-          appVersion: appVersion(),
-        });
+        var text = reportTextFor(lastReport);
         try {
           await navigator.clipboard.writeText(text);
           say(t.copied || FALLBACKS.copied);
@@ -3327,6 +3338,88 @@
   }
 
   /**
+   * The text a copied report carries: the report, and the page, browser and
+   * build it was taken on. One helper for /offline/'s Copy button and for
+   * `copyReport`, so the two copies cannot drift (SNOW-1488).
+   *
+   * @param {Object} report `pwaOfflineAuditCore.buildReport`'s answer.
+   * @returns {string}
+   */
+  function reportTextFor(report) {
+    return self.pwaOfflineAuditCore.reportText(report, {
+      url: self.location ? self.location.href : '',
+      userAgent: navigator.userAgent,
+      appVersion: appVersion(),
+    });
+  }
+
+  /**
+   * SNOW-1488: take the report and put it on the clipboard, from a page
+   * with no audit panel — the map's Downloads sheet, whose "…" menu is how
+   * a reader of the installed app (no address bar) reaches the report.
+   *
+   * Collected against `host`, which carries the same inputs `/offline/`'s
+   * `[data-offline-audit]` does (includes/_offline_audit_host_attrs.html),
+   * so the copy holds the same checks. A collection that throws is copied
+   * as the failure report /offline/ paints for it, since a report that
+   * could not be taken is itself the finding.
+   *
+   * Its words come from `strings()`: the map renders no audit strings
+   * template, so they are the English fallbacks there, and the copy is a
+   * diagnostic for whoever it is sent to rather than a surface.
+   *
+   * The clipboard is asked before the report is taken. Collecting crosses
+   * the service worker, Cache Storage and IndexedDB, and WebKit drops the
+   * tap's user activation across those, refusing a write made afterwards
+   * (https://bugs.webkit.org/show_bug.cgi?id=222262). So where
+   * `ClipboardItem` exists, `clipboard.write` is called within the tap with
+   * an item whose text is a promise the collection resolves. Elsewhere the
+   * text is written once taken, as /offline/'s button does.
+   *
+   * Call it from the click handler, before any `await`.
+   *
+   * @param {HTMLElement|null} host
+   * @returns {Promise<boolean>} Whether the clipboard took it.
+   */
+  function copyReport(host) {
+    var core = self.pwaOfflineAuditCore;
+    if (!core) return Promise.resolve(false);
+    var text = collect(host)
+      .catch(function (err) {
+        return { now: new Date().toISOString(), failure: describeError(err) };
+      })
+      .then(function (readings) {
+        return reportTextFor(core.buildReport(readings, strings()));
+      });
+    var clipboard = navigator.clipboard;
+    var written;
+    try {
+      if (typeof ClipboardItem === 'function' && clipboard && typeof clipboard.write === 'function') {
+        var item = new ClipboardItem({
+          'text/plain': text.then(function (value) {
+            return new Blob([value], { type: 'text/plain' });
+          }),
+        });
+        written = clipboard.write([item]);
+      } else {
+        written = text.then(function (value) {
+          return clipboard.writeText(value);
+        });
+      }
+    } catch (_err) {
+      return Promise.resolve(false);
+    }
+    return Promise.resolve(written).then(
+      function () {
+        return true;
+      },
+      function () {
+        return false;
+      },
+    );
+  }
+
+  /**
    * Bind every host present on this page.
    *
    * @returns {void}
@@ -3354,6 +3447,8 @@
     // SNOW-1415: the panels stamp what they read on each record, so the
     // connection panel can answer on pages that cannot read tiles.
     stampVerified: stampAreaVerified,
+    // SNOW-1488: the Downloads sheet's Copy report; see `copyReport`.
+    copyReport: copyReport,
     latest: function (root) {
       var c = controllerFor(root);
       return c ? c.latest() : null;

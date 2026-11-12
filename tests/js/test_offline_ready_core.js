@@ -106,6 +106,54 @@ describe('run', () => {
     ]);
   });
 
+  // SNOW-1487: the counts reach the host, so a row can say "212 of 528".
+  it('passes each stage\'s counts on, and repeats a stage whose counts moved', async () => {
+    const steps = [];
+    await core.run({
+      drain: () => undefined,
+      waiting: () => 0,
+      areas: ['a'],
+      syncOne: async (_id, onStage) => {
+        onStage('map', { done: 0, total: 528 });
+        onStage('map', { done: 212, total: 528 });
+        onStage('map', { done: 212, total: 528 });
+        onStage('map');
+        onStage('terrain', { done: 0, total: 40 });
+        onStage('bulletins');
+        return 'ready';
+      },
+      onStep: (step) => steps.push(step),
+    });
+    expect(steps.filter((step) => step.phase === 'stage')).toEqual([
+      { phase: 'stage', n: 1, total: 1, id: 'a', name: 'map', counts: { done: 0, total: 528 } },
+      { phase: 'stage', n: 1, total: 1, id: 'a', name: 'map', counts: { done: 212, total: 528 } },
+      { phase: 'stage', n: 1, total: 1, id: 'a', name: 'terrain', counts: { done: 0, total: 40 } },
+      { phase: 'stage', n: 1, total: 1, id: 'a', name: 'bulletins' },
+    ]);
+  });
+
+  it('knows the terrain stage, in order after the map', () => {
+    expect(core.STAGES.indexOf('terrain')).toBe(core.STAGES.indexOf('map') + 1);
+  });
+
+  it('starts no area after a stop, and says which it skipped', async () => {
+    const controller = new AbortController();
+    const syncOne = vi.fn(async (id) => {
+      if (id === 'a') controller.abort();
+      return 'ready';
+    });
+    const result = await core.run({
+      drain: () => undefined,
+      waiting: () => 0,
+      areas: ['a', 'b', 'c'],
+      syncOne,
+      signal: controller.signal,
+    });
+    expect(syncOne).toHaveBeenCalledTimes(1);
+    expect(result.outcomes).toEqual([{ id: 'a', outcome: 'ready' }]);
+    expect(result.skipped).toEqual(['b', 'c']);
+  });
+
   it('keeps going past an area that throws, and counts it as not ready', async () => {
     const result = await core.run({
       drain: () => undefined,
@@ -219,6 +267,13 @@ describe('progressText', () => {
     expect(
       core.progressText({ phase: 'stage', n: 1, total: 3, id: 'a', name: 'weather' }, strings),
     ).toBe('Weather… (1 of 3)');
+  });
+
+  it('names the terrain stage (SNOW-1487)', () => {
+    const strings = { ...STRINGS, 'sync-stage-terrain': 'Terrain… (%(n)s of %(total)s)' };
+    expect(
+      core.progressText({ phase: 'stage', n: 2, total: 3, id: 'a', name: 'terrain' }, strings),
+    ).toBe('Terrain… (2 of 3)');
   });
 
   it('falls back to the count for a stage it has no word for', () => {

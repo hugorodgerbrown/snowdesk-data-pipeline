@@ -1,0 +1,176 @@
+{% load i18n snowdesk_time weather_icons %}
+{% comment %}
+favourites/partials/_places.html — Saved › Places (SNOW-1479; on every
+screen since SNOW-1481).
+
+Rendered by apps.favourites.views.places and swapped into the favourites
+sheet's [data-favourites-rows] by static/js/favourites.js whenever the sheet
+opens (window.pwaFavouritesSheet.open()): the star roundel and the app's
+Saved tab both open Saved on Places.
+
+Built by apps.favourites.today.build_places: Today's list
+(favourites/partials/_today.html) with the user's dropped pins folded in.
+One group per region the user pinned, holds a pinned resort in or dropped
+a pin in, in name order, never by urgency (Hugo, 2 Nov 2026):
+
+  * the region's own row — its name and today's EAWS level, a link that
+    opens the region sheet on the map (map_panel_trail.js, as Today's rows
+    do), and a "…" menu of Share and Delete only when the region itself is
+    pinned. A region listed only because a resort or a pin of the user's
+    sits in it has nothing of its own to share or delete, so no menu. Its
+    Delete empties the region's own row only (``place-region-head-<id>``),
+    never the group, so the resorts and pins under it stay until the list
+    is read again;
+  * the pinned resorts in it, each with today's weather, a link to the
+    resort sheet and the same Share / Delete menu;
+  * the dropped pins in it, through the one saved-pin row
+    (favourites/partials/_favourite.html) — Share, Rename, Delete as on the
+    Favourites panel — with the pin's height on the meta line. Its list is
+    inset on the left only (``pl-3``), as the resort rows' links are, so the
+    pin's name and "…" line up with the rows above, and the name takes the
+    resorts' ``text-sm``.
+
+The pins in no region come last, under "Elsewhere". No observation counts
+(SNOW-1479, "Not changing").
+
+The root names the back pill a followed row leaves on the sheet it opens
+(``data-panel-key="places:now"``), which reopens this list.
+
+Context:
+    places : Places — from build_places. The pins' rename is wired by
+             favourites.js from the roundel's own dataset.
+{% endcomment %}
+{% trans "Places" as places_label %}
+<div data-testid="places-list" data-panel-key="places:now" data-panel-label="{{ places_label }}">
+    {% if places.is_empty %}
+        <p class="py-2 text-sm text-text-2" data-testid="places-empty">
+            {% trans "Pin a region from its bulletin, a resort with the star on its sheet, or drop a pin with +, to see it here." %}
+        </p>
+    {% else %}
+        <ul class="flex flex-col gap-2">
+            {% for group in places.regions %}
+                {% with region=group.today %}
+                    {% firstof "place-region-"|add:region.region_id as region_dom_id %}
+                    {% firstof "place-region-head-"|add:region.region_id as region_head_dom_id %}
+                    <li
+                        id="{{ region_dom_id }}"
+                        class="rounded-card bg-tag"
+                        data-testid="places-region"
+                        data-region-id="{{ region.region_id }}"
+                    >
+                        <div id="{{ region_head_dom_id }}" class="flex min-w-0 items-center">
+                            <a
+                                href="{{ region.url }}"
+                                data-panel-open="region"
+                                data-panel-id="{{ region.region_id }}"
+                                data-testid="places-region-link"
+                                class="flex min-w-0 flex-1 items-center gap-3 rounded-card px-3 py-2.5 hover:bg-card-hover"
+                            >
+                                <span
+                                    class="min-w-0 flex-1 truncate text-label font-semibold text-text-1"
+                                >{{ region.name }}</span>
+                                {% if region.level %}
+                                    <span
+                                        class="danger-tile danger-tile--compact"
+                                        data-level="{{ region.level }}"
+                                        aria-hidden="true"
+                                        data-testid="places-region-level"
+                                    >{{ region.level|danger_level_digit }}{{ region.subdivision }}</span>
+                                    <span class="sr-only" data-testid="places-region-announce">
+                                        {% blocktrans trimmed with level=region.level|danger_level_digit|danger_level_label %}Danger
+                                            today: {{ level }}{% endblocktrans %}
+                                    </span>
+                                {% else %}
+                                    <span
+                                        class="danger-tile danger-tile--compact"
+                                        data-level="no_rating"
+                                        aria-hidden="true"
+                                        data-testid="places-region-level"
+                                    >–</span>
+                                    <span
+                                        class="sr-only"
+                                        data-testid="places-region-announce"
+                                    >{% trans "No bulletin today" %}</span>
+                                {% endif %}
+                            </a>
+                            {% if group.pin_uuid %}
+                                {% blocktrans trimmed with name=region.name asvar region_actions_label %}Actions for
+                                    {{ name }}{% endblocktrans %}
+                                <span class="flex-none" data-testid="places-region-menu">
+                                    {% include "includes/_overflow_menu.html" with trigger_id="place-actions-"|add:group.pin_uuid menu_id="place-actions-menu-"|add:group.pin_uuid trigger_label=region_actions_label items_template="favourites/partials/_favourite_row_menu_items.html" place_uuid=group.pin_uuid place_share_url=region.url label=region.name row_target="#"|add:region_head_dom_id %}
+                                </span>
+                            {% endif %}
+                        </div>
+                        {% if region.resorts %}
+                            <ul class="border-t border-border py-1">
+                                {% for resort in region.resorts %}
+                                    {% firstof "place-resort-"|add:resort.uuid as resort_dom_id %}
+                                    <li
+                                        id="{{ resort_dom_id }}"
+                                        class="flex min-w-0 items-center"
+                                        data-testid="places-resort"
+                                        data-resort-uuid="{{ resort.uuid }}"
+                                    >
+                                        <a
+                                            href="{{ resort.url }}"
+                                            data-panel-open="resort"
+                                            data-panel-id="{{ resort.slug }}"
+                                            data-resort-slug="{{ resort.slug }}"
+                                            data-testid="places-resort-link"
+                                            class="flex min-w-0 flex-1 items-center gap-3 px-3 py-1.5 hover:bg-card-hover"
+                                        >
+                                            <span
+                                                class="min-w-0 flex-1 truncate text-sm text-text-1"
+                                            >{{ resort.name }}</span>
+                                            {% if resort.icon %}
+                                                <span
+                                                    class="flex flex-none items-center gap-1 text-sm text-text-1 tabular-nums"
+                                                    data-testid="places-resort-forecast"
+                                                >
+                                                    <img
+                                                        src="{% weather_icon_url resort.icon %}"
+                                                        class="{% weather_icon_class %} h-5 w-5"
+                                                        alt=""
+                                                        aria-hidden="true"
+                                                    >
+                                                    {% if resort.temp_max is not None %}{{ resort.temp_max|floatformat:0 }}&deg;{% endif %}
+                                                </span>
+                                            {% endif %}
+                                        </a>
+                                        {% blocktrans trimmed with name=resort.name asvar resort_actions_label %}Actions
+                                            for
+                                            {{ name }}{% endblocktrans %}
+                                        <span class="flex-none" data-testid="places-resort-menu">
+                                            {% include "includes/_overflow_menu.html" with trigger_id="place-actions-"|add:resort.uuid menu_id="place-actions-menu-"|add:resort.uuid trigger_label=resort_actions_label items_template="favourites/partials/_favourite_row_menu_items.html" place_uuid=resort.uuid place_share_url=resort.url label=resort.name row_target="#"|add:resort_dom_id %}
+                                        </span>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                        {% if group.pins %}
+                            <ul
+                                class="border-t border-border pl-3 [&>li:first-child]:border-t-0"
+                                data-testid="places-pins"
+                            >
+                                {% for pin in group.pins %}
+                                    {% include "favourites/partials/_favourite.html" with favourite=pin.favourite pin_height=pin.height in_places=True hide_disclosure=True map_focus=True %}
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </li>
+                {% endwith %}
+            {% endfor %}
+        </ul>
+        {% if places.elsewhere %}
+            {% trans "Elsewhere" as elsewhere_label %}
+            <div class="mt-4 flex flex-col gap-1" data-testid="places-elsewhere">
+                {% include "includes/_eyebrow.html" with tag="p" text=elsewhere_label class_extra="pb-1 font-medium" %}
+                <ul class="rounded-card bg-tag pl-3 [&>li:first-child]:border-t-0">
+                    {% for pin in places.elsewhere %}
+                        {% include "favourites/partials/_favourite.html" with favourite=pin.favourite pin_height=pin.height in_places=True hide_disclosure=True map_focus=True %}
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+    {% endif %}
+</div>

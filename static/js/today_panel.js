@@ -48,6 +48,10 @@
  *
  * Rendered only for a signed-in reader (public/partials/_today_surface.html),
  * so this module returns at once for a visitor.
+ *
+ * In the installed phone app Today has no tab of its own (SNOW-1479): its
+ * regions and resorts are Saved → Places, whose rows borrow ``toToday``
+ * from this bridge. This panel is reached there only by a back pill.
  */
 (function todayPanelInit() {
   'use strict';
@@ -257,5 +261,8 @@
     open: open,
     close: close,
     isOpen: controller.isOpen,
+    // SNOW-1479: the Saved tab's Places list is today's too, and its rows
+    // put the map on today the same way before their sheet opens.
+    toToday: mapToToday,
   });
 }());

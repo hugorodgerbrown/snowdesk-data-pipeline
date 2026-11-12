@@ -2,7 +2,7 @@
 name: a-panel-opens-beside-what-opened-it
 description: Desktop map panels open beside their trigger — selections left under search, roundel panels right; one object sheet; no sheet focus ring
 status: current
-last-reviewed: 2026-11-08
+last-reviewed: 2026-11-10
 ---
 
 # A panel opens beside what opened it
@@ -16,10 +16,15 @@ the thing that opened it.
   dock in one 400px column under that pill, from the pill row down to the
   date row. On a phone the same sheets slide up from the foot with their
   detents ([`sheet-detents-are-phone-only.md`](sheet-detents-are-phone-only.md)).
-- **A roundel opens on the right.** Roundel panels (downloads, favourites,
-  observations, routes list, terrain filter) and the layers menu are opened
-  from the roundel column at the right edge, so they inset beside that
-  column, as they always have. Form panels opened from them follow them.
+- **A roundel opens on the right.** Roundel panels (downloads, terrain
+  filter) and the layers menu are opened from the roundel column at the
+  right edge, so they inset beside that column, as they always have. Form
+  panels opened from them follow them.
+- **Exception: Saved docks left (SNOW-1481, Hugo).** The star opens Saved —
+  the favourites, routes, trips and report sheets as one panel — in the
+  left column under search, though its roundel is on the right, so that
+  the reader's own lists sit where the installed app's Saved does
+  ([`saved-is-one-panel-on-every-screen.md`](saved-is-one-panel-on-every-screen.md)).
 
 `includes/_overlay_sheet.html`'s `side="left"` marks a selection sheet;
 `static/js/map_overlay_bounds.js` places it and `static/css/map.css` ("The

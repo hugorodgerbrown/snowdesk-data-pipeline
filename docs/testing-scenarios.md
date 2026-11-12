@@ -2,7 +2,7 @@
 name: testing-scenarios
 description: Manual test scenarios — bulletin, map, search, accounts, PWA install/update/kill-switch, offline downloads, coverage, end-user offline run
 status: current
-last-reviewed: 2026-11-07
+last-reviewed: 2026-11-10
 ---
 
 # User Testing Scenarios -- Snowdesk
@@ -317,7 +317,7 @@ came for something in particular (SNOW-1117; made task-led by SNOW-1230).
 | 5 | Clear `localStorage`, reload, and click "Explore the map" (or the "×", or press Escape) when the card appears | The card closes and records the same answer; nothing else opens |
 | 6 | Clear `localStorage` and open http://localhost:8000/map/?resort=verbier | The resort opens and the card never appears: a deep link came for that |
 | 7 | Clear `localStorage`, reload, and tap a region before the card appears | The region sheet opens and the card does not appear over it this visit; `snowdesk.map.tour-offer` is still unset |
-| 8 | Click the "?" roundel in the bottom-left stack | A small "Help" menu opens: "Show me around again", "What is everything on the map?", "Help pages" |
+| 8 | Click the "?" roundel in the bottom-left stack | A small "Help" menu opens: "Show me around again", "What is everything on the map?", "Help pages". On a phone it is the inset card, a handle, "Help" and × (Scenario P14) |
 | 9 | Click "Show me around again" | The welcome card opens again, whatever was recorded |
 | 10 | Click "?", then "What is everything on the map?", then "Tour" on the bar | Help mode names the controls; "Tour" opens the coachmark tour on step 1 (Scenarios MS8, MS9) |
 
@@ -556,6 +556,21 @@ pages redirect into the map's sheets.
 | 2 | Open search and leave the field empty | Both are listed under "Pinned places", above "Pinned resorts" and "Pinned regions": "Col de Mille" first, then "Unnamed pin", each with a blue star tile and "in <region>" |
 | 3 | Type "mille" | "Col de Mille" is listed under "Pinned places"; typing "unnamed" lists no pin |
 | 4 | Pan far away, turn the Favourites panel's "Show on the map" off, then pick "Col de Mille" from search | The stars come back on, the map flies to the pin and its sheet opens, as a tap on the star would |
+
+### Scenario 12c: Hold on the map to add a pin or report there
+
+**Goal**: Verify a hold on the map drops a pin under the finger, the map can fine-tune it, and the bar hands it to the new-pin or report form — or puts the map back (SNOW-1485).
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On a phone, signed in, hold a finger still on the map for about half a second | A pin drops there; the map slides the spot under the placing pin and clears to the basemap; a bar at the foot reads "Move the map to fine-tune." with ×, **Save pin** and **Report** |
+| 2 | Put a finger down and pan or pinch straight away | The map pans or zooms as normal; no bar |
+| 3 | Hold again, pan the map a little, then press × | The bar closes and the map goes back to exactly where it was before the hold, with its layers |
+| 4 | Hold, pan a little, press **Save pin**, name it and press Save | The new-pin form opens with the spot set; the pin is saved where the placing pin was |
+| 5 | Hold, press **Report** | The report form opens straight on the tiles, with no Move pin row; Save and Cancel sit side by side at the foot, with "Observations are visible to other users." under them |
+| 6 | Hold on a resort's dot, a saved pin or a report | The bar opens; the object's own sheet does NOT open. A plain tap on it still opens its sheet |
+| 7 | On a desktop, right-click the map | The same bar opens at once |
+| 8 | Signed out, hold and press either button | The same sign-in prompt as the star and the binoculars give |
 
 ### Scenario 13: Delete the account from settings
 
@@ -1130,6 +1145,72 @@ sources, each by a TileJSON document.
 | 6 | Switch to a basemap this area was NOT downloaded under, and open the sheet | Its row is NOT marked incomplete. A record written before SNOW-844 names no dependencies, and a style that is not loaded cannot be asked what its sprite is, so an unanswerable row is left alone rather than accused |
 
 ---
+
+### Scenario P14: The installed app's tab bar and Saved (SNOW-1476, SNOW-1479)
+
+> Manual for the app: no browser here runs in standalone display mode, so
+> the gate is asserted from the stylesheets in
+> [tests/public/test_app_tabbar.py](../tests/public/test_app_tabbar.py) and
+> the tabs' behaviour in
+> [tests/js/test_app_tabbar.js](../tests/js/test_app_tabbar.js). The phone
+> card (SNOW-1486) is the same in a phone browser, which
+> [tests/e2e/test_favourites.py](../tests/e2e/test_favourites.py) walks at
+> 390×844.
+
+**Goal**: Verify the bar is Map · Saved · Help, and that Saved's four tabs
+and each tab's + do what they say.
+
+**Preconditions**: A phone with the app installed to the home screen,
+signed in, with a pinned region, a pinned resort, a dropped pin (one outside
+every region), a recorded route, a trip you organise and one you only
+joined, and one observation.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | Open the app on the map | The bar shows **Map**, **Saved** and **Help**; there is no Today tab |
+| 2 | Tap **Saved** | Saved opens on **Places** at half the screen, an inset card with 12px either side. The header is a grab handle, then **Saved items** and ×, then the four icon tabs with a + right beside them; no subtitle or section label. Only the selected tab shows its name |
+| 2a | Drag the handle up, switch tab, then drag it down | It rises to three quarters and the next tab opens at three quarters too; dragged down from half it closes |
+| 3 | Read Places | Every region with a pin shows today's danger; the pinned resort shows its weather under its region; the dropped pin shows its height; the pin outside every region sits under **Elsewhere**. A region listed only because of a resort has no "…" |
+| 4 | Tap the + on Places | **New pin** opens, only as tall as its field and Save, so the map and the pin stay in view. There is no Cancel; × cancels. Its handle does not drag |
+| 5 | Tap the **Routes** tab, then its + | The Find / Create / Upload menu opens. The recorded route's row shows its date; a route you shared says **Shared** |
+| 6 | Tap the **Trips** tab | Upcoming trips, soonest first, then past ones. Your own trip's row has a "…" with Share, Rename and Delete; the joined trip's row has none |
+| 7 | Rename your trip from its "…", then Delete it and confirm | The new name shows at once; after Delete the row goes and the list re-reads |
+| 8 | Tap the + on Trips | A menu headed **Plan a trip from** lists your routes; each opens the trip form for that route |
+| 9 | Tap the **Observations** tab | The observation's row has a "…" holding Delete alone; the + starts a report |
+| 10 | On Places, Routes and Observations, find **Show on the map** | The switch is there on each |
+| 11 | Open the avatar menu | Settings and Sign out show; **Trips** does not |
+| 12 | Open `/map/?panel=today` | Saved opens on Places, and the URL loses `panel` |
+| 13 | With a new alert waiting | The alert dot shows on the **Saved** tab |
+| 13a | Tap **Help** | The "?" menu is the same card, a handle, **Help** and ×, as tall as its rows and never past three quarters. A drag down its handle closes it |
+| 14 | Open the same pages in a phone browser (not installed) | No bar: the roundels and the avatar menu's Trips are as before, and the star opens Saved (P14b) |
+
+### Scenario P14b: Saved from the star, in a browser (SNOW-1481)
+
+> Manual: the docking is layout, asserted from the stylesheet and the
+> rendered sheets in
+> [tests/public/test_app_tabbar.py](../tests/public/test_app_tabbar.py) and
+> [tests/map/test_ugc_panels.py](../tests/map/test_ugc_panels.py); the star
+> and the remembered tab in
+> [tests/js/test_saved_panel.js](../tests/js/test_saved_panel.js). The phone
+> card's heights and insets in a browser are walked by
+> [tests/e2e/test_favourites.py](../tests/e2e/test_favourites.py).
+
+**Goal**: Verify the star opens the app's Saved panel on a desktop and in a
+phone browser, and the binoculars start a report.
+
+**Preconditions**: Signed in, not installed, with a pin, a route and an
+observation. A desktop browser and a phone browser.
+
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| 1 | On a desktop, tap the star | Saved opens on **Places**, docked left under search; the header is the four tabs, a + and the ×. The star is filled |
+| 2 | Tap the **Routes** tab, close Saved, tap the star again | Saved reopens on **Routes**; the star is outline while Saved is shut |
+| 3 | Tap the star while Saved is open | Saved closes |
+| 4 | In a phone browser, tap the star | Saved opens as the app's card (P14 steps 2–4): at half, three quarters by its handle, closed by a drag down or ×. At half it may sit over part of the right-hand roundels |
+| 4a | In a phone browser, tap the "?" roundel | The "?" menu is the same card as in the app (P14 step 13a) |
+| 5 | Tap the binoculars | A report starts at once (Finding your location…); there are no Saved tabs on it and the star stays outline |
+| 6 | Go offline and open Saved on Places | It says your places couldn't be loaded; no cached pins show |
+| 7 | Signed out, tap the star | Saved opens on Places with the sign-in prompt |
 
 ## Offline Downloads (map coverage)
 

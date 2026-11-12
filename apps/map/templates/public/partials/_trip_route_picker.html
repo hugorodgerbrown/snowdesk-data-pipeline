@@ -1,0 +1,28 @@
+{% load i18n %}
+{% comment %}
+public/partials/_trip_route_picker.html — the Trips tab's +: a menu of the
+reader's own routes to plan a trip from.
+
+includes/_sheet_header.html's ``actions_template``, reached through
+includes/_ugc_panel.html's ``header_actions_template`` from
+public/partials/_trips_surface.html. A trip is planned from one of the
+reader's own routes (trips:new needs one), so the + lists them under "Plan
+a trip from" and each opens trips:new?route=<uuid>. It used to switch Saved
+to the Routes tab, where each route's menu starts with Plan a trip, and
+that confused people; the menu's empty state still goes there, because
+with no route there is nothing to plan from.
+
+The same shape as the routes panel's + (public/partials/_route_add_menu.html):
+includes/_overflow_menu.html owns the trigger, the popover and its
+dismissal (static/js/overflow_menu.js). The items are
+public/partials/_trip_route_picker_items.html, filled by
+static/js/trips_panel.js on every open.
+
+Drawn on every screen, as includes/_saved_add_roundel.html is beside the
+other tabs (SNOW-1481): the trips sheet is reached only from the Saved
+tabs. Its accessible name is the panel's add label ("Plan a trip").
+
+Context (read from the including template's context):
+  cta_label — the panel's add label, the trigger's accessible name.
+{% endcomment %}
+{% include "includes/_overflow_menu.html" with trigger_id="trip-route-picker-trigger" menu_id="trip-route-picker" trigger_label=cta_label trigger_icon="includes/_icon_plus.html" roundel=True wide=True items_template="public/partials/_trip_route_picker_items.html" %}

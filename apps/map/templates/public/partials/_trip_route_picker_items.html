@@ -1,0 +1,32 @@
+{% load i18n %}
+{% comment %}
+public/partials/_trip_route_picker_items.html — the Trips tab's route
+picker's items, includes/_overflow_menu.html's ``items_template`` slot,
+reached from public/partials/_trip_route_picker.html.
+
+A label, "Plan a trip from", then one slot static/js/trips_panel.js fills
+each time the menu opens, from routes:geojson (the reader's own routes,
+newest first, as the routes panel lists them):
+
+  * one ``<a role="menuitem">`` per route to trips:new?route=<uuid>,
+    cloned from #trips-route-picker-item-template in
+    public/partials/_trips_surface.html: the route icon, the name and its
+    distance and ascent;
+  * no routes — one item, ``data-saved-go="routes"``, that switches Saved
+    to the Routes tab (static/js/app_tabbar.js), where a route is added;
+  * a failed load — one line saying so.
+
+The two URLs ride on the slot, so the script reverses nothing.
+{% endcomment %}
+<li role="none">
+    {% trans "Plan a trip from" as picker_label %}
+    {% include "includes/_eyebrow.html" with tag="p" text=picker_label class_extra="px-3 pt-2 pb-1" %}
+</li>
+<li
+    role="none"
+    data-trip-route-picker-items
+    data-routes-url="{% url 'routes:geojson' %}"
+    data-trip-new-url="{% url 'trips:new' %}"
+    class="block max-h-80 overflow-y-auto"
+>
+</li>

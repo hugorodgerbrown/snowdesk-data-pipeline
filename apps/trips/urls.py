@@ -12,6 +12,9 @@ URL structure:
   trips/partials/create/             POST — write a trip (SNOW-820)
   trips/partials/<uuid>/edit/        POST — update the plan
   trips/partials/<uuid>/delete/      POST — delete the trip
+  trips/partials/<uuid>/rename/      POST — rename it in place (SNOW-1479)
+  trips/partials/list/               GET  — the Saved tab's Trips rows
+                                           (SNOW-1479)
   trips/partials/s/<token>/join/     POST — join the trip (SNOW-822)
   trips/partials/<uuid>/leave/       POST — leave it
   trips/partials/<uuid>/save-route/  POST — copy the route (SNOW-824)
@@ -75,6 +78,18 @@ urlpatterns = [
         "partials/<uuid:uuid>/delete/",
         views.trip_delete,
         name="delete",
+    ),
+    # SNOW-1479: the installed phone app's Saved → Trips list and its rows'
+    # in-place rename.
+    path(
+        "partials/list/",
+        views.trip_panel_list,
+        name="panel_list",
+    ),
+    path(
+        "partials/<uuid:uuid>/rename/",
+        views.trip_rename,
+        name="rename",
     ),
     path(
         "partials/s/<str:token>/join/",

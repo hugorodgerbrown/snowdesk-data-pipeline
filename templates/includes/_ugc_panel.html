@@ -103,21 +103,33 @@ Parameters (passed via {% include … with … %}):
                   is the only user: it is the one legitimate per-panel
                   extra, since neither of the other two costs the device
                   anything to hold.
-  saved_tab       (string, optional) — "places", "routes" or
-                  "observations": this panel's place in the installed phone
-                  app's Saved tab. Renders includes/_saved_chips.html under
-                  the title block (SNOW-1476); the chips are drawn only in
-                  that app. Downloads passes none: it is not a Saved list.
+  saved_tab       (string, optional) — "places", "routes", "trips" or
+                  "observations": this panel's place in Saved. Renders
+                  includes/_saved_tabs.html at the start of the header
+                  (SNOW-1479; the chips under the title block before it,
+                  SNOW-1476), on every screen since SNOW-1481. The tabs
+                  and the header's + roundel (``header_actions_template``)
+                  head the panel, under the title "Saved items" and its ×
+                  on a phone (SNOW-1486; ``title`` and ``icon_template`` are
+                  not drawn): the context strip, the section label and the
+                  foot, when it holds only the add button, are rendered
+                  ``hidden``. The × shows on every screen. Downloads passes
+                  none: it is not a Saved list.
   cta_label       (string) — the add-CTA's visible, translated label.
                   Required.
+  header_actions_template (string, optional) — template path rendered
+                  in the header, beside the ×. The routes panel's + roundel
+                  and its add menu (public/partials/_route_add_menu.html).
   foot_template   (string, optional) — template path rendered in the CTA's
-                  strip, ABOVE the add button. The routes panel is the only
-                  user: with route drawing on it has three ways to add
-                  (SNOW-1278: find, create, upload).
-  foot_replaces_add (bool, optional) — the foot template renders the
-                  panel's ways to add itself, the add button's
-                  ``data-panel-add`` hook included, so the button is not
-                  rendered. The routes panel's three rows do.
+                  strip, ABOVE the add button. The Downloads sheet's
+                  "Download a region".
+  foot_replaces_add (bool, optional) — the panel's ways to add are
+                  rendered elsewhere, the add button's ``data-panel-add``
+                  hook included, so the button is not rendered. The routes
+                  panel's add menu is in its header (Hugo, 8 Nov 2026: the
+                  list is what needs the room). With no ``foot_template``
+                  either, the foot is rendered ``hidden``, not dropped:
+                  routes.js still puts a sign-in prompt there.
   toggle_id       (string, optional) — DOM id for the "Show on the map"
                   switch. Omit it and the switch is not rendered at all.
                   Every real panel passes one of the four ids
@@ -143,14 +155,18 @@ state should not have to remember to bring its own.
 {% endcomment %}
 <div class="flex min-h-0 flex-1 flex-col gap-4.5">
     <div>
-        {% include "includes/_sheet_header.html" with title=title icon_template=icon_template close_action="dismiss" title_class="text-lg font-semibold" %}
+        {% if saved_tab %}
+            {% trans "Saved items" as saved_title %}
+            {% include "includes/_sheet_header.html" with title=saved_title close_action="dismiss" title_class="text-lg font-semibold" actions_template=header_actions_template lead_template="includes/_saved_tabs.html" %}
+        {% else %}
+            {% include "includes/_sheet_header.html" with title=title icon_template=icon_template close_action="dismiss" title_class="text-lg font-semibold" actions_template=header_actions_template %}
+        {% endif %}
         {# The context strip. `px-2` puts it under the title rather than    #}
         {# under the title's own left edge plus the sheet header's padding; #}
         {# `-mt-1.5` trims that header's `pb-3` (12px) to the design's own  #}
         {# 6px, the same trim the budget block used to make for itself.     #}
-        <p class="-mt-1.5 px-2 text-summary text-text-3">{{ context_line }}</p>
+        <p {% if saved_tab %}hidden{% endif %} class="-mt-1.5 px-2 text-summary text-text-3">{{ context_line }}</p>
         {% if header_template %}{% include header_template %}{% endif %}
-        {% if saved_tab %}{% include "includes/_saved_chips.html" with current=saved_tab %}{% endif %}
     </div>
     {# `-mx-1.5 px-1.5` is the row label's clipping fix (SNOW-658), not     #}
     {# spacing: it moves 6px of this box from its content edge to its      #}
@@ -164,15 +180,20 @@ state should not have to remember to bring its own.
     {# scroll box whose content began at x=17. Hugo: "The favourites name  #}
     {# element is cut off at the left". The design it came from had no     #}
     {# scroll container, which is why it worked there.                     #}
-    <div class="-mx-1.5 flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-1.5">
+    <div data-panel-scroll class="-mx-1.5 flex min-h-0 flex-1 flex-col gap-4.5 overflow-y-auto px-1.5">
         {# The section label belongs to the list it heads, so the two sit   #}
         {# in one tight group rather than 18px apart at the scroll region's #}
         {# own rhythm. Downloads passes no `section_label`: it has two      #}
         {# groups and renders both headings through the same partial from   #}
         {# inside its rows template.                                        #}
+        {# A Saved tab's section label is `hidden`: its tab names the list. #}
         {% if section_label %}
             <div class="flex flex-col gap-1">
-                {% include "includes/_eyebrow.html" with tag="p" text=section_label class_extra="pb-1 font-medium" %}
+                {% if saved_tab %}
+                    {% include "includes/_eyebrow.html" with tag="p" text=section_label class_extra="hidden pb-1 font-medium" %}
+                {% else %}
+                    {% include "includes/_eyebrow.html" with tag="p" text=section_label class_extra="pb-1 font-medium" %}
+                {% endif %}
                 {% include rows_template %}
             </div>
         {% else %}
@@ -186,7 +207,14 @@ state should not have to remember to bring its own.
     {# so the sign-in prompt goes where the next action lives rather than   #}
     {# over the list. It has to be OUTSIDE the rows container, which every  #}
     {# list load replaces wholesale.                                        #}
-    <div data-panel-foot class="flex flex-col gap-2 border-t border-border pt-3">
+    {# SNOW-1479: a Saved tab's + is in its header, so a foot holding      #}
+    {# nothing but the add button is rendered `hidden` (on every screen    #}
+    {# since SNOW-1481). Its button keeps the hook all the same.           #}
+    <div
+        data-panel-foot
+        {% if not foot_template %}{% if foot_replaces_add or saved_tab %}hidden{% endif %}{% endif %}
+        class="flex flex-col gap-2 border-t border-border pt-3"
+    >
         {% if foot_template %}{% include foot_template %}{% endif %}
         {% if not foot_replaces_add %}
             {# SNOW-1414: the button is its own partial now, shared with the   #}

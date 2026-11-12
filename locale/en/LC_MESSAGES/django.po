@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-11-08 08:05+0000\n"
+"POT-Creation-Date: 2026-11-10 18:26+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -1411,6 +1411,10 @@ msgid "Saved %(when)s"
 msgstr ""
 
 #, python-format
+msgid "%(height)sm · saved %(when)s"
+msgstr ""
+
+#, python-format
 msgid "%(region)s · saved %(when)s"
 msgstr ""
 
@@ -1464,9 +1468,6 @@ msgstr ""
 msgid "You've reached your saved-pin limit. Delete one to save another."
 msgstr ""
 
-msgid "You have no saved favourites yet."
-msgstr ""
-
 msgid "Applies at this altitude"
 msgstr ""
 
@@ -1489,6 +1490,16 @@ msgid "Share %(name)s"
 msgstr ""
 
 #, python-format
+msgid "Delete %(name)s from your places? It stays on the map."
+msgstr ""
+
+msgid "Share"
+msgstr ""
+
+msgid "Delete"
+msgstr ""
+
+#, python-format
 msgid "Rename %(name)s"
 msgstr ""
 
@@ -1496,13 +1507,25 @@ msgstr ""
 msgid "Delete %(name)s? You'll need to place the pin again to get it back."
 msgstr ""
 
-msgid "Share"
-msgstr ""
-
 msgid "Rename"
 msgstr ""
 
-msgid "Delete"
+msgid "Places"
+msgstr ""
+
+msgid ""
+"Pin a region from its bulletin, a resort with the star on its sheet, or drop "
+"a pin with +, to see it here."
+msgstr ""
+
+#, python-format
+msgid "Danger today: %(level)s"
+msgstr ""
+
+msgid "No bulletin today"
+msgstr ""
+
+msgid "Elsewhere"
 msgstr ""
 
 msgid "Saved"
@@ -1514,16 +1537,12 @@ msgstr ""
 msgid "Today"
 msgstr ""
 
-#, python-format
-msgid "Danger today: %(level)s"
-msgstr ""
-
-msgid "No bulletin today"
-msgstr ""
-
 msgid ""
 "Pin a region from its bulletin, or a resort with the star on its sheet, to "
 "see its danger and weather here every day."
+msgstr ""
+
+msgid "Trips"
 msgstr ""
 
 msgid "How the map is built"
@@ -1644,23 +1663,6 @@ msgid ""
 "Trentino, on one map. Read the day's danger, submit field observations."
 msgstr ""
 
-msgid "Off the map"
-msgstr ""
-
-msgid "Your location is outside the mapped regions."
-msgstr ""
-
-msgid "Can't find your location"
-msgstr ""
-
-msgid ""
-"Your device didn't give us a position. Move somewhere with a clearer view of "
-"the sky, then try again."
-msgstr ""
-
-msgid "Try again"
-msgstr ""
-
 msgid "Showing this trip's route."
 msgstr ""
 
@@ -1694,19 +1696,13 @@ msgstr ""
 msgid "Favourites are private and not shared."
 msgstr ""
 
-msgid "Places"
+msgid "New pin"
 msgstr ""
 
-msgid "Add favourite"
-msgstr ""
-
-msgid "Name this pin (optional)"
+msgid "Name (optional)"
 msgstr ""
 
 msgid "Save"
-msgstr ""
-
-msgid "Cancel"
 msgstr ""
 
 msgid "Pin saved!"
@@ -1727,7 +1723,7 @@ msgstr ""
 msgid "That name couldn't be saved. Try again."
 msgstr ""
 
-msgid "Your favourites couldn't be loaded — check your connection."
+msgid "Your places couldn't be loaded — check your connection."
 msgstr ""
 
 msgid "Copied."
@@ -1946,6 +1942,12 @@ msgid ""
 "make room — or remove some yourself below."
 msgstr ""
 
+msgid "More actions"
+msgstr ""
+
+msgid "Copy report"
+msgstr ""
+
 msgid "No areas downloaded yet."
 msgstr ""
 
@@ -1983,6 +1985,9 @@ msgstr ""
 msgid "Some trips or pins missing"
 msgstr ""
 
+msgid "Terrain not saved"
+msgstr ""
+
 msgid "Map data missing"
 msgstr ""
 
@@ -2006,9 +2011,6 @@ msgid "Weather"
 msgstr ""
 
 msgid "Your routes"
-msgstr ""
-
-msgid "Trips"
 msgstr ""
 
 msgid "SAC tours"
@@ -2117,6 +2119,12 @@ msgid "That area couldn't be forgotten. Try again."
 msgstr ""
 
 msgid "You're offline — connect to download a new area."
+msgstr ""
+
+msgid "Report copied. Paste it into a message to send it."
+msgstr ""
+
+msgid "The report couldn't be copied."
 msgstr ""
 
 msgid "Syncing needs a connection."
@@ -2263,9 +2271,6 @@ msgstr ""
 msgid "2D"
 msgstr ""
 
-msgid "Your favourites"
-msgstr ""
-
 msgid "Your field observations"
 msgstr ""
 
@@ -2303,9 +2308,6 @@ msgid "Field observations"
 msgstr ""
 
 msgid "Routes"
-msgstr ""
-
-msgid "Downloaded areas"
 msgstr ""
 
 msgid "Boundaries"
@@ -2645,10 +2647,10 @@ msgstr ""
 msgid "Sign in to keep them."
 msgstr ""
 
-msgid "<b>Pins</b> places and regions you follow"
+msgid "<b>Saved</b> places, routes, trips and observations"
 msgstr ""
 
-msgid "<b>Observations</b> field reports, yours and others’"
+msgid "<b>Report</b> what you see"
 msgstr ""
 
 msgid "<b>Routes</b> GPX tracks you upload"
@@ -2716,6 +2718,26 @@ msgstr ""
 msgid "It may be slow or draw oddly in places. Switch to 2D at any time."
 msgstr ""
 
+msgid "Offline: showing the Swisstopo map saved for this area."
+msgstr ""
+
+msgid "Off the map"
+msgstr ""
+
+msgid "Your location is outside the mapped regions."
+msgstr ""
+
+msgid "Can't find your location"
+msgstr ""
+
+msgid ""
+"Your device didn't give us a position. Move somewhere with a clearer view of "
+"the sky, then try again."
+msgstr ""
+
+msgid "Try again"
+msgstr ""
+
 msgid "Now showing the bulletin's slopes"
 msgstr ""
 
@@ -2731,6 +2753,9 @@ msgid "What's shown?"
 msgstr ""
 
 msgid "Download selected area for offline use."
+msgstr ""
+
+msgid "Cancel"
 msgstr ""
 
 msgid "Download"
@@ -2890,6 +2915,9 @@ msgstr ""
 msgid "Sign in to upload routes and show them on the map."
 msgstr ""
 
+msgid "Pin dropped"
+msgstr ""
+
 msgid "Bulletins unavailable"
 msgstr ""
 
@@ -2968,6 +2996,9 @@ msgstr ""
 
 #, python-format
 msgid "in %%(region)s"
+msgstr ""
+
+msgid "You"
 msgstr ""
 
 #, python-format
@@ -3188,6 +3219,12 @@ msgstr ""
 msgid "Name every control, then tap one to see what it does."
 msgstr ""
 
+msgid "Map key"
+msgstr ""
+
+msgid "What the colours and marks mean."
+msgstr ""
+
 msgid "Show map demo"
 msgstr ""
 
@@ -3199,6 +3236,12 @@ msgstr ""
 
 msgid ""
 "See how well this phone draws the mountains in relief. About 30 seconds."
+msgstr ""
+
+msgid "Tune the relief"
+msgstr ""
+
+msgid "Staff only: rock and shadow past the border."
 msgstr ""
 
 msgid "Help pages"
@@ -3329,23 +3372,19 @@ msgid ""
 "weather, slope) and set how strongly the danger colours show."
 msgstr ""
 
-msgid "Open pins"
+msgid "Open Saved"
 msgstr ""
 
-msgid ""
-"The places and regions you follow. Add a pin, and show or hide them on the "
-"map."
+msgid "Your places, routes, trips and observations."
 msgstr ""
 
 msgid "Observations"
 msgstr ""
 
-msgid "Open observations"
+msgid "Report"
 msgstr ""
 
-msgid ""
-"Field reports: share what you saw, see your own, and show or hide everyone’s "
-"on the map."
+msgid "Share what you see. Yours are in Saved."
 msgstr ""
 
 msgid "Open routes"
@@ -3386,9 +3425,6 @@ msgstr ""
 msgid ""
 "Your zoom level. Tap it to see what the map shows as you go closer, and to "
 "zoom in or out."
-msgstr ""
-
-msgid "Map key"
 msgstr ""
 
 msgid "Open the key"
@@ -3480,6 +3516,9 @@ msgid "<b>Terrain slope</b>: how steep the ground around it is"
 msgstr ""
 
 msgid "<b>Plan a trip, share, rename</b> or delete"
+msgstr ""
+
+msgid "Downloaded areas"
 msgstr ""
 
 msgid "Back to map layers"
@@ -3622,6 +3661,24 @@ msgid "Select a region to pin it"
 msgstr ""
 
 msgid "Sign in to pin a region"
+msgstr ""
+
+msgid "Relief past the border"
+msgstr ""
+
+msgid "Rock from"
+msgstr ""
+
+msgid "Rock tone"
+msgstr ""
+
+msgid "Shadow"
+msgstr ""
+
+msgid "Highlight"
+msgstr ""
+
+msgid "Staff only. Saved on this device."
 msgstr ""
 
 msgid "Type where you ski, or pick one of these."
@@ -4077,6 +4134,9 @@ msgstr ""
 msgid "Period not stated"
 msgstr ""
 
+msgid "Add a route"
+msgstr ""
+
 msgid "Find a route"
 msgstr ""
 
@@ -4222,9 +4282,6 @@ msgstr ""
 msgid "Loading your routes…"
 msgstr ""
 
-msgid "Add a route"
-msgstr ""
-
 msgid "Routes are private unless you share one."
 msgstr ""
 
@@ -4332,20 +4389,45 @@ msgstr ""
 msgid "Tours need signal"
 msgstr ""
 
-msgid "Show today"
-msgstr ""
-
 msgid "Loading today…"
 msgstr ""
 
 msgid "Today could not be loaded. Check your connection and try again."
 msgstr ""
 
-#, python-format
-msgid "Map shows %%(day)s"
+msgid "Plan a trip from"
 msgstr ""
 
-msgid "Map shows Terrain"
+msgid "Loading your trips…"
+msgstr ""
+
+msgid "Plan a trip"
+msgstr ""
+
+msgid "Trips you organised or joined."
+msgstr ""
+
+msgid "Upcoming, then past"
+msgstr ""
+
+msgid "Your trips couldn't be loaded — check your connection."
+msgstr ""
+
+msgid "Add a route first"
+msgstr ""
+
+msgid "Your routes couldn't be loaded."
+msgstr ""
+
+msgid "Untitled route"
+msgstr ""
+
+#, python-format
+msgid "%(km)skm"
+msgstr ""
+
+#, python-format
+msgid "%(km)skm · %(ascent)sm ↑"
 msgstr ""
 
 #, python-format
@@ -4628,9 +4710,6 @@ msgstr ""
 msgid "Observed on %(day)s · %(n)s"
 msgstr ""
 
-msgid "Report"
-msgstr ""
-
 msgid "Report what you see"
 msgstr ""
 
@@ -4679,7 +4758,7 @@ msgstr ""
 msgid "What's it like?"
 msgstr ""
 
-msgid "Share with everyone here"
+msgid "Observations are visible to other users."
 msgstr ""
 
 #, python-format
@@ -5454,6 +5533,14 @@ msgid "All aspects · all elevations"
 msgstr ""
 
 msgid "Field notes"
+msgstr ""
+
+#, python-format
+msgid ""
+"<a class=\"underline hover:text-text-2\" href=\"%(terms_url)s\">Terms of "
+"Service</a> &middot; <a class=\"underline hover:text-text-2\" "
+"href=\"%(privacy_url)s\">Privacy Policy</a> &middot; <a class=\"underline "
+"hover:text-text-2\" href=\"%(colophon_url)s\">Colophon</a>"
 msgstr ""
 
 #, python-format
@@ -6750,16 +6837,16 @@ msgstr ""
 
 msgid ""
 "Favourites let you pin specific spots &mdash; a trailhead, a car park, a "
-"favourite line &mdash; directly on the map. Sign in, open the star button on "
-"the right of the map, and use \"Add a favourite\": the map moves under a "
-"fixed pin, so you place it with one hand."
+"favourite line &mdash; directly on the map. Sign in and tap the star on the "
+"right of the map: it opens Saved on Places. Tap + to add a pin: the map "
+"moves under a fixed pin, so you place it with one hand."
 msgstr ""
 
 msgid ""
-"That same panel lists the pins you have dropped. Rename a pin in place, "
-"remove one, and use the \"Show on the map\" switch at the foot to draw them "
-"all &mdash; it is the same setting as the Favourites row in the layers menu, "
-"so turning one moves the other."
+"Places lists the regions and resorts you follow, with the pins you dropped "
+"in each. Saved also holds your routes, trips and observations, one tab each. "
+"The \"Show on the map\" switch at the foot draws your pins, as the "
+"Favourites row in the layers menu does."
 msgstr ""
 
 msgid ""
@@ -6774,12 +6861,6 @@ msgid ""
 "and how it moved since yesterday, and your resorts listed under their region "
 "with today's weather. Tap a row to open that place. A red dot on the sun "
 "means a new alert."
-msgstr ""
-
-msgid ""
-"Every favourite also has its own page you can bookmark or share &mdash; open "
-"it from \"My favourites\" or from \"Your favourites here\" on that "
-"favourite's region bulletin page."
 msgstr ""
 
 msgid ""
@@ -7114,10 +7195,7 @@ msgid ""
 "one you were on, and a link you share opens on the same one."
 msgstr ""
 
-msgid ""
-"To get back to today, open the calendar and press Today. If you have pinned "
-"places, the Today panel says when the map is on another day or in Terrain, "
-"and Show today brings it back."
+msgid "To get back to today, open the calendar and press Today."
 msgstr ""
 
 msgid ""
@@ -7130,11 +7208,10 @@ msgid ""
 msgstr ""
 
 msgid ""
-"Sign in with a verified email address, then open the triangle button on the "
-"right of the map. The panel lists your own reports and offers \"Report an "
-"observation\". The \"Show on the map\" switch at its foot draws the "
-"community's reports; it is the same setting as the \"Field observations\" "
-"row in the layers menu."
+"Sign in with a verified email address, then tap the binoculars on the right "
+"of the map to start a report. Your own reports are in Saved, under "
+"Observations, whose \"Show on the map\" switch draws the community's "
+"reports, as the \"Field observations\" row in the layers menu does."
 msgstr ""
 
 msgid ""
@@ -9299,19 +9376,8 @@ msgstr ""
 msgid "Zurich"
 msgstr ""
 
-msgid "Untitled route"
-msgstr ""
-
-#, python-format
-msgid "%(km)skm"
-msgstr ""
-
 #, python-format
 msgid "%(km)skm · %(ascent)sm ↑ · %(descent)sm ↓"
-msgstr ""
-
-#, python-format
-msgid "%(km)skm · %(ascent)sm ↑"
 msgstr ""
 
 #, python-format
@@ -9331,6 +9397,10 @@ msgid "%(figures)s · %(duration)s"
 msgstr ""
 
 #, python-format
+msgid "%(day)s · %(figures)s"
+msgstr ""
+
+#, python-format
 msgid "Imported the first of %(count)s track"
 msgid_plural "Imported the first of %(count)s tracks"
 msgstr[0] ""
@@ -9347,7 +9417,7 @@ msgid "Example route · %(meta)s"
 msgstr ""
 
 #, python-format
-msgid "Shared with you · %(meta)s"
+msgid "Shared · %(meta)s"
 msgstr ""
 
 msgid ""
@@ -9367,9 +9437,6 @@ msgstr ""
 
 #, python-format
 msgid "Plan a trip using %(name)s"
-msgstr ""
-
-msgid "Plan a trip"
 msgstr ""
 
 #, python-format
@@ -9574,6 +9641,13 @@ msgid "Notes from %(name)s"
 msgstr ""
 
 #, python-format
+msgid "%(day)s · %(time)s"
+msgstr ""
+
+msgid "No trips yet. Plan one from a route with +."
+msgstr ""
+
+#, python-format
 msgid "%(km)skm · %(metres)sm"
 msgstr ""
 
@@ -9581,6 +9655,10 @@ msgid "Your route"
 msgstr ""
 
 msgid "Change"
+msgstr ""
+
+#, python-format
+msgid "Delete %(name)s? It is deleted for everyone on it."
 msgstr ""
 
 msgid "Save this trip"
@@ -9756,6 +9834,9 @@ msgstr ""
 
 #, python-format
 msgid "Showing %(day)s"
+msgstr ""
+
+msgid "App"
 msgstr ""
 
 #, python-format
@@ -10028,7 +10109,10 @@ msgstr ""
 msgid "Freezing level is not the snow line; snow can fall below it."
 msgstr ""
 
-msgid "More actions"
+msgid "Move the map to fine-tune."
+msgstr ""
+
+msgid "Save pin"
 msgstr ""
 
 msgid ""
@@ -10050,9 +10134,6 @@ msgid "Check what this device can show without a signal."
 msgstr ""
 
 msgid "Run the check"
-msgstr ""
-
-msgid "Copy report"
 msgstr ""
 
 msgid "Save the map page"
@@ -10106,6 +10187,12 @@ msgid "—"
 msgstr ""
 
 msgid "…"
+msgstr ""
+
+msgid "Offline mode on"
+msgstr ""
+
+msgid "No signal"
 msgstr ""
 
 msgid "this browser has no offline mode at all"
@@ -10757,6 +10844,9 @@ msgid "Some changes couldn't be saved and won't be retried."
 msgstr ""
 
 msgid "A route drawn offline under another account was discarded."
+msgstr ""
+
+msgid "Saved items"
 msgstr ""
 
 msgid "Show on the map"

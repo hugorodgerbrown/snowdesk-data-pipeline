@@ -10,6 +10,8 @@ Covers:
   - ``ground_for_region``: today's reports are live, the three days before
     recent, an older one absent; a past day's reports land in ``day``; a
     future day is empty; another region's reports never appear.
+  - ``GroundReport.mine`` (SNOW-1480): set for the viewer's own reports,
+    never without a viewer or for an anonymous one.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import uuid
 from datetime import UTC
 
 import pytest
+from django.contrib.auth.models import AnonymousUser
 from freezegun import freeze_time
 
 from apps.observations.models import FieldObservation
@@ -31,7 +34,7 @@ from apps.observations.services.ground import (
     local_midnight,
     report_window,
 )
-from tests.factories import FieldObservationFactory, MicroRegionFactory
+from tests.factories import FieldObservationFactory, MicroRegionFactory, UserFactory
 
 TODAY = datetime.date(2026, 10, 29)
 NOW = datetime.datetime(2026, 10, 29, 12, 0, tzinfo=UTC)
@@ -152,3 +155,65 @@ class TestGroundForRegion:
         region = MicroRegionFactory.create()
         FieldObservationFactory.create(observed_at=_at(TODAY))
         assert ground_for_region(region, TODAY).count == 0
+
+
+@pytest.mark.django_db
+@freeze_time(NOW)
+class TestGroundReportMine:
+    """A report is ``mine`` to the viewer who wrote it (SNOW-1480)."""
+
+    def test_without_a_viewer_nothing_is_mine(self) -> None:
+        """Read for nobody — the public page — no report is marked."""
+        region = MicroRegionFactory.create()
+        FieldObservationFactory.create(region=region, observed_at=_at(TODAY))
+        (report,) = ground_for_region(region, TODAY).live
+        assert report.mine is False
+
+    def test_an_anonymous_viewer_owns_nothing(self) -> None:
+        """A signed-out viewer is treated as no viewer."""
+        region = MicroRegionFactory.create()
+        FieldObservationFactory.create(region=region, observed_at=_at(TODAY))
+        (report,) = ground_for_region(region, TODAY, viewer=AnonymousUser()).live
+        assert report.mine is False
+
+    def test_the_viewers_own_report_is_mine(self) -> None:
+        """The viewer's report is mine; another user's in the same region is not."""
+        region = MicroRegionFactory.create()
+        viewer = UserFactory.create()
+        own = FieldObservationFactory.create(
+            region=region, user=viewer, observed_at=_at(TODAY, 11)
+        )
+        other = FieldObservationFactory.create(region=region, observed_at=_at(TODAY))
+        recent = FieldObservationFactory.create(
+            region=region,
+            user=viewer,
+            observed_at=_at(TODAY - datetime.timedelta(days=1)),
+        )
+        ground = ground_for_region(region, TODAY, viewer=viewer)
+        mine = {r.submission: r.mine for r in (*ground.live, *ground.recent)}
+        assert mine == {
+            own.submission: True,
+            other.submission: False,
+            recent.submission: True,
+        }
+
+    def test_group_reports_marks_a_submission_by_any_row(self) -> None:
+        """A report is mine when any row of its submission is the viewer's."""
+        submission = uuid.uuid4()
+        viewer = UserFactory.create()
+        FieldObservationFactory.create(
+            submission=submission, observed_at=NOW, observation_type=T.POWDER
+        )
+        FieldObservationFactory.create(
+            submission=submission, user=viewer, observed_at=NOW
+        )
+        rows = list(FieldObservation.objects.all())
+        assert group_reports(rows, viewer.pk)[0].mine is True
+        assert group_reports(rows)[0].mine is False
+
+    def test_mine_defaults_false(self) -> None:
+        """A report built without saying is nobody's."""
+        report = GroundReport(
+            submission=uuid.uuid4(), observed_at=NOW, family="WARNING", labels=()
+        )
+        assert report.mine is False

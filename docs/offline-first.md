@@ -2,7 +2,7 @@
 name: offline-first
 description: Offline-first PWA compliance — §12 non-negotiables → code; version, freshness, idempotency, X-SW-Principal, reset, install, sync log
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-11-10
 ---
 
 # Offline-first PWA compliance
@@ -141,19 +141,23 @@ Defaults for safety-critical data: 24h `max_age`, 48h `unsafe_after`.
 ### §12.6 relaxation — cached-with-explicit-staleness (SNOW-418)
 
 The spec's default posture for safety-critical data is network-only: no
-cache, fail closed offline. `apps/favourites/views.py` (`favourite_card`,
-`favourite_list`) documents the one accepted relaxation of that rule —
+cache, fail closed offline. `apps/favourites/views.py` (`favourite_card`)
+documents the one accepted relaxation of that rule —
 cache the response with its freshness envelope, and let the client
 classify staleness itself rather than never caching at all:
 
-- Every favourite roster/card record is written through into the
+- Every favourite card record is written through into the
   `data:favourites` IndexedDB store (schema v2 — see
   [`indexeddb-scaffolding.md`](indexeddb-scaffolding.md)) by
   `static/js/favourites_offline.js`, alongside its own `generated_at` +
   `unsafe_after_seconds` (mirroring the response's freshness headers).
-- Offline, a failed `favourites:list` / `favourites:card` request
-  repaints from that cache with an explicit "as of HH:MM" stamp — never
-  a silent, current-looking render.
+- Offline, a failed `favourites:card` request repaints from that cache
+  with an explicit "as of HH:MM" stamp — never a silent, current-looking
+  render.
+- The roster half went with the pins list (`favourites:list`) in
+  SNOW-1481. The map's favourites sheet is Saved › Places
+  (`favourites:places`), online only as Today is: offline it says your
+  places couldn't be loaded rather than showing cached pins.
 - A cached rating past its `unsafe_after_seconds` horizon (48h) renders
   as explicitly **EXPIRED** ("Rating expired — reconnect to see today's
   danger level"), never a stale-looking `danger-tile` chip. Weather
@@ -459,15 +463,14 @@ the account pages they covered), and
 [`offline-map.md`](offline-map.md#the-account-pages-are-partitioned-not-excluded)
 carries the full argument.
 
-**Which page holds the roster has moved — to the map.** It was
+**Which page holds the roster moved — to the map, and then went.** It was
 `/account/manage/` (SNOW-667 split that into `/account/` +
 `/account/settings/`), then the favourites section of `/account/`, then
-`/account/favourites/` (SNOW-668). SNOW-803 removed that page: the pins
-sheet on the map at `/map/` is the only surface that fetches
-`/favourites/partials/list/`, the write-through keys on that request
-path, and `/map/` is the navigation the shell caches. Every cached navigation
+`/account/favourites/` (SNOW-668). SNOW-803 removed that page and the pins
+sheet on the map fetched `/favourites/partials/list/` instead; SNOW-1481
+retired that list, so no roster is cached any more. Every cached navigation
 is stamped with `X-SW-Principal` — the map like any other — so the
-partitioning argument is unchanged; only its subject moved.
+partitioning argument is unchanged.
 
 Partitioned is not the same as dependable, though. The page's entry is
 in the cache only after that account has loaded it online in this

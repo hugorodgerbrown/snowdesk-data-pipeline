@@ -250,13 +250,13 @@ describe('attach — click-outside', () => {
     expect(sheet.hasAttribute('hidden')).toBe(false);
   });
 
-  it('leaves the tab bar and the Saved chips to app_tabbar.js', () => {
-    // SNOW-1476: a tab or a chip opens or swaps panels itself; read as an
+  it('leaves the tab bar and the Saved tabs to app_tabbar.js', () => {
+    // SNOW-1476, SNOW-1479: a tab opens or swaps panels itself; read as an
     // outside click, it would close the panel it was about to swap from.
     const { sheet, controller } = attachSheet();
     document.getElementById('outside').innerHTML = `
-      <button id="tab" type="button" data-app-tab="today">Today</button>
-      <fieldset data-saved-chips><input id="chip" type="radio"></fieldset>`;
+      <button id="tab" type="button" data-app-tab="saved">Saved</button>
+      <fieldset data-saved-tabs><input id="chip" type="radio"></fieldset>`;
     controller.open();
 
     clickOn('tab');
@@ -399,6 +399,8 @@ describe('attach — registration', () => {
   it.each([
     [true, 'data-detents="peek half full"'],
     [false, ''],
+    // SNOW-1486: a Saved card declares detents and is not an object sheet.
+    [false, 'data-detents="half,full" data-sheet-card'],
   ])('registers objectSheet %s for a sheet with %j', (expected, attrs) => {
     const register = vi.fn();
     window.pwaMapOverlays = { register };

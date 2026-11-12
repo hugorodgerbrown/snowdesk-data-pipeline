@@ -1,14 +1,12 @@
 /*
  * tests/js/test_favourites_offline.js — Vitest unit tests for
- * static/js/favourites_offline.js's write-through reconcile (finding M13 in
- * docs/code-reviews/2026-08-03-js-review.md).
+ * static/js/favourites_offline.js, the card path.
  *
- * The roster sidecar the server renders alongside the favourites list is the
- * user's whole current list (apps/favourites/views.py::favourite_list), so a
- * uuid the cache holds but the roster omits is a favourite that no longer
- * exists. Deletion is online-only `hx-post` with no cache-eviction step, so
- * without a reconcile on write-through the deleted pin survives in
- * data:favourites and keeps rendering in the offline fallback.
+ * A favourite card swap (favourites:card) writes its record through into
+ * data:favourites, and a failed card request repaints from it. SNOW-1481
+ * retired the roster half with the map sheet's pins list (favourites:list):
+ * the sheet lists Places, online only, so a failed Places request is left
+ * to favourites.js's own failure line.
  *
  * Both entry points are wired to document.body events at load time and are
  * fire-and-forget, so the tests drive them with hand-built HTMX events and
@@ -25,10 +23,10 @@ await import('../../static/js/db.js');
 await import('../../static/js/favourites_offline.js');
 
 const STORE = 'data:favourites';
-const LIST_PATH = '/favourites/partials/list/';
+const PLACES_PATH = '/favourites/partials/places/';
 
 /**
- * One roster record, trimmed to the fields renderOfflineCard reads. A null
+ * One cached record, trimmed to the fields renderOfflineCard reads. A null
  * region renders the "no bulletin coverage" branch, keeping these tests off
  * the rating/freshness paths covered elsewhere.
  *
@@ -63,22 +61,21 @@ async function waitFor(predicate, { timeoutMs = 2000, intervalMs = 5 } = {}) {
 }
 
 /**
- * Replay one favourites-list swap carrying `records` as its roster sidecar,
- * and resolve once the write-through pass has finished.
+ * Replay one favourite-card swap carrying `record` as its sidecar, and
+ * resolve once the write-through pass has finished.
  *
  * The meta:sync row is deleted first and waited on afterwards because
- * `_syncFromDom` writes it last — its reappearance is the signal that the
- * puts and the reconcile have both completed.
+ * `_syncFromDom` writes it last.
  *
- * @param {Array<object>} records
+ * @param {object} cached
  * @returns {Promise<void>}
  */
-async function replayRoster(records) {
+async function replayCard(cached) {
   const root = document.createElement('div');
   const sidecar = document.createElement('script');
   sidecar.type = 'application/json';
-  sidecar.id = 'favourites-roster-cache';
-  sidecar.textContent = JSON.stringify(records);
+  sidecar.id = 'favourite-card-cache';
+  sidecar.textContent = JSON.stringify(cached);
   root.appendChild(sidecar);
   document.body.appendChild(root);
 
@@ -91,19 +88,27 @@ async function replayRoster(records) {
 }
 
 /**
- * Fail a favourites-list request and resolve once the offline fallback has
+ * Fail `uuid`'s card request and resolve once the offline fallback has
  * repainted `target`.
  *
  * @param {HTMLElement} target
+ * @param {string} uuid
  * @returns {Promise<void>}
  */
-async function failListRequest(target) {
+async function failCardRequest(target, uuid) {
   document.body.dispatchEvent(
     new CustomEvent('htmx:sendError', {
-      detail: { requestConfig: { path: LIST_PATH }, target },
+      detail: { requestConfig: { path: `/favourites/partials/${uuid}/card/` }, target },
     }),
   );
   await waitFor(() => target.querySelectorAll('[data-testid="favourite-card"]').length > 0);
+}
+
+/** A fresh element in the page to paint into. */
+function newTarget() {
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+  return target;
 }
 
 beforeEach(async () => {
@@ -112,58 +117,53 @@ beforeEach(async () => {
   document.body.innerHTML = '';
 });
 
-describe('favourites offline cache reconcile', () => {
-  it('drops a cached favourite the roster no longer lists', async () => {
-    await replayRoster([record('fav-a', 'Verbier'), record('fav-b', 'Zermatt')]);
-    // The user deletes "Zermatt" while online; the next list swap carries a
-    // roster of one.
-    await replayRoster([record('fav-a', 'Verbier')]);
-
-    const target = document.createElement('div');
-    document.body.appendChild(target);
-    await failListRequest(target);
-
-    const titles = Array.from(
-      target.querySelectorAll('[data-testid="favourite-card-title"]'),
-    ).map((el) => el.textContent);
-    expect(titles).toEqual(['Verbier']);
+describe('write-through', () => {
+  it('caches the record a card swap carries', async () => {
+    await replayCard(record('fav-a', 'Verbier'));
+    const stored = await window.pwaDb.get(STORE, 'fav-a');
+    expect(stored.name).toBe('Verbier');
   });
 
-  it('keeps every favourite the roster still lists', async () => {
-    await replayRoster([record('fav-a', 'Verbier'), record('fav-b', 'Zermatt')]);
-    await replayRoster([record('fav-a', 'Verbier'), record('fav-b', 'Zermatt')]);
-
-    const target = document.createElement('div');
-    document.body.appendChild(target);
-    await failListRequest(target);
-
-    const titles = Array.from(
-      target.querySelectorAll('[data-testid="favourite-card-title"]'),
-    ).map((el) => el.textContent);
-    expect(titles.sort()).toEqual(['Verbier', 'Zermatt']);
+  it("merges a card onto the record already cached, the card's fields winning", async () => {
+    await window.pwaDb.put(STORE, { ...record('fav-a', 'Old name'), extra: 'kept' });
+    await replayCard(record('fav-a', 'Verbier'));
+    const stored = await window.pwaDb.get(STORE, 'fav-a');
+    expect(stored.name).toBe('Verbier');
+    expect(stored.extra).toBe('kept');
   });
 
-  it('leaves the cache alone for a swap with no roster sidecar', async () => {
-    await replayRoster([record('fav-a', 'Verbier'), record('fav-b', 'Zermatt')]);
-
-    // A card swap carries only favourite-card-cache — it says nothing about
-    // which favourites exist, so it must not evict the rest of the roster.
+  it('ignores a roster sidecar, whose list is gone (SNOW-1481)', async () => {
     const root = document.createElement('div');
-    const sidecar = document.createElement('script');
-    sidecar.type = 'application/json';
-    sidecar.id = 'favourite-card-cache';
-    sidecar.textContent = JSON.stringify(record('fav-a', 'Verbier'));
-    root.appendChild(sidecar);
+    root.innerHTML =
+      '<script type="application/json" id="favourites-roster-cache">' +
+      JSON.stringify([record('fav-z', 'Zermatt')]) +
+      '</script>';
     document.body.appendChild(root);
-
-    await window.pwaDb.delete('meta:sync', 'favourites');
     document.body.dispatchEvent(
       new CustomEvent('htmx:afterOnLoad', { detail: { target: root } }),
     );
-    await waitFor(async () => (await window.pwaDb.get('meta:sync', 'favourites')) != null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(await window.pwaDb.get(STORE, 'fav-z')).toBeUndefined();
+  });
+});
 
-    const uuids = (await window.pwaDb.getAll(STORE)).map((row) => row.uuid);
-    expect(uuids.sort()).toEqual(['fav-a', 'fav-b']);
+describe('a failed Places request (SNOW-1481)', () => {
+  it('is left alone, so Places says it could not be loaded', async () => {
+    await window.pwaDb.put(STORE, record('fav-a', 'Verbier'));
+    const target = newTarget();
+    target.innerHTML = '<p>Your places couldn\'t be loaded — check your connection.</p>';
+    const before = target.innerHTML;
+
+    document.body.dispatchEvent(
+      new CustomEvent('htmx:sendError', {
+        detail: { requestConfig: { path: PLACES_PATH }, target },
+      }),
+    );
+    // A card failure dispatched afterwards, on its own target, gives the
+    // Places one more than enough time to have done any damage.
+    await failCardRequest(newTarget(), 'fav-a');
+
+    expect(target.innerHTML).toBe(before);
   });
 });
 
@@ -183,22 +183,20 @@ describe('translated card copy (SNOW-620)', () => {
 
   it('renders the altitude with the value substituted into the string', async () => {
     // %(metres)s is substituted by name, so a locale may put it anywhere.
-    await replayRoster([record('u-alt', 'Verbier')]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
+    await replayCard(record('u-alt', 'Verbier'));
+    const target = newTarget();
 
-    await failListRequest(target);
+    await failCardRequest(target, 'u-alt');
 
     const altitude = target.querySelector('[data-testid="favourite-card-altitude"]');
     expect(altitude.textContent).toBe('1500 m altitude');
   });
 
   it('renders a retired resort as no longer listed (SNOW-1404)', async () => {
-    await replayRoster([{ ...record('u-ret', 'Gone Hill'), retired: true }]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
+    await replayCard({ ...record('u-ret', 'Gone Hill'), retired: true });
+    const target = newTarget();
 
-    await failListRequest(target);
+    await failCardRequest(target, 'u-ret');
 
     const line = target.querySelector('[data-testid="favourite-card-retired"]');
     expect(line.textContent).toBe('No longer listed');
@@ -206,11 +204,10 @@ describe('translated card copy (SNOW-620)', () => {
   });
 
   it('renders the no-coverage line as words, not undefined', async () => {
-    await replayRoster([record('u-cov', 'Verbier')]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
+    await replayCard(record('u-cov', 'Verbier'));
+    const target = newTarget();
 
-    await failListRequest(target);
+    await failCardRequest(target, 'u-cov');
 
     const line = target.querySelector('[data-testid="favourite-card-no-coverage"]');
     expect(line.textContent).toBe('No bulletin coverage for this location.');
@@ -218,13 +215,10 @@ describe('translated card copy (SNOW-620)', () => {
 
   it('renders the cached-as-of stamp with its time substituted', async () => {
     // SNOW-1139: a card cached today carries the time alone.
-    await replayRoster([
-      { ...record('u-stamp', 'Verbier'), generated_at: new Date().toISOString() },
-    ]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
+    await replayCard({ ...record('u-stamp', 'Verbier'), generated_at: new Date().toISOString() });
+    const target = newTarget();
 
-    await failListRequest(target);
+    await failCardRequest(target, 'u-stamp');
 
     const asOf = target.querySelector('[data-testid="favourite-card-cached-as-of"]');
     expect(asOf.textContent).toMatch(/^Showing cached data — as of \d{2}:\d{2}$/);
@@ -235,11 +229,10 @@ describe('translated card copy (SNOW-620)', () => {
     yesterday.setDate(yesterday.getDate() - 1);
     yesterday.setHours(9, 0, 0, 0);
     const iso = yesterday.toISOString();
-    await replayRoster([{ ...record('u-old', 'Verbier'), generated_at: iso }]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
+    await replayCard({ ...record('u-old', 'Verbier'), generated_at: iso });
+    const target = newTarget();
 
-    await failListRequest(target);
+    await failCardRequest(target, 'u-old');
 
     const asOf = target.querySelector('[data-testid="favourite-card-cached-as-of"]');
     const day = window.pwaCachedStampCore.formatDay(iso);
@@ -248,64 +241,18 @@ describe('translated card copy (SNOW-620)', () => {
   });
 });
 
-
 describe('the stand-in card ranks its title like the server card', () => {
   /*
    * This card stands in for favourites/partials/_favourite_card.html in
    * the same slot, so it takes the same heading level the server would
-   * have sent — otherwise a pin's outline depth would depend on whether
-   * the request reached the server. The server picks by caller
-   * (``heading_tag``); this module used to pick by where it was painting.
-   *
-   * It no longer branches, and that is the assertion: SNOW-668 moved the
-   * account surface out of a <section> inside the account hub — headed by
-   * an <h2>, which the old h3 ranked under — and onto /account/favourites/,
-   * whose <h1> is the only heading above the list. Both surfaces are now a
-   * card under a non-heading or a page title, so both are h2, and
-   * apps.favourites.views.favourite_card sends h2 to match.
+   * have sent — apps.favourites.views.favourite_card sends h2.
    */
 
-  const CARD_PATH = '/favourites/partials/fav-a/card/';
+  it('is an h2 for a failed card request', async () => {
+    await replayCard(record('fav-a', 'Verbier'));
+    const target = newTarget();
 
-  it('is an h2 on /account/favourites/, whose h1 is the only heading above it', async () => {
-    await replayRoster([record('fav-a', 'Verbier')]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
-
-    await failListRequest(target);
-
-    const title = target.querySelector('[data-testid="favourite-card-title"]');
-    expect(title.tagName).toBe('H2');
-  });
-
-  it('is an h2 in the map sheet too, whose panel title is not a heading', async () => {
-    await replayRoster([record('fav-a', 'Verbier')]);
-    // The map swaps the same endpoint's ?variant=map response into this
-    // container (static/js/favourites.js), inside a panel headed by a
-    // <span> — so a card in it has no section heading to rank under.
-    const target = document.createElement('div');
-    target.setAttribute('data-favourites-rows', '');
-    document.body.appendChild(target);
-
-    await failListRequest(target);
-
-    const title = target.querySelector('[data-testid="favourite-card-title"]');
-    expect(title.tagName).toBe('H2');
-  });
-
-  it('is an h2 for a failed single-card request — only the page asks for one', async () => {
-    await replayRoster([record('fav-a', 'Verbier')]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
-
-    document.body.dispatchEvent(
-      new CustomEvent('htmx:sendError', {
-        detail: { requestConfig: { path: CARD_PATH }, target },
-      }),
-    );
-    await waitFor(
-      () => target.querySelectorAll('[data-testid="favourite-card"]').length > 0,
-    );
+    await failCardRequest(target, 'fav-a');
 
     const title = target.querySelector('[data-testid="favourite-card-title"]');
     expect(title.tagName).toBe('H2');
@@ -316,27 +263,18 @@ describe('the offline fallback only claims favourites requests (SNOW-722)', () =
   /*
    * The handlers are bound to document.body, so they are offered every
    * failed HTMX request on the page — and the suffix match is a bare
-   * substring. ``/routes/partials/list/`` contains ``/partials/list/``, so
-   * offline the routes panel was wiped and repainted with favourite cards
-   * under its own "TRACKS" heading. routes.js paints that panel itself —
-   * from its own cache (routes_offline.js, SNOW-950) or its own failure
-   * line — and neither may be overwritten from here.
+   * substring. routes.js paints its own panel — from its own cache
+   * (routes_offline.js, SNOW-950) or its own failure line — and neither
+   * may be overwritten from here.
    */
 
   const ROUTES_PATH = '/routes/partials/list/';
 
-  /** The routes panel's rows container, with the markup routes.js leaves. */
-  function routesRows() {
-    const rows = document.createElement('div');
+  it('leaves a failed routes-list request untouched', async () => {
+    await replayCard(record('fav-a', 'Verbier'));
+    const rows = newTarget();
     rows.setAttribute('data-routes-rows', '');
     rows.innerHTML = '<p data-testid="routes-offline">Routes need a connection</p>';
-    document.body.appendChild(rows);
-    return rows;
-  }
-
-  it('leaves a failed routes-list request untouched', async () => {
-    await replayRoster([record('fav-a', 'Verbier')]);
-    const rows = routesRows();
     const before = rows.innerHTML;
 
     document.body.dispatchEvent(
@@ -344,47 +282,16 @@ describe('the offline fallback only claims favourites requests (SNOW-722)', () =
         detail: { requestConfig: { path: ROUTES_PATH }, target: rows },
       }),
     );
-
-    // A favourites failure dispatched afterwards, on its own target, gives
-    // the routes one more than enough time to have done its damage: both
-    // take the same async path through the same IndexedDB store.
-    const favouritesTarget = document.createElement('div');
-    document.body.appendChild(favouritesTarget);
-    await failListRequest(favouritesTarget);
+    await failCardRequest(newTarget(), 'fav-a');
 
     expect(rows.innerHTML).toBe(before);
-    expect(rows.querySelectorAll('[data-testid="favourite-card"]').length).toBe(0);
-  });
-
-  it('still repaints a failed favourites-list request', async () => {
-    await replayRoster([record('fav-a', 'Verbier')]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
-
-    await failListRequest(target);
-
-    const titles = Array.from(
-      target.querySelectorAll('[data-testid="favourite-card-title"]'),
-    ).map((el) => el.textContent);
-    expect(titles).toEqual(['Verbier']);
   });
 
   it('still repaints a failed favourites card request', async () => {
-    await replayRoster([record('fav-a', 'Verbier')]);
-    const target = document.createElement('div');
-    document.body.appendChild(target);
+    await replayCard(record('fav-a', 'Verbier'));
+    const target = newTarget();
 
-    document.body.dispatchEvent(
-      new CustomEvent('htmx:sendError', {
-        detail: {
-          requestConfig: { path: '/favourites/partials/fav-a/card/' },
-          target,
-        },
-      }),
-    );
-    await waitFor(
-      () => target.querySelectorAll('[data-testid="favourite-card"]').length > 0,
-    );
+    await failCardRequest(target, 'fav-a');
 
     const title = target.querySelector('[data-testid="favourite-card-title"]');
     expect(title.textContent).toBe('Verbier');

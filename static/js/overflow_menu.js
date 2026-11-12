@@ -260,10 +260,17 @@
   // both of these close it rather than re-place it. `scroll` does not
   // bubble: capture is what catches the panel's own scroll container
   // rather than only a scroll of the document.
+  // A scroll INSIDE the open menu is the reader reading it — the Trips
+  // tab's route picker scrolls past a few routes — so it is left alone.
   document.addEventListener(
     'scroll',
-    function () {
-      if (openWrapper()) closeAllExcept(null);
+    function (event) {
+      var open = openWrapper();
+      if (!open) return;
+      var m = menu(open);
+      var target = event.target;
+      if (m && target instanceof Node && m.contains(target)) return;
+      closeAllExcept(null);
     },
     true
   );

@@ -1,0 +1,74 @@
+{% load i18n %}
+{% comment %}
+public/partials/_trips_surface.html — the installed phone app's Saved →
+Trips sheet (SNOW-1479).
+
+The fourth Saved sheet beside the favourites, routes and report sheets: the
+reader's trips, upcoming soonest first and then past, loaded from
+trips:panel_list into [data-trips-rows] by static/js/trips_panel.js, which
+re-clones the body from #trips-sheet-template on every open. A sheet the
+Saved tabs reach and nothing else: there is no Trips roundel, and a desktop
+or a phone browser reaches the trips from the avatar menu's Trips page.
+
+Its header in the app is the Saved tabs and a + (public/partials/_trip_route_picker.html):
+a trip is planned from one of the reader's own routes, so the + opens a
+menu of them, "Plan a trip from", each to trips:new?route=<uuid>; with no
+routes its one item switches Saved to Routes. trips_panel.js fills it from
+routes:geojson on every open, each route cloned from
+#trips-route-picker-item-template. The foot has no add button
+(``foot_replaces_add``) and no "Show on the map": trips are not a map layer.
+
+Rendered only for a signed-in reader (``favourites_eligible``), the one who
+can have trips; signed out, the Saved tab opens the favourites sheet's
+sign-in prompt.
+
+Context expected:
+  favourites_eligible — bool: the reader is signed in.
+{% endcomment %}
+{% if favourites_eligible %}
+    {% trans "Trips" as trips_title %}
+    {# SNOW-1481: a Saved sheet, docked left like the other three; SNOW-1486: #}
+    {# the phone card at half or full, as they are.                           #}
+    {% include "includes/_overlay_sheet.html" with id="trips-sheet" aria_label=trips_title scroll_body=True side="left" detents="half,full" initial="half" card=True %}
+    <template id="trips-sheet-template">
+        {% trans "Plan a trip" as trips_add_label %}
+        {% trans "Trips you organised or joined." as trips_context_line %}
+        {% trans "Upcoming, then past" as trips_section_label %}
+        {% include "includes/_ugc_panel.html" with title=trips_title icon_template="includes/_icon_trip.html" context_line=trips_context_line section_label=trips_section_label rows_template="public/partials/_trips_panel_rows.html" cta_label=trips_add_label saved_tab="trips" header_actions_template="public/partials/_trip_route_picker.html" foot_replaces_add=True %}
+    </template>
+    {# Copy trips_panel.js writes itself; read back with window.pwaStrings. #}
+    <template id="trips-strings-template">
+        <span data-string="error">{% trans "Your trips couldn't be loaded — check your connection." %}</span>
+        <span data-string="rename-failed">{% trans "That name couldn't be saved. Try again." %}</span>
+        <span data-string="share-copied">{% trans "Link copied." %}</span>
+        <span data-string="share-failed">{% trans "That couldn't be shared. Try again." %}</span>
+        <span data-string="picker-empty">{% trans "Add a route first" %}</span>
+        <span data-string="picker-error">{% trans "Your routes couldn't be loaded." %}</span>
+        <span data-string="picker-untitled">{% trans "Untitled route" %}</span>
+        {# The routes list's meta-line msgids, byte for byte (see        #}
+        {# includes/_route_rail.html), read by route_rail_core.js's      #}
+        {# formatMetaLine: the distance, and the ascent when known.      #}
+        <span data-string="meta-km">{% blocktrans trimmed with km="%(km)s" %}{{ km }}km{% endblocktrans %}</span>
+        <span data-string="meta-ascent">{% blocktrans trimmed with km="%(km)s" ascent="%(ascent)s" %}{{ km }}km ·
+                {{ ascent }}m ↑{% endblocktrans %}</span>
+    </template>
+    {# One route in the + menu (public/partials/_trip_route_picker_items.html), #}
+    {# cloned by trips_panel.js: its link, name and meta line are filled in. #}
+    <template id="trips-route-picker-item-template">
+        <a
+            role="menuitem"
+            data-trip-route-picker-item
+            class="hover-affordance flex w-full items-start gap-3 px-3 py-2.5 text-left"
+        >
+            <span
+                class="mt-0.5 flex-none text-text-1"
+                aria-hidden="true"
+            >{% include "includes/_icon_route.html" with size=16 only %}</span>
+            <span class="flex min-w-0 flex-col">
+                <span data-trip-route-picker-name class="truncate text-label font-semibold text-text-1"></span>
+                <span data-trip-route-picker-meta class="text-sm text-text-3"></span>
+            </span>
+        </a>
+    </template>
+{% endif %}
+{# This surface's script is listed in static/js/bundles/map_surfaces.txt. #}

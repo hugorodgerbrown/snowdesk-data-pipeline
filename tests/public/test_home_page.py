@@ -744,7 +744,10 @@ class TestHomePageFavouritesParity:
         assert "data-signin-url" in content
         assert 'data-overlay-key="favourites"' in content
         assert 'id="map-favourites-overlay-toggle"' in content
-        assert "data-favourites-url" not in content
+        # SNOW-1488: the Downloads sheet's hidden report host carries the
+        # attribute EMPTY for a signed-out reader, as /offline/'s does; no
+        # per-user url renders.
+        assert not re.search(r'data-favourites-url="[^"]', content)
 
     def test_add_control_and_overlay_eligible_for_account(self) -> None:
         """A logged-in account sees the roundel, the layers-menu overlay row,
@@ -760,8 +763,9 @@ class TestHomePageFavouritesParity:
         # The layers-menu row (SNOW-904) and the panel's switch bound to it.
         assert 'data-overlay-key="favourites"' in content
         assert 'id="map-favourites-overlay-toggle"' in content
-        # SNOW-803: one list shape — the sheet's — so no variant is asked for.
-        assert f'data-favourite-list-url="{reverse("favourites:list")}"' in content
+        # SNOW-1481: the sheet lists Places alone; the pins list is retired.
+        assert "data-favourite-list-url" not in content
+        assert f'data-favourite-places-url="{reverse("favourites:places")}"' in content
         assert "?variant=" not in content
         assert reverse("favourites:geojson") in content
 

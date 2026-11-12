@@ -346,9 +346,10 @@ extra_js        : scripts loaded at end of <body>. Used by
         {# SNOW-377: connection-state UI. Wraps fetch + HTMX so network      #}
         {# failures reach the header symbol; paints the network menu.       #}
         <script src="{% static 'js/pwa_offline.js' %}" defer></script>
-        {# SNOW-418: caches favourites (roster + card) into data:favourites #}
-        {# on every successful load, and repaints from that cache on a     #}
-        {# failed favourites:list / favourites:card HTMX request. Loads    #}
+        {# SNOW-418: caches each favourite card into data:favourites on    #}
+        {# every successful load, and repaints from that cache on a        #}
+        {# failed favourites:card HTMX request (SNOW-1481 retired the      #}
+        {# favourites:list roster). Loads                                  #}
         {# after db.js (needs window.pwaDb) and pwa_offline.js (shares the #}
         {# same htmx:sendError convention).                                #}
         {% include "includes/_favourites_offline_strings.html" %}

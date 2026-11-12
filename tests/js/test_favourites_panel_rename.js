@@ -34,7 +34,7 @@ import '../../static/js/inline_rename.js';
 import '../../static/js/row_rename_commit.js';
 import '../../static/js/map_sheet.js';
 
-const LIST_URL = '/favourites/partials/list/?variant=map';
+const PLACES_URL = '/favourites/partials/places/';
 const UUID = '11111111-2222-3333-4444-555555555555';
 
 document.body.innerHTML = `
@@ -42,7 +42,7 @@ document.body.innerHTML = `
           data-favourites-eligible="true"
           data-signin-url="/sign-in/"
           data-favourite-create-url="/favourites/partials/create/"
-          data-favourite-list-url="${LIST_URL}"
+          data-favourite-places-url="${PLACES_URL}"
           data-favourite-rename-url-template="/favourites/partials/__UUID__/rename/"
           data-favourite-delete-url-template="/favourites/partials/__UUID__/delete/"></button>
   <div id="favourite-sheet" hidden></div>
@@ -68,13 +68,14 @@ document.body.innerHTML = `
 globalThis.htmx = { ajax: vi.fn(() => Promise.resolve()), process: vi.fn() };
 
 await import('../../static/js/favourites.js');
+await import('../../static/js/saved_panel.js');
 
 const btn = document.getElementById('favourite-add-btn');
 const sheet = document.getElementById('favourite-sheet');
 
 /** Open the panel and put one renameable row inside it.
  *
- * Stands in for what favourites:list swaps in — the row's shape is
+ * Stands in for what favourites:places swaps in — the row's shape is
  * includes/_ugc_panel_row.html's plus
  * favourites/partials/_favourite_row_actions.html's, both asserted
  * server-side in tests/favourites/test_views.py.
@@ -177,7 +178,7 @@ describe('renaming a favourite in place', () => {
 
   it('re-reads the list on success rather than patching the row', async () => {
     // One call for the open, one for the reload — and the reload goes to
-    // the same URL, ?variant=map included.
+    // the same URL.
     const row = openPanelWithRow();
 
     row.querySelector('[data-row-rename]').click();
@@ -186,7 +187,7 @@ describe('renaming a favourite in place', () => {
     await Promise.resolve();
 
     expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(2);
-    expect(globalThis.htmx.ajax.mock.calls[1][1]).toBe(LIST_URL);
+    expect(globalThis.htmx.ajax.mock.calls[1][1]).toBe(PLACES_URL);
   });
 
   it('tells the map its pins changed, so the renamed one repaints', async () => {

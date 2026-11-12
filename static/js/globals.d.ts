@@ -42,6 +42,29 @@ interface Window {
   pwaCalendarCore: any;
   /** static/js/day_nav_core.js — the date row's day steps and empty-day lookup (SNOW-1195). */
   pwaDayNavCore: any;
+  /** static/js/map_hold_core.js — the hold-to-place detector (SNOW-1485). */
+  pwaMapHoldCore: {
+    HOLD_MS: number;
+    TOLERANCE_PX: number;
+    SYNTHETIC_MS: number;
+    CLICK_GRACE_MS: number;
+    createDetector(options: {
+      onHold(point: { x: number; y: number }, source: 'touch' | 'mouse'): void;
+      delayMs?: number;
+      tolerancePx?: number;
+      setTimer?(fn: () => void, ms: number): any;
+      clearTimer?(handle: any): void;
+      now?(): number;
+    }): {
+      touchStart(points: Array<{ x: number; y: number }>): void;
+      touchMove(points: Array<{ x: number; y: number }>): void;
+      touchEnd(): void;
+      cancel(): void;
+      contextMenu(point: { x: number; y: number }): boolean;
+      takeClick(): boolean;
+      dispose(): void;
+    };
+  };
   pwaStaleDayCore: any;
   /** static/js/map_3d_core.js — the 3D map's pure parts (terrain, routeShare3dUrl), the probe's frameStats and /map/'s frame watchdog (frameWindowFails, createFrameWatch; SNOW-1455). */
   pwaMap3dCore: any;
@@ -92,18 +115,25 @@ interface Window {
       drain(): unknown;
       waiting(): Promise<number> | number;
       areas: string[];
+      /** SNOW-1487: a stage's counts ride as the second argument; `terrain` joined the stages. */
       syncOne(
         id: string,
-        onStage: (name: 'map' | 'bulletins' | 'weather' | 'things') => void,
+        onStage: (
+          name: 'map' | 'terrain' | 'bulletins' | 'weather' | 'things',
+          counts?: { done: number; total: number },
+        ) => void,
       ): Promise<'ready' | 'partial' | 'absent'> | 'ready' | 'partial' | 'absent';
       onStep?(step: any): void;
       drainTimeoutMs?: number;
       wait?(ms: number): Promise<void>;
+      /** SNOW-1487: once aborted, no further area starts. */
+      signal?: AbortSignal;
     }): Promise<{
       total: number;
       ready: number;
       waiting: number;
       outcomes: Array<{ id: string; outcome: 'ready' | 'partial' | 'absent' }>;
+      skipped: string[];
     }>;
     areaOutcome(result: { tiles?: string; content?: boolean } | null | undefined): 'ready' | 'partial' | 'absent';
     waitingCount(rows: unknown): number;
@@ -120,10 +150,28 @@ interface Window {
     verdict(
       record: Object | undefined,
       now?: Date,
-    ): { verdict: 'ready' | 'refresh' | 'open-map' | 'unknown'; reason: '' | 'conditions' | 'things' };
-    press(areaIds: string[], onChange: () => void): Promise<Object | null>;
-    state(): { running: boolean; current: string; label: string };
-    shortfall(result: Object | null): string;
+    ): { verdict: 'ready' | 'refresh' | 'open-map' | 'unknown'; reason: '' | 'conditions' | 'things' | 'terrain' };
+    /** SNOW-1487: `onChange({progress: true})` when only a stage's counts moved. */
+    press(areaIds: string[], onChange: (change?: { progress: boolean }) => void): Promise<Object | null>;
+    /** SNOW-1487: the area of how many it is on, its step and counts, and the areas still to come. */
+    state(): {
+      running: boolean;
+      current: string;
+      label: string;
+      index: number;
+      count: number;
+      step: { name: string; done: number | null; total: number | null } | null;
+      pending: string[];
+    };
+    /** SNOW-1487: stops the run in flight; the areas after it are skipped. */
+    stop(): void;
+    /** SNOW-1487: one `syncArea` answer in the closing toast's terms. */
+    outcomeOf(answer: any): 'ready' | 'unfinished' | 'stopped' | 'absent';
+    /** SNOW-1487: every area a run was pressed over, with its outcome, and the queue line. */
+    closing(
+      result: Object | null,
+      areaIds: string[],
+    ): { areas: Array<{ id: string; outcome: string }>; queue: string };
   };
   /** static/js/downloads_restore_queue_core.js — the "Download all" queue's order and stop rules (SNOW-1140). */
   pwaDownloadsRestoreQueueCore: {
@@ -276,16 +324,40 @@ interface Window {
   pwaNetworkMode: any;
   /** static/js/map_weather_detail.js — the weather sheet; open/close/point. */
   pwaWeatherDetail: any;
-  /** SNOW-1366: the Today panel (static/js/today_panel.js). */
-  pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean };
-  /** SNOW-1476: the favourites, routes and report sheets' controllers. */
-  pwaFavouritesSheet: { open(): void; close(): void; isOpen(): boolean };
+  /** SNOW-1366: the Today panel (static/js/today_panel.js); SNOW-1479 adds
+   *  toToday, which Saved → Places' rows borrow. */
+  pwaTodayPanel: { open(): void; close(): void; isOpen(): boolean; toToday(): void };
+  /** SNOW-1476: the favourites, routes and report sheets' controllers.
+   *  SNOW-1481: the favourites sheet always lists Places.
+   *  SNOW-1485: createAt opens it on the create form at a held point. */
+  pwaFavouritesSheet: {
+    open(): void;
+    close(): void;
+    isOpen(): boolean;
+    createAt(lat: number, lon: number): void;
+  };
+  /** SNOW-1479: the Saved tab's Trips sheet (static/js/trips_panel.js). */
+  pwaTripsSheet: { open(): void; close(): void; isOpen(): boolean };
   pwaRoutesSheet: { open(): void; close(): void; isOpen(): boolean };
-  pwaReportSheet: { open(): void; close(): void; isOpen(): boolean };
+  /** SNOW-1485: reportAt opens the report form at a held point. */
+  pwaReportSheet: {
+    open(): void;
+    close(): void;
+    isOpen(): boolean;
+    reportAt(lat: number, lon: number): void;
+  };
   /** static/js/map_downloads_manager.js — the downloads sheet. */
   pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void };
+  /** SNOW-1481: Saved, the four sheets as one panel (static/js/saved_panel.js). */
+  pwaSavedPanel: {
+    open(): void;
+    close(): void;
+    isOpen(): boolean;
+    toggle(): void;
+    switchTo(choice: 'places' | 'routes' | 'trips' | 'observations'): void;
+  };
   /** SNOW-1476: the installed phone app's tab bar (static/js/app_tabbar.js). */
-  pwaAppTabbar: { select(tab: 'map' | 'today' | 'saved' | 'help'): void; light(): void };
+  pwaAppTabbar: { select(tab: 'map' | 'saved' | 'help'): void; light(): void };
   /** static/js/map_sheet.js — the sheet controller; attach/bindDetents/handOff/toast. */
   MapSheet: any;
   /** static/js/route_rail.js — rail one below the map; open/close/cursor. */
@@ -346,8 +418,16 @@ interface Window {
     /** SNOW-1460: the coverage 3-D opens over, the Alpine ring from map_beyond_switzerland.js. */
     setCoverage: (coverage: ReadonlyArray<number> | ReadonlyArray<ReadonlyArray<number>> | null) => void;
   };
-  /** static/js/swisstopo_extent.js — the swisstopo extent and the detailed-relief outline as frozen rings: EXTENT, EXTENT_BBOX, DETAILED_RELIEF, DETAILED_RELIEF_BBOX (SNOW-1460). */
+  /** static/js/swisstopo_extent.js — the swisstopo extent and the detailed-relief outline as frozen rings: EXTENT, EXTENT_BBOX, DETAILED_RELIEF, DETAILED_RELIEF_BBOX (SNOW-1460; in the map bundle since SNOW-1478). */
   pwaSwisstopoExtent: any;
+  /** static/js/map_offline_basemap_core.js — when the map shows Swisstopo offline in place of the reader's map: offlineDecision, swapGuard, covers, SWISSTOPO_KEY (SNOW-1478). */
+  pwaOfflineBasemapCore: any;
+  /** static/js/map_offline_basemap.js — the offline switch to Swisstopo inside a downloaded area on /map/ (SNOW-1478). */
+  pwaOfflineBasemap?: {
+    switched: () => boolean;
+    evaluate: () => void;
+    refresh: () => Promise<void>;
+  };
   /** static/js/beyond_switzerland_core.js — the winter style's splice past the border: plan, fixLayer, isWinterStyle, isSpliced, osmSource, reliefSource, ALPINE_GATE (SNOW-1460). */
   pwaBeyondSwitzerlandCore: any;
   /** static/js/osm_clip_core.js — OSM tile geometry clipped to outside the swisstopo extent: classifyTile, clipPolygon, cutLine, clipFeature, clipLayers (SNOW-1460). */
@@ -385,7 +465,35 @@ interface Window {
   pwaRegionPickCore: any;
   /** static/js/map_region_pick.js — the "Download a region" task: open() / close() / isActive() (SNOW-1414). */
   pwaRegionPick: any;
+  /** static/js/share.js — mint a share link and hand it to the platform (SNOW-887). */
+  pwaShare: {
+    shareOrCopy(value: string, title?: string, kind?: string): Promise<string>;
+    createShare(url: string, csrfToken: string): Promise<string>;
+  };
+  /** static/js/row_rename_commit.js — commit a panel row's inline rename. */
+  pwaRowRenameCommit: {
+    handleClick(event: Event, options: {
+      uuidAttribute: string;
+      urlTemplate: string;
+      csrfToken: () => string;
+      onCommitted?: (response: Response, row: HTMLElement) => void;
+      onFailed?: () => void;
+    }): boolean;
+  };
+  /** static/js/row_removed.js — re-read a list once one of its rows was removed over HTMX. */
+  pwaRowRemoved: {
+    watch(listSelector: string, handler: () => void, actionSelector?: string): void;
+  };
 }
+
+/**
+ * htmx (static/js/htmx.min.js), a classic script loaded before the modules
+ * that use it; read as a bare global, always behind `typeof htmx`.
+ */
+declare const htmx: {
+  ajax(method: string, url: string, options: { target: Element; swap?: string }): Promise<void>;
+  process(element: Element): void;
+};
 
 /**
  * The service worker and several modules publish via `self` rather than

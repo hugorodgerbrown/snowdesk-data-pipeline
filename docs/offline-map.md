@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-11-04
+last-reviewed: 2026-11-10
 ---
 
 # PWA shell
@@ -814,7 +814,14 @@ the stronger case: a GPX track is a record of where somebody actually
 went. `community_reports` is deliberately **absent** from that set — it is
 public data with no account binding, and a report cached while signed in
 must stay readable after logout (tying it to a principal would wrongly hide
-public data across an account change).
+public data across an account change). Because it is principal-free, the cached copy
+keeps nothing about the reader: the live feed's `mine` (SNOW-1480, the
+reader's own reports, drawn blue) is stripped before every write
+(`pwaCommunityReportsCore.withoutMine`, in `map.js`'s
+`fetchCommunityReports` and `map_basemap_downloads.js`'s
+`cacheOverlayFeedsForDownload`), so offline every report draws in its
+family's colours. For the same reason a region sheet body that marks a
+report "You" is sent `no-store` and never kept.
 
 - **Known gap**: none of these caches expires or gets evicted — a
   favourites/routes/community-reports snapshot can go arbitrarily stale
@@ -1952,7 +1959,7 @@ Every download pins them wherever the terrain filter is configured
 (`terrainDataPreferred`, which answers `terrainDataAvailable`). Until 4 Nov
 2026 they were an opt-in, the "Terrain data" switch on the downloads sheet;
 Hugo removed it, so terrain comes with every download. An area saved before
-then without terrain keeps reading so until it is downloaded again.
+then without terrain gains it on its next Sync (SNOW-1483, below).
 
 - **What is pinned.** `terrainClassTileURLs` (`basemap_download_core.js`)
   walks the blob's own rows, as SNOW-692's `slopeTileURLs` did for the
@@ -1969,7 +1976,24 @@ then without terrain keeps reading so until it is downloaded again.
 - **What is checked.** An opted-in area missing a class tile is
   `incomplete` on the roundel and the sheet; the repair and "Sync now"
   refetch exactly the missing tiles. An area without the flag is never
-  judged on them.
+  judged on them by the tile check.
+- **What Sync adds (SNOW-1483).** An area without the flag that should
+  hold terrain (`terrainExpected`: the page fetches terrain data and the
+  area's ground meets the tiles' coverage) reads amber on the Downloads
+  sheet, "Terrain not saved", from the same flag as its inventory's
+  Terrain row. Sync's `_addMissingTerrain` fetches the class tiles its
+  bucket lacks, after a budget and quota check that never evicts, then
+  writes `terrain: true` and the bytes and re-pushes the account row. The
+  elevation tiles follow through the ordinary render-dependency repair,
+  once the record carries the flag. An area outside the coverage lists no
+  Terrain row and is never marked down for it. 3D is not part of the
+  verdict. SNOW-1487: an addition that fails leaves the record without
+  the flag but counts the bytes that landed, and records a `terrain` step
+  with its reason on `verified.steps`; the dot then stays as the map reads
+  and an amber notice under the row says why
+  ([`decisions/a-failed-addition-never-hides-a-working-map.md`](decisions/a-failed-addition-never-hides-a-working-map.md)).
+  The inventory's Terrain row reads its own tiles (`terrainHeld` from
+  `measureAreaInventory`), never the map's answer.
 - **What it costs.** `TERRAIN_CLASS_BYTES_PER_TILE` (88 KiB) per tile,
   stated on its own: the region roundel's idle label adds "plus up to N MB
   of terrain data", and the framing readout gains a second line. The
@@ -2026,6 +2050,32 @@ from `static/js/cached_stamp_core.js` (`window.pwaCachedStampCore`), the one
 formatter behind every cached-copy stamp: `formatStamp` is "HH:MM" today and
 day + "HH:MM" on any other day, and is what the favourites, routes and
 reports panels stamp a cached repaint with.
+
+### Which map a download saves (SNOW-1478)
+
+A download's maps follow its ground, not the map on screen.
+`basemapsForGround` in `basemap_download_core.js` gives Swisstopo winter
+inside Switzerland, Swisstopo plus the foreign map across the border, and
+the foreign map outside: the one on screen when it draws that country,
+otherwise OpenFreeMap. `downloadBasemapKeys` in `map_basemap_downloads.js`
+drops a map the picker does not offer, and `runPinnedDownload` resolves
+each one's tile sources and render dependencies from its style before the
+run (`resolveDownloadBasemap`). The runner's `extraBasemaps` dep fetches
+the second map into the same bucket.
+
+The record lists every map as `basemaps: [{key, template, deps}]`, primary
+first, and keeps the old top-level fields as a copy of the primary entry.
+`recordBasemaps` reads either shape; the downloads sheet, `/offline/` and
+the render check all read every entry.
+
+Sync adds Swisstopo to a Swiss area saved before this, fetching only what
+its bucket lacks (`_addMissingBasemaps`).
+
+Offline inside an area that holds Swisstopo, a reader on another map sees
+Swisstopo, and `#offline-basemap-banner` says so
+(`map_offline_basemap.js`, `window.pwaOfflineBasemap`). Their own choice is
+never written, and leaving the area or getting signal back restores it.
+[Why](decisions/swiss-downloads-save-the-swisstopo-map.md).
 
 ### Download budget and whole-area eviction (SNOW-586)
 
@@ -2333,10 +2383,41 @@ dot and keeps the clause. The verdict is
 read from the stored record and its `verified` stamp through
 `offline_journey_core.js`, so it matches /offline/'s panels. The foot's
 **Sync all** runs `offline_ready_core.run` over every row on the device, in
-the sheet's order; the row it is on shows "Syncing…", the button carries the
-progress and is disabled while it runs or offline, and a run that left any
-area short ends in one toast. The run's state lives in the module, not the
-DOM, because `render()` re-clones every row.
+the sheet's order; the button carries the progress and is disabled while it
+runs or offline. The run's state lives in the module, not the DOM, because
+`render()` re-clones every row.
+
+**A sync says what it is doing (SNOW-1487).** The button reads "Syncing 2
+of 5 areas" (`pwaDownloadsSyncAll.state()`'s `index` and `count`), with a
+**Stop** under it (`stop()`; the page going out of sight stops it too). The
+row it is on shows its step ("Saving the map", "Saving terrain", "Saving
+bulletins"…), "212 of 528" and a bar, cloned from
+`map-downloads-row-progress-template`; a move of the counts alone repaints
+that row in place (`onChange({progress: true})`). Rows still to come say
+"Waiting". The counts come from `syncArea(areaId, onStage, signal)`, whose
+`onStage(step, {done, total})` the runner's repair paint feeds
+(`paint('busy', pct, bytes, {done, total})`), through
+`offline_ready_core.run`, which repeats a stage when its counts move. The
+run ends in one toast naming every area with its outcome ("Verbier: up to
+date. Zermatt: didn't finish"), and a line under Sync all, read from the
+records, says when the areas were last synced and how many did not finish
+(the newest `verified.at`; the count with a non-empty `verified.steps`), so
+it is there after a reload. A row whose last sync could not add the Swiss
+map or the terrain data keeps its dot and gains an amber notice with its
+remedy — Try again, Carry on, Change limit, or nothing for a full phone
+([`decisions/a-failed-addition-never-hides-a-working-map.md`](decisions/a-failed-addition-never-hides-a-working-map.md)).
+A row's own Sync now paints the same step and counts, and toasts the area's
+name when it does not finish.
+
+**The inventory's sizes are measured (SNOW-1487).** Opening a row measures
+its bucket by URL class (`pwaBasemapDownloads.measureAreaInventory`): an
+entry under the terrain-class or elevation template is terrain data,
+everything else the map, each by `Content-Length` or, where a compressed
+tile carries none, its body. Measured once per area per page and forgotten
+with `forgetPinnedBucketMeasurement`. Until it is measured, and for a class
+with nothing in it, no size is shown, never "0 MB". An area in Switzerland
+still to gain the Swiss map lists "Swiss map: Not added yet"
+(`swissMapMissing`, the rule Sync adds it by).
 
 **A row can be listed and still not render (SNOW-844).** The sheet asks
 the same render-dependency question the roundel does (see `incomplete`

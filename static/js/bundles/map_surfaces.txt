@@ -154,6 +154,17 @@ downloads_sync.js
 # favourites_offline.js, which base.html loads site-wide.
 observations_offline.js
 
+# SNOW-1485: hold on the map to add a pin or report there — the pure
+# detector (window.pwaMapHoldCore), then the binding that owns the hold
+# bar. After place_picker.js, map_sheet.js and map_overlay_exclusivity.js:
+# the binding attaches its bar with MapSheet at parse time, which registers
+# it with window.pwaMapOverlays. Before report.js and favourites.js, whose
+# bridges (reportAt, createAt) it calls only on a press, so the order there
+# is the reading order rather than a load-time need.
+map_hold_core.js
+
+map_hold.js
+
 # SNOW-333: field-report JS — geolocation + HTMX sheet opener.
 # Deferred so it executes in document order after the map assets.
 report.js
@@ -253,6 +264,15 @@ basemap_manage_core.js
 # time, so it only has to precede it.
 downloads_restore_queue_core.js
 
+# SNOW-1488: the offline report (window.pwaOfflineAuditCore and
+# window.pwaOfflineAudit), for the Downloads sheet's Copy report. The
+# report's own cores (calendar_core, slope_classes_core,
+# terrain_filter_core, basemap_download_core) are in map.txt, which loads
+# first. offline_audit.js binds only `[data-offline-audit]` hosts, which
+# the map has none of, so here it is a library the manager calls.
+offline_audit_core.js
+offline_audit.js
+
 # SNOW-1420: each Downloads row's offline answer and the sheet's Sync all
 # (window.pwaDownloadsSyncAll). Read by the manager at render and click
 # time, so it only has to precede it.
@@ -260,7 +280,19 @@ map_downloads_sync_all.js
 
 map_downloads_manager.js
 
+# SNOW-1479: the Saved tab's Trips sheet (window.pwaTripsSheet). Reads
+# window.pwaShare, window.pwaRowRenameCommit and window.pwaRowRemoved at
+# init or click time, all above. Its markup renders only for a signed-in
+# reader; the script returns early without #trips-sheet.
+trips_panel.js
+
+# SNOW-1481: Saved, the one panel of the four sheets above (favourites.js,
+# routes.js, trips_panel.js, report.js), opened by the star roundel and the
+# app's Saved tab (window.pwaSavedPanel). After those four, whose
+# controllers it reads when used, and before app_tabbar.js, which calls it.
+saved_panel.js
+
 # SNOW-1476: the installed phone app's tab bar. Last, because it drives the
-# panels every module above attaches (today_panel.js, favourites.js,
-# routes.js, report.js) and opens map_downloads_manager.js's sheet.
+# panels every module above attaches (today_panel.js, saved_panel.js) and
+# opens map_downloads_manager.js's sheet.
 app_tabbar.js

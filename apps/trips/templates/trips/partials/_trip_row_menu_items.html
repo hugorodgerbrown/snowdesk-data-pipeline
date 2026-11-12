@@ -1,0 +1,76 @@
+{% load i18n %}
+{% comment %}
+trips/partials/_trip_row_menu_items.html — the items in an organised trip's
+"…" menu on the Saved tab's Trips list (SNOW-1479).
+
+includes/_overflow_menu.html's ``items_template`` slot, reached from
+trips/partials/_trip_panel_row.html, so ``trip``, ``label`` and
+``row_target`` are in scope.
+
+SHARE, RENAME, DELETE — the routes menu's order with Plan a trip dropped
+(a trip is the plan), as every row's menu is (docs/design-system.md,
+interaction principle 4). Destructive last, behind the rule.
+
+  * Share (``data-trip-panel-share``) mints the trip's link through
+    trips:share_create and hands it to the share sheet, as the trip list's
+    own Share does (static/js/trips_panel.js). It ROTATES a live link, as
+    that one does.
+  * Rename (``data-row-rename`` + ``data-trip-rename``) opens the row's
+    inline editor; static/js/row_rename_commit.js posts to trips:rename.
+  * Delete posts to trips:delete with ``?panel=1``, which answers an empty
+    200 rather than a redirect, so the row swaps out (``data-row-remove``)
+    and the list is read again. It asks first: deleting a trip deletes it
+    for everyone on it.
+{% endcomment %}
+{% blocktrans trimmed with name=label asvar share_aria_label %}Share {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar rename_aria_label %}Rename {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar delete_aria_label %}Delete {{ name }}{% endblocktrans %}
+{% blocktrans trimmed with name=label asvar delete_confirm %}
+    Delete {{ name }}? It is deleted for everyone on it.
+{% endblocktrans %}
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-trip-panel-share="{{ trip.uuid }}"
+        aria-label="{{ share_aria_label }}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_share.html" only %}
+        {% trans "Share" %}
+    </button>
+</li>
+<li role="none">
+    <button
+        type="button"
+        role="menuitem"
+        data-row-rename
+        data-trip-rename="{{ trip.uuid }}"
+        aria-label="{{ rename_aria_label }}"
+        class="hover-affordance flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-text-2 hover:text-text-1"
+    >
+        {% include "includes/_icon_pencil.html" only %}
+        {% trans "Rename" %}
+    </button>
+</li>
+<li aria-hidden="true" class="my-1 border-t border-border"></li>
+<li role="none">
+    <form
+        data-row-remove
+        hx-post="{% url 'trips:delete' trip.uuid %}?panel=1"
+        hx-target="{{ row_target }}"
+        hx-swap="outerHTML"
+        hx-confirm="{{ delete_confirm }}"
+    >
+        {% csrf_token %}
+        <button
+            type="submit"
+            role="menuitem"
+            aria-label="{{ delete_aria_label }}"
+            class="flex w-full cursor-pointer items-center gap-2.5 px-3 py-2 text-left text-sm text-status-error-text hover:bg-status-error-bg"
+        >
+            {% include "includes/_icon_trash.html" only %}
+            {% trans "Delete" %}
+        </button>
+    </form>
+</li>

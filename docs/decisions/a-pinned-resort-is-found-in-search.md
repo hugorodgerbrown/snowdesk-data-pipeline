@@ -2,7 +2,7 @@
 name: a-pinned-resort-is-found-in-search
 description: Why pinned resorts and dropped pins are found in search, resorts drawn blue (buildPinnedResortEntries, buildPinEntries, showFavourite)
 status: current
-last-reviewed: 2026-10-28
+last-reviewed: 2026-11-10
 ---
 
 # A pinned resort is found in search, and drawn as a blue resort dot
@@ -12,7 +12,9 @@ last-reviewed: 2026-10-28
 
 - **Listed by search, not the Favourites panel.** An empty search field
   lists *Pinned resorts* above *Pinned regions*; a row opens the resort.
-  The Favourites panel (`favourite_list`) lists `dropped_pins()` only.
+  The Favourites panel (`favourite_list`) listed `dropped_pins()` only;
+  SNOW-1481 retired it for Saved › Places (`favourites:places`), which lists
+  every kind.
 - **Drawn as a resort, not a favourite.** The resorts layer paints a pinned
   resort's dot in the favourites blue (`applyFavouritedResortColour`); the
   star layer draws dropped pins only (`DROPPED_PIN_FILTER`). It reverses

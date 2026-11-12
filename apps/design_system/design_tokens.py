@@ -68,6 +68,7 @@ from apps.design_system._component_fixtures import (
     HOURLY_CHART_VARIANTS,
     MAP_3D_TEST_PANEL_VARIANTS,
     MAP_COMPASS_VARIANTS,
+    MAP_HOLD_BAR_VARIANTS,
     MAP_OVERLAY_TOGGLE_VARIANTS,
     MAP_RELIEF_TUNING_PANEL_VARIANTS,
     MAP_ZOOM_CONTROL_VARIANTS,
@@ -84,6 +85,7 @@ from apps.design_system._component_fixtures import (
     PLACE_LINK_ROW_VARIANTS,
     PLACE_PIN_VARIANTS,
     PLACE_SHEET_TODAY_ROW_VARIANTS,
+    PLACES_VARIANTS,
     POINT_CARD_VARIANTS,
     RATING_BLOCK_ALBINA_BAND_VARIANTS,
     RATING_BLOCK_VARIANTS,
@@ -92,12 +94,14 @@ from apps.design_system._component_fixtures import (
     RESORT_FORECAST_VARIANTS,
     RESORT_TILE_VARIANTS,
     RESORT_WHY_IT_MATTERS_VARIANTS,
+    ROUTE_ADD_MENU_VARIANTS,
     ROUTE_META_LINE_VARIANTS,
     ROUTE_PROFILE_VARIANTS,
     ROUTE_RAIL_VARIANTS,
     ROW_DISCLOSURE_VARIANTS,
     RUN_STRIP_VARIANTS,
-    SAVED_CHIPS_VARIANTS,
+    SAVED_ADD_ROUNDEL_VARIANTS,
+    SAVED_TABS_VARIANTS,
     SEASON_CALENDAR_VARIANTS,
     SEASON_CELL_VARIANTS,
     SEASON_SCRUBBER_VARIANTS,
@@ -115,6 +119,8 @@ from apps.design_system._component_fixtures import (
     TOAST_BANNER_VARIANTS,
     TOAST_VARIANTS,
     TODAY_VARIANTS,
+    TRIP_PANEL_ROWS_VARIANTS,
+    TRIP_ROUTE_PICKER_VARIANTS,
     UGC_PANEL_GROUP_VARIANTS,
     UGC_PANEL_ROW_VARIANTS,
     UGC_PANEL_VARIANTS,
@@ -530,14 +536,15 @@ ICON_PARTIALS: tuple[IconPartial, ...] = (
     ),
     _icon(
         "favourite",
-        "Favourite — a star, the favourites roundel",
+        "Favourite — a star, the roundel that opens Saved",
         18,
         parameters=(
             _size(18, "the roundel size; the panel header passes 22"),
             IconParameter(
                 "filled",
                 "bool, optional — solid rather than outline, the on state "
-                "of a star used as a toggle.",
+                "of a star used as a toggle, and the star roundel's while "
+                "Saved is open (SNOW-1481).",
             ),
             _SVG_CLASS,
         ),
@@ -1508,8 +1515,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "opened it: an object sheet (a thing tapped on the map; the only "
             "kind with detents), a roundel panel (a list or setting a "
             "roundel opened and toggles; must not cover the roundels) and "
-            "a form panel (a task; no drag-to-close). See "
-            "docs/design-system.md, Map panels."
+            "a form panel (a task; no drag-to-close). SNOW-1486: on a "
+            "phone the four Saved sheets are the card (card=True): inset, "
+            "half at 50dvh and full at 75dvh, dragged from the handle and "
+            "header only; a form or confirmation in it (data-sheet-fit) is "
+            "as tall as its content. See docs/design-system.md, Map panels."
         ),
         kind="components",
         partial="includes/_overlay_sheet.html",
@@ -1797,7 +1807,8 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         label="App tab bar",
         description=(
             "The installed phone app's bottom tab bar (SNOW-1476): Map, "
-            "Today, Saved, Help. Drawn only in standalone display mode under "
+            "Saved, Help (Today folded into Saved → Places, SNOW-1479; its "
+            "alert dot is on Saved). Drawn only in standalone display mode under "
             "640px, where it replaces the footer; the avatar menu stays in "
             "the header. On the "
             "map the tabs are buttons that open tab panels over it; elsewhere "
@@ -2270,7 +2281,11 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "sheet's existing delegated close listener. SNOW-658 adds an "
             "optional icon_template: the three UGC panels put the glyph of "
             "the roundel that opens them before the title, as the panel's "
-            "one identity mark."
+            "one identity mark. SNOW-1486: with lead_template (the Saved "
+            "tabs) it is a Saved sheet's header, one grid in two layouts — "
+            "on a phone the title and × over the tabs with the + beside "
+            "them, from sm one row of tabs, + and × — and handle=True draws "
+            "the phone grab handle the Help menu's header carries."
         ),
         kind="components",
         partial="includes/_sheet_header.html",
@@ -2286,7 +2301,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "(SNOW-1073). The caller writes the fieldset, its legend and the "
             "track, and includes this once per option. Used by the theme "
             "preference. (The terrain filter's mode control used it until "
-            "SNOW-1109 replaced it with two option tiles.)"
+            "SNOW-1109 replaced it with two option tiles.) SNOW-1479 adds an "
+            "optional icon_template: the glyph first, and the label shown "
+            "only beside the checked option — in every radio's accessible "
+            "name all the same. The Saved tabs draw their four that way."
         ),
         kind="components",
         partial="includes/_segmented_option.html",
@@ -2294,17 +2312,97 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         panel_layout="stack",
     ),
     FoundationCategory(
-        slug="saved-chips",
-        label="Saved chips",
+        slug="saved-tabs",
+        label="Saved tabs",
         description=(
-            "The phone app's Saved panel switch — Places, Routes, "
-            "Observations — under each of the three sheets' headers "
-            "(SNOW-1476). A segmented control; drawn only in the installed "
-            "phone app, previewed here."
+            "The Saved tabs — Places, Routes, Trips, Observations — four "
+            "icons, the selected one named, at the start of each of the four "
+            "Saved sheets' headers (SNOW-1479; on every screen since "
+            "SNOW-1481, where the star opens Saved). A segmented control of "
+            "icon options, with the + roundel beside it; on a phone under "
+            "the title Saved items and its × (SNOW-1486)."
         ),
         kind="components",
-        partial="includes/_saved_chips.html",
-        variants=SAVED_CHIPS_VARIANTS,
+        partial="includes/_saved_tabs.html",
+        variants=SAVED_TABS_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="saved-add-roundel",
+        label="Saved add roundel",
+        description=(
+            "The + beside the Saved tabs (SNOW-1479; on every screen since "
+            "SNOW-1481): a glass roundel carrying the panel's own add hook "
+            "(data-panel-add: drop a pin, report, upload). Trips has the "
+            "trip route picker instead."
+        ),
+        kind="components",
+        partial="includes/_saved_add_roundel.html",
+        variants=SAVED_ADD_ROUNDEL_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="trip-route-picker",
+        label="Trip route picker",
+        description=(
+            "The Trips tab's + (on every screen since SNOW-1481): a glass "
+            "roundel "
+            "opening a menu headed Plan a trip from, listing the reader's own "
+            "routes with their distance and ascent, each to the trip form for "
+            "that route. With no routes, its one item goes to the Routes tab. "
+            "Filled by trips_panel.js from routes:geojson, so the library "
+            "shows the label alone."
+        ),
+        kind="components",
+        partial="public/partials/_trip_route_picker.html",
+        variants=TRIP_ROUTE_PICKER_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="route-add-menu",
+        label="Route add menu",
+        description=(
+            "The routes panel's + roundel beside the × (SNOW-1278; in the "
+            "installed phone app the Routes tab's +, SNOW-1479): a glass "
+            "roundel opening Find a route, Create a route and Upload a GPX, "
+            "least work first, through includes/_overflow_menu.html. Shown "
+            "while the route_drawing flag is on; it replaces the panel's own "
+            "add button."
+        ),
+        kind="components",
+        partial="public/partials/_route_add_menu.html",
+        variants=ROUTE_ADD_MENU_VARIANTS,
+        panel_layout="two-col",
+    ),
+    FoundationCategory(
+        slug="places-list",
+        label="Places list",
+        description=(
+            "The installed phone app's Saved → Places (SNOW-1479): the Today "
+            "panel's regions, each with today's danger and a Share / Delete "
+            "menu when the region itself is pinned, its pinned resorts with "
+            "today's weather, and its dropped pins with their height; pins in "
+            "no region last, under Elsewhere. Built by "
+            "apps/favourites/today.py's build_places."
+        ),
+        kind="components",
+        partial="favourites/partials/_places.html",
+        variants=PLACES_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="trip-panel-rows",
+        label="Trips list",
+        description=(
+            "The installed phone app's Saved → Trips (SNOW-1479): the "
+            "reader's trips, upcoming soonest first and then past, on the "
+            "shared UGC row. The name links to the trip; an organiser's row "
+            "has the \u2026 menu of Share, Rename and Delete, a participant's "
+            "none."
+        ),
+        kind="components",
+        partial="trips/partials/_trip_panel_rows.html",
+        variants=TRIP_PANEL_ROWS_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(
@@ -2492,6 +2590,25 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
         kind="components",
         partial="includes/_panel_add_button.html",
         variants=PANEL_ADD_BUTTON_VARIANTS,
+        panel_layout="stack",
+    ),
+    FoundationCategory(
+        slug="map-hold-bar",
+        label="Map hold bar",
+        description=(
+            "What a hold on the map asks (SNOW-1485). A finger held still on "
+            "the map, or a right-click, drops the place pin there; this bar "
+            "says to move the map to fine-tune, offers Save pin and Report, "
+            "and its × cancels and puts the map back. A form panel on the "
+            "overlay sheet (no detents, no drag-to-close): _map_embed.html "
+            "renders #map-hold-bar empty with this body in a template, and "
+            "static/js/map_hold.js clones it on each hold. The buttons are "
+            "the panel add button's outlined shape, each with the glyph of "
+            "the roundel it hands over to."
+        ),
+        kind="components",
+        partial="includes/_map_hold_bar.html",
+        variants=MAP_HOLD_BAR_VARIANTS,
         panel_layout="stack",
     ),
     FoundationCategory(

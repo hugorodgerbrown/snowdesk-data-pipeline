@@ -2330,14 +2330,19 @@ class TestRouteListPendingShares:
         assert response.status_code == 200
         assert "Col Ferret" in response.content.decode()
 
-    def test_a_pending_row_is_marked_as_shared_with_you(self, client: Client) -> None:
-        """The row says it is not yet theirs before the button does."""
+    def test_a_pending_row_is_marked_as_shared(self, client: Client) -> None:
+        """The row says it is not yet theirs before the button does.
+
+        "Shared", one word, since SNOW-1479 ("Shared with you" before).
+        """
         share = RouteShareFactory.create()
         _follow(client, share.token)
 
         response = client.get(LIST_URL, **HTMX_HEADERS)
 
-        assert "Shared with you" in response.content.decode()
+        content = response.content.decode()
+        assert re.search(r"Shared ·\s", content)
+        assert "Shared with you" not in content
 
     def test_a_pending_row_is_keyed_on_the_token_not_the_uuid(
         self, client: Client

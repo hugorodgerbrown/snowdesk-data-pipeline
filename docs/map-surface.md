@@ -2,7 +2,7 @@
 name: map-surface
 description: Map zoom bands (REGION_SELECT_MAXZOOM), tap priority, overlay kinds, pwaMapOverlays, one bottom sheet, camera padding owner
 status: current
-last-reviewed: 2026-11-08
+last-reviewed: 2026-11-10
 ---
 
 # The map surface: zoom, taps and overlays
@@ -114,6 +114,16 @@ map click dispatcher"). It stops at the first rule that claims the tap:
 A double-click on a region at z10 or below zooms to the region; above z10 it
 is the map's own zoom-in.
 
+**A hold is not a tap** (SNOW-1485). A finger held still for half a second,
+or a right-click on a desktop, reaches none of the rules above: it drops the
+place pin where it was held and opens the hold bar (`#map-hold-bar`, a form
+panel), whose Save pin and Report hand the fine-tuned point to the new-pin
+and report forms and whose × puts the camera back. It works anywhere,
+markers and resort pins included: the click the lifted finger sends is
+swallowed once by a capture-phase listener on `#map`, so the dispatcher
+never sees it. `static/js/map_hold.js` binds it, over the pure detector in
+`static/js/map_hold_core.js` (`window.pwaMapHoldCore`).
+
 ## 3. The four kinds of overlay
 
 Every surface over the map is one of four kinds, and the kind decides how it
@@ -122,15 +132,18 @@ opens, closes and coexists (AGENTS.md, design-system rule 6).
 | Kind | Examples | Opened by | Phone shape | Closed by |
 |---|---|---|---|---|
 | **Object sheet** | region sheet, place sheet, weather sheet, rest zone sheet, route rail | a tap on something on the map | bottom sheet with detents (peek, half, full) | ×, drag below peek, Escape, deselecting, another object sheet |
-| **Roundel panel** | routes, favourites, reports, downloads lists | its roundel | full-width docked panel, no detents | its roundel, its ×, another overlay |
-| **Form panel** | field report, terrain filter | a call to action | docked panel, no detents, no drag-to-close | its own buttons, its × |
+| **Roundel panel** | Saved (routes, favourites, trips, reports), downloads lists | its roundel | full-width docked panel, no detents; Saved is the inset card at half or full (SNOW-1486) | its roundel, its ×, another overlay; Saved a drag down from half |
+| **Form panel** | field report, New pin, terrain filter | a call to action | docked panel, no detents, no drag-to-close; in a Saved sheet the card as tall as the form | its own buttons, its × |
 | **Flyout / card** | layers menu, zoom flyout, calendar, legend card, help coachmark, tour offer, slopes notice (SNOW-1378, shown by the map once per device at z12 over the bulletin's slopes; closes on a map tap too), a saved pin's desktop popup | its toggle | anchored card | a click away, another overlay |
 
 In the installed app on a phone the roundel panels and the Today panel are
-**tab panels** instead (SNOW-1476): the bottom tab bar opens them full
-height, `static/js/app_tabbar.js` lights the tab whose panel is open, and
-the control column is hidden
+**tab panels** instead (SNOW-1476): the bottom tab bar opens them,
+`static/js/app_tabbar.js` lights the tab whose panel is open, and the
+control column is hidden
 ([`the-installed-phone-app-has-a-tab-bar`](decisions/the-installed-phone-app-has-a-tab-bar.md)).
+Saved and the "?" menu are the same inset card there as in a phone browser,
+above the bar (SNOW-1486,
+[`one-sheet-design-on-a-phone`](decisions/one-sheet-design-on-a-phone.md)).
 
 Help mode (SNOW-1119, the "?" roundel) is none of these: it is a layer
 over the whole map that names the controls and keys whichever object sheet
@@ -227,7 +240,7 @@ The other root and `#map` marks, for CSS that needs to know what is up:
 
 | Mark | Set by | Means |
 |---|---|---|
-| `:root[data-map-sheet="peek\|half\|full"]` | `map_sheet.js` | an object sheet is open on a phone, at that detent |
+| `:root[data-map-sheet="peek\|half\|full"]` | `map_sheet.js` | an object sheet is open on a phone, at that detent (never a Saved card, `data-sheet-card`) |
 | `:root[data-region-sheet]` | `map_region_sheet.js` | the region sheet is open |
 | `#map[data-route-rail-open]` | `route_rail.js` | the route rail is open; map.css withdraws the controls a phone does not keep |
 

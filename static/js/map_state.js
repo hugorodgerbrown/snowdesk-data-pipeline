@@ -443,6 +443,9 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   'search-group-pinned': 'Pinned regions',
   'search-group-pinned-resorts': 'Pinned resorts',
   'search-resort-in': 'in %(region)s',
+  // SNOW-1480: the region-less report popup's word for the reader's own
+  // report, as its row in the region panel says it.
+  'report-mine': 'You',
   // SNOW-1264: a dropped pin's row — its screen-reader type word, its
   // group heading, and the label for a pin the user has not named.
   'search-type-pin': 'Pin',

@@ -1,0 +1,21 @@
+{% load i18n %}
+{% comment %}
+public/partials/_map_downloads_header_actions.html — the Downloads sheet's
+"…" menu beside its × (SNOW-1488).
+
+Rendered by includes/_sheet_header.html's ``actions_template``, reached
+through includes/_ugc_panel.html's ``header_actions_template``, the slot the
+routes panel's + menu uses. A glass roundel, as that one is: a bare glyph
+in a sheet header "is just floating" (Hugo, 8 Nov 2026).
+
+It holds one item today, Copy report, and is a menu rather than a bare
+icon because a copy glyph alone does not say what it copies. The installed
+app has no address bar, so this is how a reader reaches the offline report
+at all; /offline/ itself keeps no visible link (Hugo, 10 Nov 2026).
+
+includes/_overflow_menu.html owns the trigger, the popover and its
+dismissal (static/js/overflow_menu.js); the items are
+public/partials/_map_downloads_header_menu_items.html.
+{% endcomment %}
+{% trans "More actions" as downloads_header_menu_label %}
+{% include "includes/_overflow_menu.html" with trigger_id="downloads-header-menu-trigger" menu_id="downloads-header-menu" trigger_label=downloads_header_menu_label roundel=True items_template="public/partials/_map_downloads_header_menu_items.html" %}

@@ -71,9 +71,12 @@
   'use strict';
 
   /**
-   * @typedef {'yes'|'no'|'blocked'|'unknown'|'pending'} AuditStatus
+   * @typedef {'yes'|'no'|'blocked'|'unknown'|'pending'|'info'} AuditStatus
    *   ``blocked`` is a No on a critical row — the same answer, but the
-   *   reason the verdict is a failure rather than a limitation.
+   *   reason the verdict is a failure rather than a limitation. ``info``
+   *   (SNOW-1483) is a setting or a state, not a capability: Offline mode,
+   *   or the app noticing there is no signal. It is said, never counted,
+   *   and never makes the verdict less than the all-clear.
    */
 
   /**
@@ -126,6 +129,8 @@
    *   rather than returning readings.
    * @property {boolean} pending True for the skeleton painted before any
    *   reading has landed.
+   * @property {Array<{name: string, steps: Array<any>}>} [areaSteps]
+   *   SNOW-1487: what each area's last sync did not finish.
    */
 
   /**
@@ -154,6 +159,8 @@
    * @property {string|null} [basemapKey]
    * @property {number} [bytes]
    * @property {string[]} [deps]
+   * @property {Array<{key: (string|null), template: *, deps: string[]}>|null} [basemaps]
+   *   SNOW-1478: every map the area holds, when its download wrote the list.
    * @property {boolean} [bucketPresent]
    * @property {boolean} [bucketReadable] False where the bucket read did
    *   not answer. Distinct from ``bucketPresent: false``, which is a
@@ -1230,7 +1237,7 @@
    */
   function areaState(area) {
     var entries = Array.isArray(area.entries) ? area.entries : [];
-    var deps = Array.isArray(area.deps) ? area.deps : [];
+    var deps = areaDeps(area);
     var missingDeps = missingFrom(deps, entries);
     var terrainTiles = Array.isArray(area.terrainTiles) ? area.terrainTiles : [];
     var missingTerrain = missingFrom(terrainTiles, entries);
@@ -1278,6 +1285,30 @@
       missingDeps: missingDeps,
       tiles: entries.length - supporting,
     };
+  }
+
+  /**
+   * Every render dependency an area recorded, over every map it holds
+   * (SNOW-1478): its `basemaps` entries' lists where the download wrote
+   * them, otherwise its one `deps`.
+   *
+   * @param {AreaReading} area
+   * @returns {string[]}
+   */
+  function areaDeps(area) {
+    var maps = /** @type {any} */ (area).basemaps;
+    if (Array.isArray(maps) && maps.length > 0) {
+      var out = /** @type {string[]} */ ([]);
+      maps.forEach(function (/** @type {any} */ entry) {
+        if (entry && Array.isArray(entry.deps)) {
+          entry.deps.forEach(function (/** @type {string} */ url) {
+            if (out.indexOf(url) < 0) out.push(url);
+          });
+        }
+      });
+      return out;
+    }
+    return Array.isArray(area.deps) ? area.deps : [];
   }
 
   /**
@@ -1446,15 +1477,19 @@
       // that a reading it could not take is `unknown` rather than a Yes.
       if (r.dbAvailable === false) return { status: 'unknown' };
       var mode = typeof r.networkMode === 'string' ? r.networkMode : 'auto';
+      // SNOW-1483: both are `info`. Being offline on purpose, or with no
+      // signal, is the state this page exists to check readiness FOR, so
+      // it is never a fault against it. The forced-lockout verdict reads
+      // the reason, not the status, so that trap is still named.
       if (mode === 'offline-forced') {
-        return { status: 'no', reason: 'forced', note: s(t, 'note-network-forced') };
+        return { status: 'info', reason: 'forced', note: s(t, 'note-network-forced') };
       }
       if (mode === 'offline') {
         // The worker's own latch, from three read-path timeouts. Told apart
         // from the forced mode because the remedies differ completely: this
         // one lifts itself when a probe finds a route, so there is nothing
         // for the reader to press.
-        return { status: 'no', reason: 'latched', note: s(t, 'note-network-latched') };
+        return { status: 'info', reason: 'latched', note: s(t, 'note-network-latched') };
       }
       return { status: 'yes' };
     }
@@ -1911,11 +1946,17 @@
             // not one capability being unavailable — the log says so with
             // a third colour rather than a fourth word.
             if (status === 'no' && row.critical) status = 'blocked';
+            // An `info` answer names its state ("Offline mode on"), one
+            // string per reason, rather than a Yes or a No.
+            var valueKey =
+              status === 'info'
+                ? 'answer-info-' + resolved.reason
+                : 'answer-' + (status === 'blocked' ? 'no' : status);
             return /** @type {AuditCheck} */ (
               Object.assign({}, resolved, {
                 id: row.id,
                 label: row.label,
-                value: s(t, 'answer-' + (status === 'blocked' ? 'no' : status)),
+                value: s(t, valueKey),
                 status: status,
               })
             );
@@ -2219,9 +2260,52 @@
       failure: r.failure || null,
       sections: sections,
       counts: countChecks(sections),
+      // SNOW-1487: what each area's last sync did not finish.
+      areaSteps: areaSteps(r),
       generatedAt: typeof r.now === 'string' ? r.now : new Date().toISOString(),
       pending: false,
     };
+  }
+
+  /**
+   * SNOW-1487: the steps each area's last sync did not finish
+   * (`verified.steps`, stamped by `syncArea`), for the copied report: a
+   * failed addition shows only as a notice under the row, so the report
+   * is where whoever is sent it can see the cause.
+   *
+   * @param {AuditReadings} r
+   * @returns {Array<{name: string, steps: Array<any>}>} Areas with steps only.
+   */
+  function areaSteps(r) {
+    /** @type {Array<{name: string, steps: Array<any>}>} */
+    var out = [];
+    chosenAreas(r).forEach(function (/** @type {any} */ area) {
+      var steps = area.verified && Array.isArray(area.verified.steps) ? area.verified.steps : [];
+      steps = steps.filter(function (/** @type {any} */ step) {
+        return !!step && typeof step.step === 'string';
+      });
+      if (steps.length) out.push({ name: String(area.name || area.id || ''), steps: steps });
+    });
+    return out;
+  }
+
+  /**
+   * SNOW-1487: one unfinished step as a line of the copied report — the
+   * step, why, how far it got, and the space it needed against the space
+   * there was, where those were read.
+   *
+   * @param {any} step
+   * @returns {string}
+   */
+  function stepLine(step) {
+    var line = step.step + ' ' + step.reason;
+    if (Number(step.total) > 0) line += ' ' + (Number(step.done) || 0) + '/' + step.total;
+    if (Number(step.neededMb) > 0) {
+      line += ' (needs ' + step.neededMb + ' MB';
+      if (Number.isFinite(step.freeMb)) line += ', ' + step.freeMb + ' MB free';
+      line += ')';
+    }
+    return line;
   }
 
   /**
@@ -2281,6 +2365,17 @@
         }
       });
     });
+    // SNOW-1487: and what each area's last sync did not finish.
+    var unfinished = Array.isArray(report.areaSteps) ? report.areaSteps : [];
+    if (unfinished.length) {
+      lines.push('');
+      lines.push('## sync steps that did not finish');
+      unfinished.forEach(function (area) {
+        area.steps.forEach(function (/** @type {any} */ step) {
+          lines.push('  ' + area.name + ': ' + stepLine(step));
+        });
+      });
+    }
     return lines.join('\n');
   }
 
@@ -2320,6 +2415,7 @@
     pendingReport: pendingReport,
     reportText: reportText,
     missingLine: missingLine,
+    stepLine: stepLine,
     shortPrincipal: shortPrincipal,
     composeSummary: composeSummary,
     countChecks: countChecks,

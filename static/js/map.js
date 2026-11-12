@@ -197,6 +197,10 @@
   // _map_embed.html. A pinned resort's dot takes MARKER_FAVOURITE_COLOUR
   // instead (SNOW-1229).
   const RESORT_PIN_COLOUR = '#1a1a1a';
+  // Resort dots start at this zoom (Hugo, 10 Nov 2026): below it 157 dots
+  // bury Switzerland, and search finds any resort. A pinned resort is the
+  // exception and draws at every zoom (resortPinFilter).
+  const RESORT_PIN_MIN_ZOOM = 8;
   // Hoist to module scope so fetchBulletinGroupingsForDate() (defined before
   // the IIFE) can reach the URL that was read from the DOM here.
   BULLETIN_GROUPINGS_URL_MODULE = BULLETIN_GROUPINGS_URL;
@@ -2193,11 +2197,11 @@
   // inherit their parent region's bulletin via click-through). Halo +
   // white stroke keep the pin readable on every basemap and rating fill.
   //
-  // SNOW-543: pin size is the resort's curated ``tier``. Every tier is
-  // drawn at every zoom — the review's framing was to suppress Minor
-  // below a zoom threshold, but the small resorts are frequently the ones
-  // with the most interesting terrain for this product, so hiding them is
-  // backwards. Size does the ranking; nothing disappears.
+  // SNOW-543: pin size is the resort's curated ``tier``. No tier is
+  // hidden before another — the small resorts are frequently the ones
+  // with the most interesting terrain for this product. Below
+  // RESORT_PIN_MIN_ZOOM every resort is hidden alike, bar the pinned
+  // ones (resortPinFilter; docs/decisions/resorts-appear-from-z8.md).
   //
   // Visibility is owned by ``overlayState.resorts`` and applied at
   // install time; toggle clicks (handled in the basemap-picker IIFE)
@@ -2210,6 +2214,7 @@
       id: 'resorts-pin',
       type: 'circle',
       source: 'resorts',
+      filter: resortPinFilter(),
       layout: {
         visibility: overlayState.resorts ? 'visible' : 'none',
       },
@@ -2357,6 +2362,41 @@
     map.getLayoutProperty(layerId, 'visibility') !== 'none';
 
   /**
+   * Which resort dots draw: every one from RESORT_PIN_MIN_ZOOM, and a
+   * pinned one at every zoom.
+   *
+   * Rebuilt with the colour whenever ``favouritedResortIds`` changes. A
+   * filter rather than a layer ``minzoom`` because the pinned dots share
+   * the layer, and rather than a zero opacity so a hidden dot cannot be
+   * tapped. The weather symbols read the same rule (resortsDrawnNow).
+   *
+   * @returns {Array} A MapLibre filter expression.
+   */
+  const resortPinFilter = () => {
+    const fromZoom = ['>=', ['zoom'], RESORT_PIN_MIN_ZOOM];
+    return favouritedResortIds.length
+      ? ['any', ['in', ['get', 'id'], ['literal', favouritedResortIds]], fromZoom]
+      : fromZoom;
+  };
+
+  /**
+   * The resorts whose dots draw at the current zoom, as a
+   * FeatureCollection (or null when there are none to read).
+   *
+   * @param {{type: string, features: Array<Object>}|null} collection
+   * @returns {{type: string, features: Array<Object>}|null}
+   */
+  const resortsDrawnNow = (collection) => {
+    if (!collection || map.getZoom() >= RESORT_PIN_MIN_ZOOM) return collection;
+    return {
+      ...collection,
+      features: collection.features.filter(
+        (feature) => favouritedResortIds.includes(feature.properties && feature.properties.id),
+      ),
+    };
+  };
+
+  /**
    * Paint each pinned resort's dot in the favourites blue (SNOW-1229).
    *
    * A data-driven ``circle-color`` on resorts-pin, rebuilt from
@@ -2369,6 +2409,11 @@
    */
   const applyFavouritedResortColour = () => {
     if (!map.getLayer('resorts-pin')) return;
+    map.setFilter('resorts-pin', resortPinFilter());
+    // Below z8 the pinned set is which dots draw, and so which weather
+    // symbols step aside (resortsDrawnNow): re-project them now, not at the
+    // next pan.
+    refreshWeatherSourceData();
     map.setPaintProperty(
       'resorts-pin',
       'circle-color',
@@ -4102,6 +4147,17 @@
     ];
   };
 
+  // SNOW-1480: a paint expression — the report's colour: blue
+  // (MINE_COLOUR, --color-accent) for the reader's own, which the server
+  // marks `mine`, else its family's. A payload read back from the offline
+  // cache carries no `mine` (withoutMine), so every pin there reads as
+  // someone else's. Clusters keep the family colours: a cluster is many
+  // people's reports.
+  const communityReportColour = () => ['case',
+    ['boolean', ['get', 'mine'], false], window.pwaCommunityReportsCore.MINE_COLOUR,
+    communityFamilyColour(),
+  ];
+
   // SNOW-419: install the community-reports (shared, anonymised) overlay.
   // The source is clustered (`cluster: true`) so a busy valley does not
   // paint as an unreadable pile at low zoom. A cluster takes the colour of
@@ -4124,7 +4180,11 @@
       }
     }
     const visibility = overlayDrawn('community_reports') ? 'visible' : 'none';
-    const familyColour = communityFamilyColour();
+    // Every pin layer paints in the report's colour — blue for the
+    // reader's own (SNOW-1480): a solid pin is filled with it under a white
+    // mark, a recent ring is stroked with it round a mark drawn in it, and
+    // a live pin's halo and age take it too.
+    const reportColour = communityReportColour();
     map.addSource('community-reports', {
       type: 'geojson',
       data: geojson,
@@ -4179,7 +4239,7 @@
       filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', '_state'], 'live']],
       layout: { visibility },
       paint: {
-        'circle-color': familyColour,
+        'circle-color': reportColour,
         'circle-radius': 18,
         'circle-opacity': 0.22,
       },
@@ -4193,8 +4253,8 @@
       layout: { visibility },
       paint: {
         'circle-radius': 12,
-        'circle-color': ['case', ['==', ['get', '_state'], 'recent'], '#ffffff', familyColour],
-        'circle-stroke-color': ['case', ['==', ['get', '_state'], 'recent'], familyColour, '#ffffff'],
+        'circle-color': ['case', ['==', ['get', '_state'], 'recent'], '#ffffff', reportColour],
+        'circle-stroke-color': ['case', ['==', ['get', '_state'], 'recent'], reportColour, '#ffffff'],
         'circle-stroke-width': ['case', ['==', ['get', '_state'], 'recent'], 2.5, 2],
       },
     });
@@ -4211,7 +4271,7 @@
         'icon-ignore-placement': true,
       },
       paint: {
-        'icon-color': ['case', ['==', ['get', '_state'], 'recent'], familyColour, '#ffffff'],
+        'icon-color': ['case', ['==', ['get', '_state'], 'recent'], reportColour, '#ffffff'],
       },
     });
     // The age of a live report ("12m", "3h"), stamped at fetch and on every
@@ -4231,7 +4291,7 @@
         'text-allow-overlap': true,
       },
       paint: {
-        'text-color': familyColour,
+        'text-color': reportColour,
         'text-halo-color': '#ffffff',
         'text-halo-width': 1.5,
       },
@@ -4271,7 +4331,8 @@
         if (!data || !Array.isArray(data.features)) return false;
         if (dayAsked() !== day) return fetchCommunityReports();
         if (day === null) {
-          window.pwaMapOverlayCache?.putOverlay('community_reports', data);
+          // SNOW-1480: the cache is principal-free, so it keeps no `mine`.
+          window.pwaMapOverlayCache?.putOverlay('community_reports', core.withoutMine(data));
           communityReportsToday = data;
         }
         communityReportsPayload = data;
@@ -4575,8 +4636,9 @@
   // carries no weather symbols for a day the visitor never chose.
   //
   // Last, the stations that stand on a resort pin are flagged so the layer
-  // sets their symbol beside the pin rather than over it. Only while the
-  // resort pins are drawn: with the overlay off there is nothing to step
+  // sets their symbol beside the pin rather than over it. Only for the
+  // resort pins actually drawn: with the overlay off, or below the resorts'
+  // zoom for an unpinned one (resortsDrawnNow), there is nothing to step
   // aside for, and the symbol goes back to centring on its own point.
   const weatherDataForCurrentView = () => {
     const collapsed = window.pwaWeatherCore.collapseToLowest(
@@ -4589,7 +4651,7 @@
       readBoolStorage(OVERLAY_STORAGE_KEY.resorts, overlayState.resorts)
       && !!map.getSource('resorts');
     return window.pwaWeatherCore.markResortPins(
-      projected, resortsDrawn ? resortsGeojsonCache : null,
+      projected, resortsDrawn ? resortsDrawnNow(resortsGeojsonCache) : null,
     );
   };
 
@@ -10661,9 +10723,21 @@
       // reads the map keeps its age current instead of freezing at the
       // moment it was tapped. Same element, same module, as the panel row.
       const relative = formatRelativeTime(props.observed_at);
-      if (relative || props.region_name) {
+      // SNOW-1480: the reader's own report says so first, "You · <region>
+      // · <age>", as its row in the region panel does. The word is
+      // server-translated (MAP_STRINGS' 'report-mine').
+      const mine = props.mine === true;
+      if (relative || props.region_name || mine) {
         const metaEl = document.createElement('div');
         metaEl.className = 'community-report-popup__meta';
+        if (mine) {
+          const mineEl = document.createElement('span');
+          mineEl.className = 'community-report-popup__mine';
+          mineEl.setAttribute('data-testid', 'community-report-mine');
+          mineEl.textContent = MAP_STRINGS['report-mine'];
+          metaEl.appendChild(mineEl);
+          if (props.region_name || relative) metaEl.append(' · ');
+        }
         if (props.region_name) {
           metaEl.append(props.region_name);
           if (relative) metaEl.append(' · ');

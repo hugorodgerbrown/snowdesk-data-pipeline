@@ -22,7 +22,13 @@ plus three HTMX fragments under the ``partials/`` prefix, every one
 - ``trip_edit`` (POST) — updates the plan; answers ``HX-Redirect`` on
   success, and re-renders the form with its errors when the submission is
   invalid.
-- ``trip_delete`` (POST) — deletes the trip and answers ``HX-Redirect``.
+- ``trip_delete`` (POST) — deletes the trip and answers ``HX-Redirect``;
+  with ``?panel=1``, from the Saved tab's Trips list (SNOW-1479), an empty
+  200 that removes the row instead.
+- ``trip_panel_list`` (GET, SNOW-1479) — the reader's trips for the
+  installed phone app's Saved tab, upcoming soonest first and then past.
+- ``trip_rename`` (POST, SNOW-1479) — renames an organised trip in place
+  on its row.
 - ``trip_join`` / ``trip_leave`` (POST, SNOW-822; relabelled Save / Remove
   by SNOW-848) — the two verbs a shared trip has. Join answers the save
   card in its saved state; Leave answers ``HX-Redirect`` to the agenda,
@@ -126,6 +132,7 @@ from apps.trips.services.trips import (
     TripLimitReached,
     create_trip,
     delete_trip,
+    rename_trip,
     update_trip,
 )
 from apps.weather.services.weather_display import ForecastPanelDay
@@ -192,6 +199,10 @@ _SHARE_WRITE_RATE = "20/m"
 # confirmation again, which is the honest reading — the trip really is
 # there.
 _CREATED_PARAMETER = "created"
+
+# SNOW-1479: the query parameter the Saved tab's Trips list adds to a row's
+# Delete, so ``trip_delete`` answers the row's swap rather than a redirect.
+_PANEL_PARAMETER = "panel"
 
 # The authoring endpoints' rate-limit budget, keyed on ``user`` because both
 # are auth-only. Each create writes three rows (a Location, a Trip and the
@@ -1268,8 +1279,14 @@ def trip_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
         request: The incoming HTMX POST request.
         uuid: The Trip's uuid, from the URL.
 
+    PANEL MODE (SNOW-1479). The Saved tab's Trips list posts with
+    ``?panel=1``: its row's Delete swaps the row out on the empty 200, as
+    the routes and favourites rows do, and a redirect would take the
+    reader off the map they are on.
+
     Returns:
-        An empty 200 carrying ``HX-Redirect``, or an error response.
+        An empty 200 carrying ``HX-Redirect`` (none in panel mode), or an
+        error response.
 
     """
     if not request.user.is_authenticated:
@@ -1281,6 +1298,8 @@ def trip_delete(request: HttpRequest, uuid: UUID) -> HttpResponse:
         return HttpResponse("Trip not found.", status=404)
 
     response = HttpResponse("")
+    if request.GET.get(_PANEL_PARAMETER):
+        return response
     # The list, not the map: a deleted trip leaves the organiser looking at
     # the other trips they still have, which is where the thing they just
     # removed used to be.
@@ -1982,7 +2001,6 @@ def trip_route_save(request: HttpRequest, uuid: UUID) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-@require_GET
 def _created_trip(request: HttpRequest, trips: list[Trip]) -> Trip | None:
     """Return the trip named by ``?created=``, if it is one of these.
 
@@ -2064,6 +2082,7 @@ def _attach_meeting_addresses(request: HttpRequest, trips: list[Trip]) -> None:
         trip.meeting_point_place = _meeting_place(trip)  # type: ignore[attr-defined]
 
 
+@require_GET
 def trip_list(request: HttpRequest) -> HttpResponse:
     """Render the reader's own trips, split upcoming and past.
 
@@ -2123,3 +2142,94 @@ def trip_list(request: HttpRequest) -> HttpResponse:
             **_share_url_templates(),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# The Saved tab's Trips list (SNOW-1479)
+# ---------------------------------------------------------------------------
+
+
+@require_htmx
+@require_GET
+def trip_panel_list(request: HttpRequest) -> HttpResponse:
+    """Render the reader's trips for the installed phone app's Saved tab.
+
+    Loaded over HTMX by ``static/js/trips_panel.js`` into the Trips sheet's
+    rows. The same agenda ``trip_list`` reads — scoped by participation,
+    upcoming soonest first (a trip dated today counts as upcoming) and then
+    past, most recent first — as one list, because the panel is a list of
+    rows rather than a page of sections.
+
+    Each row is ``includes/_ugc_panel_row.html``. An organiser's row has the
+    "…" menu of Share, Rename and Delete, all three organiser-scoped
+    endpoints; a participant's row has none and opens the trip's page.
+
+    Errors:
+        400 — non-HTMX request.
+        403 — anonymous request.
+
+    Args:
+        request: The incoming HTMX GET request.
+
+    Returns:
+        Rendered ``trips/partials/_trip_panel_rows.html``.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    today = timezone.localdate()
+    fields = ("uuid", "name", "route_name", "date", "start_time", "created_by_id")
+    trips = Trip.objects.for_user(request.user).only(*fields)
+    agenda = list(trips.upcoming(today)) + list(trips.past(today))
+    for trip in agenda:
+        # Hung on the instance for the row, as the list's other per-row
+        # facts are (``_attach_meeting_addresses``): it decides the menu.
+        trip.viewer_organises = trip.created_by_id == request.user.pk  # type: ignore[attr-defined]
+    return render(
+        request,
+        "trips/partials/_trip_panel_rows.html",
+        {"trips": agenda},
+    )
+
+
+@require_htmx
+@require_POST
+@ratelimit(key="user", rate=_TRIP_WRITE_RATE, block=False)
+def trip_rename(request: HttpRequest, uuid: UUID) -> HttpResponse:
+    """Rename one of the organiser's own trips from its Trips row.
+
+    The pencil in the row's menu opens the inline editor
+    (static/js/inline_rename.js) and ``static/js/row_rename_commit.js`` posts
+    the name here, as the routes and favourites rows do. Answers the row,
+    re-rendered; the panel re-reads its list anyway.
+
+    Errors:
+        400 — non-HTMX request.
+        403 — anonymous request.
+        404 — the uuid is not a trip this user organised.
+        429 — rate limit exceeded.
+
+    Args:
+        request: The incoming HTMX POST request, carrying ``name``.
+        uuid: The Trip's uuid, from the URL.
+
+    Returns:
+        Rendered ``trips/partials/_trip_panel_row.html``, or an error.
+
+    """
+    if not request.user.is_authenticated:
+        return HttpResponse("Authentication required.", status=403)
+
+    if getattr(request, "limited", False):
+        return HttpResponse(
+            "Rate limit exceeded — please wait before renaming.", status=429
+        )
+
+    try:
+        trip = rename_trip(request.user, uuid, request.POST.get("name", ""))
+    except Trip.DoesNotExist:
+        return HttpResponse("Trip not found.", status=404)
+
+    trip.viewer_organises = True  # type: ignore[attr-defined]
+    return render(request, "trips/partials/_trip_panel_row.html", {"trip": trip})

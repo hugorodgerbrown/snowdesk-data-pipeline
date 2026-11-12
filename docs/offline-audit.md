@@ -2,7 +2,7 @@
 name: offline-audit
 description: /offline/ unlinked debug page panels — offline_audit.js, offline_journey.js, verified stamp, bounded reads, X-SW-Principal, browsedState
 status: current
-last-reviewed: 2026-11-04
+last-reviewed: 2026-11-10
 ---
 
 # The offline-content report (SNOW-907)
@@ -122,6 +122,16 @@ combination. Full account:
 device whose app is saved is working exactly as asked; it is a fault only
 in combination with `app-opens` answering No, and `verdictFor` is the one
 place those two meet.
+
+**Since SNOW-1483 its forced and latched readings are `info`, not No.**
+Being offline on purpose, or with no signal, is the state the page checks
+readiness for, so it is never a fault against it. Hugo's plane test on
+8 Nov 2026 read "13 of 14" and "not everything will be there" over a
+device with everything saved, because Offline mode was the one No. An
+`info` row answers in words (`answer-info-forced`, `answer-info-latched`),
+is coloured neutrally, is left out of the counts line and never lowers the
+verdict. Its sentence stays in the summary. `verdict-forced-lockout` reads
+the reason, not the status, so the trap is still named.
 
 **The downloads are not rows any more (SNOW-1308).** They were the one
 exception to the fixed list — a named row per download under "Map
@@ -789,6 +799,35 @@ whether it worked.
 same reason `debug_log_panel.js` has a Copy: a phone with no devtools is
 the only place this data exists.
 
+SNOW-1487: the text ends with a `## sync steps that did not finish`
+section, one line per step each area's last sync left in `verified.steps`
+— the step, its reason, how far it got and the space it needed against the
+space there was ("Verbier: basemap network 212/528 (needs 30 MB)"). The
+collector carries each area's `verified` stamp into the readings for it,
+and `buildReport` lists the areas with steps as `areaSteps`. The Downloads
+sheet says these in plain words under the row; the report is where the
+`budget` and `quota` reasons and the MB pair are spelt out
+([`decisions/a-failed-addition-never-hides-a-working-map.md`](decisions/a-failed-addition-never-hides-a-working-map.md)).
+
+### Copy report from the map (SNOW-1488)
+
+The installed app has no address bar, so its reader cannot reach this page
+at all, and Hugo ruled (10 Nov 2026) that the page stays unlinked. The
+Downloads sheet's header "…" menu carries **Copy report** instead
+(`public/partials/_map_downloads_header_actions.html`). It calls
+`pwaOfflineAudit.copyReport(host)`, which takes the same readings, builds
+the same report and assembles the same text as this page's Copy (one
+helper, `reportTextFor`), then toasts the outcome.
+
+`host` is the sheet's hidden `[data-offline-audit-host]`. It carries the
+attributes this page's `[data-offline-audit]` does, from one partial
+(`includes/_offline_audit_host_attrs.html`) over one context helper
+(`apps.public.map_shared.offline_audit_context`), so the two reports run
+the same checks. It is deliberately not `[data-offline-audit]`: `init()`
+binds those, and the map has no panel to bind. The map gets the two audit
+scripts from its `map_surfaces` bundle, which the shell re-warm caches with
+the map, so Copy report works with no signal.
+
 ## The area panels
 
 SNOW-1308. One panel per downloaded area, above the report, on both
@@ -813,8 +852,9 @@ what follows is how they meet this module.
 - **The one reading that is not storage.** Whether every basemap tile the
   ground implies is in the bucket — `blobFullyCached` over the bucket's
   listed entries, asked by `offline_journey_core.js`'s `tileReading` of
-  `pwaBasemapDownloadCore` when the page has it. `static/offline.html`
-  does not, so its map stage reads "Can't tell".
+  `pwaBasemapDownloadCore`. `static/offline.html` loads it too since
+  SNOW-1483. Before that its map stage read "Can't tell" on every area
+  (Hugo's plane test, 8 Nov 2026).
 - **The controls.** Sync now and a "tap to fix" verdict call
   `pwaOfflineAudit.syncArea` (or `syncAll` on a `?sync=all` page) —
   `fetchAreaContent` below, unchanged, which now also stamps the items
@@ -834,6 +874,8 @@ shell cache.
 
 SNOW-1308 added the panels' two files and the shared removal to the
 same list, so downloaded areas never vanish from the fallback page.
+SNOW-1483 added `basemap_download_core.js`, so their map stage can be
+read there.
 
 They are in `AUDIT_SCRIPTS` and **not** in `PRECACHE_URLS`, which goes
 through one atomic `cache.addAll` where a single failed entry fails

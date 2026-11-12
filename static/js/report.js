@@ -21,7 +21,7 @@
  * pins beside it; it now draws that line only for a device that has never
  * loaded the list at all.
  *
- * SNOW-658: the roundel opens a PANEL, not the location flow. The panel
+ * SNOW-658: the sheet has a PANEL (Saved › Observations since SNOW-1481). The panel
  * (#report-list-template, in _report_surface.html) lists the user's own
  * reports — loaded over HTMX from observations:list, so each row arrives
  * with its own delete wiring — and offers [data-panel-add] to file
@@ -31,9 +31,14 @@
  * static/js/map_panel_overlay_switch.js owns it, and this module only
  * seeds it after each clone.
  *
+ * SNOW-1481: the binoculars roundel (#report-btn) starts a report in one
+ * tap, straight to the flow below; the panel of the reader's own reports is
+ * Saved › Observations (static/js/saved_panel.js), which opens it through
+ * window.pwaReportSheet.
+ *
  * Flow when eligible (authenticated):
- *   1. User taps the floating #report-btn, then [data-panel-add] in the
- *      panel it opens.
+ *   1. User taps the floating #report-btn, or [data-panel-add] in Saved ›
+ *      Observations.
  *   2. We reuse the page's single geolocation source — SNOW-328's MapLibre
  *      GeolocateControl, owned by map.js — by dispatching
  *      ``snowdesk:locate-request`` and awaiting the position it broadcasts on
@@ -256,13 +261,16 @@
    * @param {string} locationSource — 'GPS', 'GPS_REFINED', or 'MANUAL'
    * @param {number|null} gpsLat — raw device fix latitude (null on MANUAL path)
    * @param {number|null} gpsLon — raw device fix longitude (null on MANUAL path)
+   * @param {boolean} [placed] — SNOW-1485: the point was placed by a hold on
+   *   the map; sends ``placed=1``, so the form leaves out its Move pin row.
    * @returns {Promise<any>} resolves once the request has completed and the
    *   swap has settled — htmx.ajax()'s own promise. The MANUAL onError
    *   branch chains off this so PlacePicker.activate() only writes into the
    *   form once it actually exists in the DOM.
    */
-  function loadForm(lat, lon, accuracy, locationSource, gpsLat, gpsLon) {
+  function loadForm(lat, lon, accuracy, locationSource, gpsLat, gpsLon, placed) {
     const params = new URLSearchParams({ location_source: locationSource });
+    if (placed) params.set('placed', '1');
     if (lat != null) params.set('lat', lat);
     if (lon != null) params.set('lon', lon);
     if (accuracy != null) params.set('accuracy', accuracy);
@@ -616,8 +624,10 @@
     const gate = sheet.querySelector('[data-report-gate]');
     const rows = sheet.querySelector('[data-report-rows]');
     if (!IS_ELIGIBLE) {
-      const addButton = sheet.querySelector('[data-panel-add]');
-      if (addButton) addButton.remove();
+      // SNOW-1479: the foot's button and, in the app, the header's +.
+      sheet.querySelectorAll('[data-panel-add]').forEach(function (addButton) {
+        addButton.remove();
+      });
       if (rows) rows.remove();
       // Every value interpolated here is escaped by gateHtml() — the strings
       // are server-translated copy, not user content, but a locale carrying a
@@ -659,14 +669,11 @@
     htmx.ajax('GET', LIST_URL, { target: rows, swap: 'innerHTML' });
   }
 
-  // SNOW-658: the roundel TOGGLES, matching the layers pill and the downloads
-  // roundel — a second tap on the control that opened the panel closes it.
-  // Bound on the button, so it runs before MapSheet's own document-level
-  // click-outside handler, which then sees a closed sheet and does nothing.
-  /** Open the sheet on its list — what a roundel tap does when it is shut.
+  /** Open the sheet on its list: Saved › Observations, and ?panel=reports.
    * @returns {void}
    */
   function openSheet() {
+    sheet.removeAttribute('data-report-direct');
     controller.open();
     if (showListPanel()) return;
     // No list template on this surface. The flow is still reachable, and an
@@ -676,13 +683,47 @@
     else paintGate(sheet);
   }
 
+  /** Open the sheet straight on the report form, no list before it.
+   *
+   * SNOW-1481: what the binoculars roundel and a region's "Report what you
+   * see" do. The sheet is marked ``data-report-direct``, so
+   * static/js/saved_panel.js does not read it as Saved › Observations: the
+   * form has no Saved tabs, and the reader's own reports are in Saved. The
+   * mark goes when the list opens (openSheet) or the sheet closes.
+   *
+   * @returns {void}
+   */
+  function openForm() {
+    sheet.setAttribute('data-report-direct', '');
+    controller.open();
+    if (IS_ELIGIBLE) startReportFlow();
+    else paintGate(sheet);
+  }
+
+  // SNOW-1481: one tap starts a report (Hugo). The roundel still TOGGLES,
+  // as SNOW-658 made it: a second tap closes whatever the sheet holds.
+  // Bound on the button, so it runs before MapSheet's own document-level
+  // click-outside handler, which then sees a closed sheet and does nothing.
+  //
+  // A visitor who cannot report gets the panel instead: Saved ›
+  // Observations, whose gate says why (sign in, or verify an email) and
+  // whose × closes it — a bare gate in the sheet would be a dead end with
+  // no way out (SNOW-474).
   btn.addEventListener('click', function () {
     if (controller.isOpen()) {
       closeSheet();
       return;
     }
-    openSheet();
+    if (IS_ELIGIBLE) openForm();
+    else openSheet();
   });
+
+  // The mark is the binoculars' open only; a closed sheet carries none.
+  if (typeof MutationObserver === 'function') {
+    new MutationObserver(function () {
+      if (sheet.hidden) sheet.removeAttribute('data-report-direct');
+    }).observe(sheet, { attributes: true, attributeFilter: ['hidden'] });
+  }
 
   // SNOW-1291: "Report what you see" in a region's "On the ground" section
   // (observations/partials/_on_the_ground.html) goes straight to the
@@ -696,9 +737,7 @@
     const target = /** @type {HTMLElement} */ (event.target);
     if (!target || !target.closest) return;
     if (!target.closest('[data-action="open-report"]')) return;
-    controller.open();
-    if (IS_ELIGIBLE) startReportFlow();
-    else paintGate(sheet);
+    openForm();
   });
 
   // SNOW-803: the sheet-level bridge, read by static/js/map.js to honour a
@@ -706,11 +745,37 @@
   // SNOW-804, /observations/) redirects to. ``open`` is the roundel's own
   // open path, so it goes through MapSheet.attach's registration with
   // window.pwaMapOverlays. Frozen, like every other window.pwa* bridge.
+  //
+  // SNOW-1485: ``reportAt`` is the hold bar's Report (static/js/map_hold.js).
   window.pwaReportSheet = Object.freeze({
     open: openSheet,
     close: closeSheet,
     isOpen: controller.isOpen,
+    reportAt: reportAt,
   });
+
+  /** Open the report form straight at a point already placed.
+   *
+   * SNOW-1485: Report on the hold bar. The reader held the map and
+   * fine-tuned the spot, so there is no fix to wait for and no placing to
+   * do: the form loads at the point as MANUAL with ``placed=1``, which
+   * leaves out its Move pin row, and opens on the tiles. A visitor who
+   * cannot report gets Saved › Observations and its gate, as the binoculars
+   * give them.
+   *
+   * @param {number} lat
+   * @param {number} lon
+   * @returns {void}
+   */
+  function reportAt(lat, lon) {
+    if (!IS_ELIGIBLE) {
+      openSheet();
+      return;
+    }
+    sheet.setAttribute('data-report-direct', '');
+    controller.open();
+    loadForm(lat, lon, null, 'MANUAL', null, null, true);
+  }
 
   // SNOW-658: "Report an observation" — what the roundel itself used to do.
   // Delegated on the sheet so it survives the body being re-cloned.

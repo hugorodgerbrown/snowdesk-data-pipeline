@@ -99,6 +99,22 @@
  * re-applied by one moveend watcher. Per-sheet watchers used to fight each
  * other's padding until the stack overflowed and the map stopped answering.
  *
+ * The card variant (SNOW-1486)
+ * ----------------------------
+ * A sheet whose partial passes ``card`` (``data-sheet-card``: the four
+ * Saved sheets) is the inset card every sheet on a phone shares
+ * (docs/decisions/one-sheet-design-on-a-phone.md), not an object sheet.
+ * Its detents bind as above, with five differences: HALF is half the
+ * screen and FULL three quarters, whatever the content; it marks no
+ * `data-map-sheet` and wants no camera lift, so nothing on the map hides
+ * or moves for it; it drags from the handle and a ``data-sheet-drag``
+ * header only, so a finger on the list scrolls it; it stays out of the
+ * one-detent-sheet-at-a-time rule and the object sheets' hand-over, which
+ * pwaMapOverlays covers for it; and its detent hands off only to another
+ * card (a Saved tab switch keeps the height). Content that marks
+ * ``data-sheet-fit`` (a form, a confirmation) turns the drag and the
+ * handle's press off: map.css sizes the sheet to that content.
+ *
  * At ``sm`` and up the binding does nothing visible: every height rule is
  * inside a phone media query in static/css/map.css, and the padding and the
  * root mark are reset to nothing. The rules themselves are pure and live in
@@ -322,6 +338,8 @@
   var lifts = new Map();
   /** @type {Map<HTMLElement, string>} The detent each open sheet rests at. */
   var restingDetents = new Map();
+  /** @type {Map<HTMLElement, string>} The detent each open card sheet rests at. */
+  var cardDetents = new Map();
   /** @type {Array<{ el: HTMLElement, close: (function(): void)|undefined }>} */
   var boundSheets = [];
   /** The map the shared moveend watcher is on, so a new map gets one too. */
@@ -386,17 +404,19 @@
    * A sheet closing clears only its own entry, so it cannot unmark the root
    * under another sheet still open.
    *
+   * A card sheet (SNOW-1486) is recorded apart and never marks the root:
+   * nothing on the map hides for it.
+   *
    * @param {HTMLElement} el
    * @param {string|null} detent
+   * @param {boolean} [card]
    */
-  function markSheet(el, detent) {
-    if (detent) {
-      restingDetents.delete(el);
-      restingDetents.set(el, detent);
-    } else {
-      restingDetents.delete(el);
-    }
-    prune(restingDetents);
+  function markSheet(el, detent, card) {
+    var registry = card ? cardDetents : restingDetents;
+    registry.delete(el);
+    if (detent) registry.set(el, detent);
+    prune(registry);
+    if (card) return;
     var latest = null;
     restingDetents.forEach(function (value) {
       latest = value;
@@ -415,7 +435,11 @@
    * for within a few seconds (a resort the map has no pin for, which goes
    * to its page) is dropped rather than left to surprise a later tap.
    *
-   * @type {{ detent: string, at: number }|null}
+   * A card sheet's detent goes only to another card (SNOW-1486): a Saved
+   * tab switch keeps its height, while a Places row opening the region
+   * sheet still opens it at its own first detent.
+   *
+   * @type {{ detent: string, at: number, card: boolean }|null}
    */
   var handedOff = null;
   var HAND_OFF_MS = 5000;
@@ -428,22 +452,31 @@
    */
   function handOff() {
     prune(restingDetents);
+    prune(cardDetents);
     var latest = null;
+    var card = false;
     restingDetents.forEach(function (value) {
       latest = value;
     });
-    handedOff = latest ? { detent: latest, at: Date.now() } : null;
+    cardDetents.forEach(function (value) {
+      latest = value;
+      card = true;
+    });
+    handedOff = latest ? { detent: latest, at: Date.now(), card: card } : null;
   }
 
   /**
-   * The handed-off detent, once: null when there is none or it went stale.
+   * The handed-off detent, once: null when there is none, it went stale or
+   * it came from the other kind of sheet.
    *
+   * @param {boolean} card Whether the sheet taking it is a card sheet.
    * @returns {string|null}
    */
-  function takeHandOff() {
+  function takeHandOff(card) {
     var taken = handedOff;
     handedOff = null;
     if (!taken || Date.now() - taken.at > HAND_OFF_MS) return null;
+    if (taken.card !== card) return null;
     return taken.detent;
   }
 
@@ -525,6 +558,8 @@
     var opts = options || {};
     var handle = /** @type {HTMLElement|null} */ (el.querySelector('[data-sheet-handle]'));
     var initial = core.initialDetent(detents, el.getAttribute('data-detent-initial'));
+    // SNOW-1486: the inset card (the Saved sheets), not an object sheet.
+    var card = el.hasAttribute('data-sheet-card');
 
     /** @type {string|null} */
     var current = null;
@@ -533,7 +568,20 @@
     var suppressClick = false;
     // When a body drag ended: the click that follows it is swallowed.
     var bodyDragEndedAt = -Infinity;
-    boundSheets.push({ el: el, close: opts.onClose });
+    // A card sheet is not one of the detent sheets docked at the foot: it
+    // neither closes them nor is closed by them here (pwaMapOverlays does).
+    if (!card) boundSheets.push({ el: el, close: opts.onClose });
+
+    /**
+     * Whether the content marks itself `data-sheet-fit` (SNOW-1486): a form
+     * or a confirmation, which map.css sizes to its content. The drag and
+     * the handle's press are off then, so a typed name is never lost.
+     *
+     * @returns {boolean}
+     */
+    function fitted() {
+      return card && !!el.querySelector('[data-sheet-fit]');
+    }
 
     function isOpen() {
       return !el.hasAttribute('hidden');
@@ -639,6 +687,15 @@
 
     /** @returns {Record<string, number>} */
     function heights() {
+      // A card's two heights are fixed (static/css/map.css): half the
+      // screen and three quarters, the latter capped by its max-height.
+      if (card) {
+        return {
+          peek: peekHeight(),
+          half: Math.round(window.innerHeight * 0.5),
+          full: Math.min(fullHeight(), Math.round(window.innerHeight * 0.75)),
+        };
+      }
       return {
         peek: peekHeight(),
         half: halfHeight(),
@@ -654,12 +711,13 @@
      */
     function applySurroundings() {
       if (!isOpen() || !current || !isPhone()) {
-        markSheet(el, null);
+        markSheet(el, null, card);
         setLift(el, 0);
         return;
       }
-      markSheet(el, current);
-      if (current === 'full') return;
+      markSheet(el, current, card);
+      // A card covers what it covers: no camera lift (SNOW-1486).
+      if (card || current === 'full') return;
       setLift(el, Math.round(heights()[current] + bottomOffset()));
     }
 
@@ -690,13 +748,13 @@
     }
 
     function open() {
-      closeOtherSheets(el);
+      if (!card) closeOtherSheets(el);
       restoreHandle();
       syncAllowed();
       // From another panel, the height the reader had it at; the content
       // arriving later can still bring it down (the observer below) when
       // it does not allow that height.
-      var carried = takeHandOff();
+      var carried = takeHandOff(card);
       // Re-read at every open: a sheet that serves two kinds of content
       // can ask for a different first detent per kind (the place sheet
       // opens a resort at HALF, a saved pin at PEEK; Hugo, 27 Oct 2026).
@@ -713,7 +771,7 @@
       el.style.removeProperty('--sheet-drag-height');
       el.style.removeProperty('--sheet-half-height');
       el.style.removeProperty('--sheet-full-height');
-      markSheet(el, null);
+      markSheet(el, null, card);
       setLift(el, 0);
     }
 
@@ -772,6 +830,22 @@
     }
     observeChildren();
 
+    /**
+     * Route a pointer's later events to `node`, where the browser allows it.
+     *
+     * @param {Element|null} node
+     * @param {number} pointerId
+     */
+    function capture(node, pointerId) {
+      if (!node || !node.setPointerCapture) return;
+      try {
+        node.setPointerCapture(pointerId);
+      } catch (_error) {
+        // A synthetic or already-released pointer cannot be captured; the
+        // drag still works while the pointer stays on the sheet.
+      }
+    }
+
     /** @param {EventTarget|null} target */
     function isDragSurface(target) {
       var node = /** @type {HTMLElement|null} */ (target);
@@ -779,8 +853,9 @@
       if (handle && handle.contains(node)) return true;
       var header = node.closest('[data-sheet-drag]');
       if (!header || !el.contains(header)) return false;
-      // A control inside a draggable header keeps its own press.
-      return !node.closest('button, a, input, select, textarea, [role="menu"]');
+      // A control inside a draggable header keeps its own press; a label
+      // is its input's (the Saved tabs, SNOW-1486).
+      return !node.closest('button, a, input, select, textarea, label, [role="menu"]');
     }
 
     /** Whether the sheet rests at the tallest detent it allows. */
@@ -839,12 +914,19 @@
       // A new press starts a new gesture: a suppression left by a drag
       // whose finger lifted off the handle (no click followed) ends here.
       suppressClick = false;
-      if (!current || !isPhone() || drag) return;
+      if (!current || !isPhone() || drag || fitted()) return;
       var body = false;
       if (!isDragSurface(event.target)) {
-        if (!isBodyDragStart(event)) return;
+        // A card drags from its handle and header only: the list scrolls.
+        if (card || !isBodyDragStart(event)) return;
         body = true;
       }
+      // A handle or header press holds the pointer from the start: the
+      // card's handle sits at its top edge, so the first move of a pull up
+      // leaves the sheet, and an uncaptured mouse would then drag nothing
+      // and click the map behind (SNOW-1486). Capturing on the pressed
+      // node keeps a tap's click on the handle, which steps the detent.
+      if (!body) capture(/** @type {Element|null} */ (event.target), event.pointerId);
       var now = event.timeStamp || Date.now();
       var startHeight = el.getBoundingClientRect().height;
       drag = {
@@ -882,15 +964,7 @@
         // A body drag captures the pointer on the sheet itself, so content
         // with a gesture of its own (the route profile's scrub) stops
         // hearing a finger that is now moving the sheet.
-        var target = /** @type {HTMLElement} */ (drag.body ? el : event.target);
-        if (target && target.setPointerCapture) {
-          try {
-            target.setPointerCapture(event.pointerId);
-          } catch (_error) {
-            // A synthetic or already-released pointer cannot be captured;
-            // the drag still works while the finger stays on the sheet.
-          }
-        }
+        if (drag.body) capture(el, event.pointerId);
         el.setAttribute('data-sheet-dragging', '');
       }
       var height = core.clampHeight(drag.startHeight + dy, fullHeight());
@@ -987,7 +1061,7 @@
         suppressClick = false;
         return;
       }
-      if (!current) return;
+      if (!current || fitted()) return;
       var next = core.nextDetent(reachable(), current);
       if (next) set(next);
     });
@@ -1032,6 +1106,12 @@
 
     // SNOW-1097: null unless the partial declared detents.
     var detents = bindDetents(el, { onClose: close });
+    // An object sheet: one with detents that is not the inset card
+    // (SNOW-1486). Only those keep their content up while the next loads,
+    // carry a desktop panel's height across a swap and take over from
+    // another open sheet's height; a card renders on a desktop as before.
+    var objectSheet = el.hasAttribute('data-detents') && !el.hasAttribute('data-sheet-card');
+    var objectDetents = !!detents && objectSheet;
 
     // ONE PANEL, NEW CONTENT (Hugo, 27 Oct 2026). Tapping from one resort,
     // region or weather point to the next used to empty the open sheet down
@@ -1133,12 +1213,12 @@
       event.preventDefault();
       event.stopPropagation();
     }
-    if (detents) {
+    if (objectDetents) {
       el.addEventListener('click', swallowStale, true);
       el.addEventListener('submit', swallowStale, true);
     }
 
-    if (detents && typeof ResizeObserver === 'function') {
+    if (objectDetents && typeof ResizeObserver === 'function') {
       new ResizeObserver(function () {
         lastHeight = isOpen() ? el.getBoundingClientRect().height : 0;
       }).observe(el);
@@ -1148,7 +1228,7 @@
     // childList change. The height the panel had is the ResizeObserver's
     // last reading (layout already holds the new content by now), or, mid
     // morph, the height the transition has reached.
-    var swaps = detents && typeof MutationObserver === 'function'
+    var swaps = objectDetents && typeof MutationObserver === 'function'
       ? new MutationObserver(function () {
         if (!isOpen()) return;
         if (holding) {
@@ -1208,7 +1288,7 @@
       // before the announcement below closes it, and open this one from
       // there: it resizes to its own height rather than the reader watching
       // one panel slide away and the next slide up from the foot.
-      var from = detents && !isOpen() ? openSheetHeight(el) : 0;
+      var from = objectDetents && !isOpen() ? openSheetHeight(el) : 0;
       if (reducedMotion()) from = 0;
       var handover = from > 0 && isPhone();
       var hold = from > 0 && !!(options && options.awaiting);
@@ -1288,10 +1368,11 @@
       // the newly open sheet read the tap as one outside it and closed
       // straight away (Hugo, 25 Oct 2026).
       if (target.closest('[data-panel-open], [data-panel-back]')) return;
-      // SNOW-1476: the installed phone app's tab bar and the Saved chips
-      // open and close the panels themselves (static/js/app_tabbar.js); a
-      // tap there is not a tap outside to close on.
-      if (target.closest('[data-app-tab], [data-saved-chips]')) return;
+      // SNOW-1476: the installed phone app's tab bar and the Saved tabs
+      // open and close the panels themselves (static/js/app_tabbar.js,
+      // static/js/saved_panel.js); a tap there is not a tap outside to
+      // close on.
+      if (target.closest('[data-app-tab], [data-saved-tabs]')) return;
       close();
     });
 
@@ -1306,7 +1387,7 @@
     window.pwaMapOverlays?.register(el.id, {
       isOpen: isOpen,
       close: close,
-      objectSheet: el.hasAttribute('data-detents'),
+      objectSheet: objectSheet,
     });
 
     /**

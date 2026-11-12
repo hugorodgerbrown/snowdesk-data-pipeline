@@ -37,6 +37,7 @@ document.body.innerHTML = `
       </div>
       <div data-report-gate></div>
       <div data-report-rows><p>Loading your reports…</p></div>
+      <button type="button" data-panel-add data-testid="saved-add-roundel">+</button>
       <button type="button" data-panel-add>Report an observation</button>
     </div>
   </template>
@@ -99,5 +100,24 @@ describe('anonymous tap on Report', () => {
 
   it('carries a dismiss control, so the sheet is not a dead end (SNOW-474)', () => {
     expect(sheet.querySelector('[data-action="dismiss"]')).not.toBeNull();
+  });
+
+  it("removes every add control, the header's + too (SNOW-1479)", () => {
+    expect(sheet.querySelector('[data-panel-add]')).toBeNull();
+  });
+});
+
+describe("anonymous Report from the hold bar (SNOW-1485)", () => {
+  it('gets the same sign-in gate, and loads no form', () => {
+    window.pwaReportSheet.close();
+    globalThis.htmx.ajax.mockClear();
+
+    window.pwaReportSheet.reportAt(46.25, 7.5);
+
+    expect(sheet.hidden).toBe(false);
+    expect(globalThis.htmx.ajax).not.toHaveBeenCalled();
+    expect(sheet.textContent).toContain('Sign in to submit a field observation.');
+    expect(sheet.querySelector(`a[href^="${SIGNIN_URL}"]`)).not.toBeNull();
+    expect(Object.isFrozen(window.pwaReportSheet)).toBe(true);
   });
 });

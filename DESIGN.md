@@ -401,7 +401,7 @@ Applied with `.dark` on `<html>`. EAWS, slope, weather-header and marker colours
 
 - Tailwind 4px ramp. Bulletin and sheets in a 640px column; legal 720; grids to 1200. Breakpoints 600 and 960.
 - **The map fills the viewport.** Floating chrome sits 12px (+ safe area) from every edge: readout chip, pin and download top-left; search top-right; the control column bottom-right (gap 8); zoom, help, legend, date and season scrubber bottom-left. Sheets dock to the same insets so their edges line up with the roundels.
-- **Map panels come in three kinds, set by what opened them.** Object sheet: a thing tapped on the map; on phones it slides up full width with peek, half and full. Roundel panel: a list or setting opened from a roundel, which toggles it; on desktop it sits beside the roundel column; on phones it docks full width over it and closes with its ×. Form panel: a task; no detents and no drag-to-close.
+- **Map panels come in three kinds, set by what opened them.** Object sheet: a thing tapped on the map; on phones it slides up full width with peek, half and full. Roundel panel: a list or setting opened from a roundel, which toggles it; on desktop it sits beside the roundel column; on phones it docks full width over it and closes with its ×. Form panel: a task; no detents and no drag-to-close. On a phone Saved, Help and New pin are one inset card with a handle, title and ×: Saved at half or three quarters, a task or Help as tall as its content.
 - While a route is open, the rails dock at the foot and the other chrome fades out.
 
 ## Elevation & Depth
@@ -436,5 +436,5 @@ Depth is **glass, not shadow**. Floating controls: `glass` (rgba(255,255,255,.85
 - Don't add accent colour or visual weight to make a feature feel important.
 - Don't put two inline actions in a restricted area; collapse them into "…".
 - Do open a surface beside its trigger: on desktop, map selections open in the left column under search (slide up on mobile); right-hand roundels open panels on the right.
-- Don't give a roundel panel detents or let it cover the roundel that opened it.
+- Don't give a roundel panel detents or let it cover the roundel that opened it (Saved's phone card is the exception).
 - Don't use an odd height on a round map control.

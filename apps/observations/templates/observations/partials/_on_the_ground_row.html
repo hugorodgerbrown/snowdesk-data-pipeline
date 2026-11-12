@@ -15,6 +15,11 @@ can be read hours after it was rendered. A past day reads the time of day
 instead: "2 days ago" says less than "14:10" on a page that already names
 the day.
 
+The reader's own report says "You" first on its meta line (SNOW-1480),
+as its pin is drawn blue on the map. Only the map's region sheet reads
+reports for a viewer, and it sends a body that marks one ``no-store``;
+the publicly cached bulletin page never marks any.
+
 ``data-observation-submission`` is the handle a tap on the report's pin
 reaches this row by (static/js/map_region_sheet.js); ``data-focused`` is
 what it sets on it.
@@ -39,6 +44,9 @@ Context:
     <span class="min-w-0 flex-1">
         <span class="block text-sm font-medium text-text-1">{{ report.labels|join:", " }}</span>
         <span class="block text-meta text-text-3">
+            {% if report.mine %}
+                <span data-testid="on-the-ground-mine">{% translate "You" %}</span> ·
+            {% endif %}
             {% if state == "day" %}
                 <time datetime="{{ report.observed_at|date:'c' }}">{{ report.observed_at|time:"H:i" }}</time>
             {% else %}

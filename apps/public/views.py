@@ -137,7 +137,11 @@ from .bulletin_panels import (
 from .component_previews import help_illustrations
 from .daily_read import cached_daily_read, present_daily_read
 from .decorators import lowercase_region_id
-from .map_shared import map_3d_view_enabled, map_modes_enabled, trip_url_templates
+from .map_shared import (
+    map_3d_view_enabled,
+    map_modes_enabled,
+    offline_audit_context,
+)
 from .season_calendar import (
     build_season_grid,
     build_season_months,
@@ -893,104 +897,9 @@ def offline_page(request: HttpRequest) -> HttpResponse:
         "public/offline.html",
         {
             "sync_log_visible": waffle.flag_is_active(request, "sync_log"),
-            "default_basemap_key": settings.BASEMAP,
-            # SNOW-925: what the per-row "Update" control needs in order to
-            # resolve an area's content from a page with no map on it. The
-            # map reads the same endpoints off `#map`'s own dataset; this
-            # page has no `#map`, and re-deriving them client-side would be
-            # a second copy of the routing that only this view can answer
-            # for. `today` is the bulletin day the content is taken for,
-            # matching the map's `data-today`.
-            "content_feeds": {
-                "regions": reverse("api:regions_geojson"),
-                "weather": reverse("api:weather_geojson"),
-                "weather_detail": reverse(
-                    "api:weather_detail", kwargs={"short_id": "__SHORTID__"}
-                ),
-                "favourites": reverse("favourites:geojson")
-                if request.user.is_authenticated
-                else "",
-                "routes": reverse("routes:geojson")
-                if request.user.is_authenticated
-                else "",
-                "community_reports": reverse("api:community_reports_geojson"),
-                # SNOW-953: what an area's boundary contains, answered
-                # server-side. The region feeds above are still WARMED —
-                # the map needs them offline — but nothing here parses
-                # them to plan from any more.
-                "area_content": reverse("api:area_content"),
-                # SNOW-965: the reader's own trips and pins inside an
-                # area, and the two templates a trip's urls are composed
-                # from. Account-only, like favourites and routes above: a
-                # signed-out reader has none, so the Update asks nothing.
-                "area_items": reverse("api:area_items")
-                if request.user.is_authenticated
-                else "",
-                **_trip_item_templates(),
-                # SNOW-1312: the dated ratings feed the map boots its
-                # colours from, and the map's region sheet — the two
-                # forward-day families the map's download warms besides
-                # the bulletin pages, so an area updated from here holds
-                # what one updated from the map does. The sheet template
-                # is the one `_map_embed.html` renders onto `#map`.
-                "ratings": reverse("api:ratings"),
-                "region_sheet": reverse(
-                    "public:region_sheet_partial", kwargs={"region_id": "XX-0000"}
-                ),
-                # SNOW-1318: and each resort's place sheet, per day — the
-                # ``__SLUG__`` template ``_map_embed.html`` renders.
-                "resort_sheet": reverse(
-                    "public:resort_sheet_partial", kwargs={"slug": "__SLUG__"}
-                ),
-                # SNOW-1313: a saved pin's place sheet, warmed per pin the
-                # area-items answer names — the nil-uuid template
-                # `_map_embed.html` renders onto `#map`. Account-only, as
-                # area_items is.
-                "favourite_sheet": reverse(
-                    "public:favourite_sheet_partial",
-                    kwargs={"uuid": "00000000-0000-0000-0000-000000000000"},
-                )
-                if request.user.is_authenticated
-                else "",
-            },
-            # The countries whose region geometry a boundary may overlap.
-            # SNOW-931's lesson, applied where there is no
-            # `pwaMapCountries` to ask: resolve against EVERY country, not
-            # the ones some client-side state happens to hold, or a border
-            # area silently drops a country's bulletins.
-            "content_countries": " ".join(settings.MAP_COUNTRY_CODES),
-            "today": timezone.localdate().isoformat(),
-            # SNOW-1138: the terrain-class tile template, so the report
-            # judges an area downloaded WITH terrain data on its class
-            # tiles, as the Manage downloads sheet does. The map reads the
-            # same value off `#map`; empty while the filter is unconfigured,
-            # which is the sheet's "not judged" case too.
-            "terrain_class_tile_url": settings.TERRAIN_CLASS_TILE_URL,
-            # SNOW-1453: the elevation tile template, on the map's own gate
-            # for its 3D view (`map_3d_view` in apps/map/views.py).
-            "dem_tile_url": settings.MAP_3D_DEM_TILE_URL
-            if map_3d_view_enabled(request)
-            else "",
+            **offline_audit_context(request, map_3d_view=map_3d_view_enabled(request)),
         },
     )
-
-
-def _trip_item_templates() -> dict[str, str]:
-    """Return the two trip url templates an area's items are composed from.
-
-    SNOW-965: the ``/offline/`` page's Update composes a trip's page and
-    route exactly as the map does, from the same ``__UUID__`` templates
-    ``map_shared.trip_url_templates`` renders onto ``#map``.
-
-    Returns:
-        Dict with ``trip_page`` and ``trip_route``.
-
-    """
-    trips = trip_url_templates()
-    return {
-        "trip_page": trips["trip_page_url_template"],
-        "trip_route": trips["trip_route_url_template"],
-    }
 
 
 def _serve_sw_file(static_relative_path: str) -> HttpResponse:
@@ -2671,6 +2580,8 @@ def _bulletin_detail_response(
         patch_cache_control(response, public=True, max_age=60)
         return response
 
+    # No ``viewer`` (SNOW-1480): this page is publicly cached, so it marks
+    # nobody's report "You" — only the map's no-store region sheet does.
     body = build_bulletin_body(request, region, page_date, selected, skipped)
     panel = body["panel"]
     next_update_time = body["next_update_time"]

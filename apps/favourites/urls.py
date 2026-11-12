@@ -16,7 +16,8 @@ URL structure:
   favourites/partials/<uuid>/rename/         POST — rename a favourite
   favourites/partials/<uuid>/delete/         POST — delete a favourite
   favourites/partials/<uuid>/card/           GET  — detail card (SNOW-415)
-  favourites/partials/list/                  GET  — owner's favourites list (SNOW-415)
+  favourites/partials/today/                 GET  — the Today panel (SNOW-1366)
+  favourites/partials/places/                GET  — the app's Places list (SNOW-1479)
   favourites/favourites.geojson              GET  — the user's own pins
   favourites/<uuid>/                         GET  — 301 to the pin's weather
                                              page (SNOW-800; was the SNOW-507
@@ -67,17 +68,12 @@ urlpatterns = [
         views.favourite_card,
         name="card",
     ),
-    path(
-        "partials/list/",
-        views.favourite_list,
-        name="list",
-    ),
+    # SNOW-1481 retired ``partials/list/`` (``favourites:list``), the pins
+    # list the star roundel opened: the sheet lists Places (``places``
+    # below) on every screen now.
+    #
     # SNOW-814: the pinned regions, listed in the region + date panel rather
-    # than in the pins sheet. A separate endpoint from ``list`` above because
-    # they are a separate list on a separate surface — the sheet lists places
-    # and this lists regions, and the two answer with different things (that
-    # one carries ratings, freshness headers and an offline roster; this one
-    # carries names).
+    # than in the pins sheet.
     path(
         "partials/regions/",
         views.region_pin_list,
@@ -88,6 +84,13 @@ urlpatterns = [
         "partials/today/",
         views.today,
         name="today",
+    ),
+    # SNOW-1479: the installed phone app's Saved → Places — Today's regions
+    # and resorts with the pins in each, and the pins in no region last.
+    path(
+        "partials/places/",
+        views.places,
+        name="places",
     ),
     path(
         "favourites.geojson",

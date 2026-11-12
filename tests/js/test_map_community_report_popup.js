@@ -17,6 +17,10 @@
  * whose region is not on the map, which is what this fixture is: no
  * region_id, and no regions loaded.
  *
+ * SNOW-1480: the reader's own report says "You" first on that line, as its
+ * panel row does — the word read from map-strings-template, whose English
+ * fallback is what this fixture (no template) renders.
+ *
  * Booting map.js in jsdom follows tests/js/test_map_detail_popup_exclusivity.js's
  * pattern — see its header for the rationale.
  */
@@ -223,5 +227,35 @@ describe('the community-report pin popup', () => {
     window.pwaRelativeTime.refresh(document);
 
     expect(timeEl.textContent).toBe('4 hours ago');
+  });
+});
+
+describe("the popup of the reader's own report (SNOW-1480)", () => {
+  it('says "You" first on the meta line', () => {
+    vi.setSystemTime(NOW);
+    REPORT_FEATURE.properties.mine = true;
+    try {
+      const node = tapTheReportPin();
+
+      expect(node.querySelector('[data-testid="community-report-mine"]').textContent).toBe('You');
+      expect(node.querySelector('.community-report-popup__meta').textContent).toBe(
+        'You · Guttannen · 29 seconds ago',
+      );
+    } finally {
+      delete REPORT_FEATURE.properties.mine;
+    }
+  });
+
+  it("says nothing of the kind for someone else's", () => {
+    vi.setSystemTime(NOW);
+    REPORT_FEATURE.properties.mine = false;
+    try {
+      const node = tapTheReportPin();
+
+      expect(node.querySelector('[data-testid="community-report-mine"]')).toBeNull();
+      expect(node.textContent).not.toContain('You');
+    } finally {
+      delete REPORT_FEATURE.properties.mine;
+    }
   });
 });

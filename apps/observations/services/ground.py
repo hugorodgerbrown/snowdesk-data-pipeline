@@ -12,6 +12,8 @@ section of the same name (``apps.public.bulletin_panels.build_bulletin_body``):
 * ``ground_for_region`` groups a region's rows in that window into
   reports — one per ``submission`` (SNOW-1289), carrying every type it
   ticked and its most serious family — split into the panel's sections.
+  Given a ``viewer``, each report also says whether it is the viewer's
+  own (``GroundReport.mine``, SNOW-1480); the body then renders "You".
 
 Read docs/decisions/an-observation-is-live-today-and-recent-for-three-days.md.
 """
@@ -29,6 +31,9 @@ from django.utils import timezone
 from apps.observations.models import FieldObservation, leading_family
 
 if TYPE_CHECKING:
+    from django.contrib.auth.base_user import AbstractBaseUser
+    from django.contrib.auth.models import AnonymousUser
+
     from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
@@ -88,12 +93,15 @@ class GroundReport:
     ``labels`` are the translated type labels, most serious family first
     (``OBSERVATION_TYPE`` declaration order). ``family`` is the most
     serious family among them, which colours the row as it does the pin.
+    ``mine`` is whether the viewer the report was read for wrote it
+    (SNOW-1480); always ``False`` when it was read for nobody.
     """
 
     submission: UUID
     observed_at: datetime.datetime
     family: str
     labels: tuple[str, ...]
+    mine: bool = False
 
     def to_string(self) -> str:
         """Return a short human-readable description, for logs and tests."""
@@ -125,7 +133,9 @@ class Ground:
         return len(self.live) + len(self.recent) + len(self.day)
 
 
-def group_reports(rows: list[FieldObservation]) -> list[GroundReport]:
+def group_reports(
+    rows: list[FieldObservation], viewer_id: int | None = None
+) -> list[GroundReport]:
     """Group rows into reports, one per submission, newest first.
 
     The rows of one submission share an ``observed_at`` (SNOW-1289), so
@@ -133,6 +143,8 @@ def group_reports(rows: list[FieldObservation]) -> list[GroundReport]:
 
     Args:
         rows: FieldObservation rows, in any order.
+        viewer_id: The primary key of the user the reports are read for, or
+            ``None``. A report is ``mine`` when any of its rows is theirs.
 
     Returns:
         One ``GroundReport`` per distinct submission, newest first.
@@ -155,6 +167,8 @@ def group_reports(rows: list[FieldObservation]) -> list[GroundReport]:
                 observed_at=members[0].observed_at,
                 family=leading_family(types),
                 labels=tuple(str(labels.get(t, t)) for t in types),
+                mine=viewer_id is not None
+                and any(m.user_id == viewer_id for m in members),
             )
         )
     reports.sort(key=lambda r: r.observed_at, reverse=True)
@@ -165,6 +179,7 @@ def ground_for_region(
     region: MicroRegion,
     page_date: datetime.date,
     today: datetime.date | None = None,
+    viewer: AbstractBaseUser | AnonymousUser | None = None,
 ) -> Ground:
     """Return the region's reports for ``page_date``, split into sections.
 
@@ -175,12 +190,16 @@ def ground_for_region(
         region: The region the panel describes.
         page_date: The day on screen.
         today: Today's local date; defaults to ``timezone.localdate()``.
+        viewer: The user the reports are read for (SNOW-1480): each of
+            theirs is marked ``mine``. ``None`` or an anonymous user marks
+            none — what a page every reader shares must pass.
 
     Returns:
         A ``Ground`` — empty for a future day.
 
     """
     today = today or timezone.localdate()
+    viewer_id = viewer.pk if viewer is not None and viewer.is_authenticated else None
     is_today = page_date == today
     ground = Ground(page_date=page_date, is_today=is_today)
     window = report_window(page_date, today)
@@ -189,9 +208,9 @@ def ground_for_region(
     rows = list(
         FieldObservation.objects.in_window(*window)
         .filter(region=region)
-        .only("submission", "observed_at", "observation_type")
+        .only("submission", "observed_at", "observation_type", "user_id")
     )
-    for report in group_reports(rows):
+    for report in group_reports(rows, viewer_id):
         if not is_today:
             ground.day.append(report)
         elif timezone.localdate(report.observed_at) == today:

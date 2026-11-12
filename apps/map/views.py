@@ -48,6 +48,7 @@ from apps.public.map_shared import (
     map_3d_view_enabled,
     map_beyond_switzerland_enabled,
     map_modes_enabled,
+    offline_audit_context,
     trip_url_templates,
 )
 from apps.public.season_calendar import (
@@ -331,6 +332,10 @@ def map_page(request: HttpRequest) -> HttpResponse:
             # shared with /offline/'s elevation template. SNOW-1450: the
             # only 3D there is, since /map/3d/ became a redirect here.
             "map_3d_view": map_3d_view,
+            # SNOW-1488: the inputs the offline report reads, rendered on the
+            # Downloads sheet's hidden report host so its Copy report runs
+            # the checks /offline/'s does. No query: reverses and settings.
+            "offline_audit": offline_audit_context(request, map_3d_view=map_3d_view),
             # What the roundel prefetches, so the 3-D terrain is cached first.
             "map_3d_dem_tile_url": settings.MAP_3D_DEM_TILE_URL,
             # SNOW-1456: the 3D test's panel, which renders with the view:
@@ -698,8 +703,8 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
 
     Returns:
         Dict with ``favourites_eligible``, ``favourites_geojson_url``,
-        ``favourite_create_url``, ``favourite_list_url``,
-        ``favourite_rename_url_template``,
+        ``favourite_create_url``,
+        ``favourite_places_url``, ``favourite_rename_url_template``,
         ``favourite_delete_url_template``, and ``favourites_signin_url``.
 
     """
@@ -712,11 +717,9 @@ def _favourites_context(request: HttpRequest) -> dict[str, Any]:
         "favourites_eligible": favourites_eligible,
         "favourites_geojson_url": reverse("favourites:geojson"),
         "favourite_create_url": reverse("favourites:create"),
-        # SNOW-658: the roundel opens a panel listing the user's own pins
-        # before it offers to add one, so the panel needs the list endpoint.
-        # The sheet's lean row template is the endpoint's only shape since
-        # SNOW-803 removed the account page that hosted the fuller one.
-        "favourite_list_url": reverse("favourites:list"),
+        # SNOW-1479: Saved → Places, the sheet's only list since SNOW-1481
+        # retired the pins list (favourites:list) the star used to open.
+        "favourite_places_url": reverse("favourites:places"),
         "favourite_rename_url_template": reverse(
             "favourites:rename", args=[dummy_uuid]
         ).replace(str(dummy_uuid), "__UUID__"),

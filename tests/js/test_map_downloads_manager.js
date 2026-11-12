@@ -105,6 +105,7 @@ function buildFixture() {
       <div>
         <div>
           <div><span>Downloads on this device</span>
+            <button type="button" role="menuitem" data-downloads-copy-report>Copy report</button>
             <button type="button" data-action="dismiss">×</button></div>
           <div>
             <div>
@@ -130,6 +131,8 @@ function buildFixture() {
           <button type="button" data-downloads-sync-all hidden
             ><span data-sync-all-state="idle">Sync all</span
             ><span data-sync-all-state="running" class="hidden">Syncing…</span></button>
+          <button type="button" data-downloads-sync-stop hidden>Stop</button>
+          <p data-downloads-sync-foot hidden></p>
           <button type="button" data-panel-add-region>Download a region</button>
           <button type="button" data-panel-add>Download a custom area</button>
         </div>
@@ -190,6 +193,20 @@ function buildFixture() {
         <div id="downloads-row-inventory" data-row-panel data-testid="downloads-row-inventory"></div>
       </li>
     </template>
+    <template id="map-downloads-row-progress-template">
+      <span data-row-progress>
+        <span><span data-row-progress-step></span><span data-row-progress-counts></span></span>
+        <span data-row-progress-track role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span data-row-progress-bar></span>
+        </span>
+      </span>
+    </template>
+    <template id="map-downloads-step-notice-template">
+      <span data-row-step-notice>
+        <span data-row-step-notice-text></span>
+        <button type="button" data-row-step-remedy></button>
+      </span>
+    </template>
     <template id="map-downloads-inventory-template">
       <ul data-inventory-list data-testid="downloads-inventory">
         <li data-inventory-item>
@@ -229,7 +246,33 @@ function buildFixture() {
       <span data-string="inventory-status-missing">Missing</span>
       <span data-string="inventory-status-unknown">Not checked yet</span>
       <span data-string="sync-row-label">Sync %(name)s now</span>
-      <span data-string="sync-failed">That area couldn't be brought up to date. Try again.</span>
+      <span data-string="sync-done-ready">%(name)s: up to date</span>
+      <span data-string="sync-done-unfinished">%(name)s: didn't finish</span>
+      <span data-string="sync-done-stopped">%(name)s: stopped</span>
+      <span data-string="sync-done-absent">%(name)s: download it again</span>
+      <span data-string="sync-foot">Last synced %(when)s</span>
+      <span data-string="sync-foot-unfinished-one">Last synced %(when)s · 1 area didn't finish</span>
+      <span data-string="sync-foot-unfinished">Last synced %(when)s · %(count)s areas didn't finish</span>
+      <span data-string="row-step-map">Saving the map</span>
+      <span data-string="row-step-terrain">Saving terrain</span>
+      <span data-string="row-step-bulletins">Saving bulletins</span>
+      <span data-string="row-step-weather">Saving weather</span>
+      <span data-string="row-step-things">Saving your trips and pins</span>
+      <span data-string="row-step-counts">%(done)s of %(total)s</span>
+      <span data-string="row-waiting">Waiting</span>
+      <span data-string="step-part-basemap">The Swiss map</span>
+      <span data-string="step-part-terrain">Terrain</span>
+      <span data-string="step-notice-network">%(part)s didn't finish: the connection dropped.</span>
+      <span data-string="step-notice-interrupted">%(part)s stopped part way.</span>
+      <span data-string="step-notice-budget">%(part)s would take you over your download limit.</span>
+      <span data-string="step-notice-quota">%(part)s won't fit: this phone is nearly full.</span>
+      <span data-string="step-notice-plan">%(part)s couldn't be reached.</span>
+      <span data-string="step-remedy-network">Try again</span>
+      <span data-string="step-remedy-interrupted">Carry on</span>
+      <span data-string="step-remedy-plan">Try again</span>
+      <span data-string="step-remedy-budget">Change limit</span>
+      <span data-string="inventory-swiss">Swiss map</span>
+      <span data-string="inventory-not-added">Not added yet</span>
       <span data-string="kind-content-incomplete">Bulletins not saved</span>
       <span data-string="kind-content-saved">Bulletins saved %(date)s</span>
       <span data-string="kind-region">Region</span>
@@ -270,6 +313,7 @@ function buildFixture() {
       <span data-string="area-status-ready">Works offline</span>
       <span data-string="area-reason-conditions">Bulletins out of date</span>
       <span data-string="area-reason-things">Some trips or pins missing</span>
+      <span data-string="area-reason-terrain">Terrain not saved</span>
       <span data-string="area-status-open-map">Map data missing</span>
       <span data-string="area-status-unknown">Not checked yet</span>
       <span data-string="area-status-running">Syncing…</span>
@@ -363,6 +407,8 @@ function installDownloadsBridge(rows, cachesStub) {
         // Absent on a record written before that ticket, and normalised to
         // [] here exactly as map.js's own reader does.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+        // SNOW-1478: every map the area holds, as the real reader carries it.
+        basemaps: Array.isArray(entry.basemaps) ? entry.basemaps : null,
         // SNOW-932: whether the run that fetched this area fell short of
         // its CONTENT half. A stored fact, unlike SNOW-844's `deps` check
         // above — no cache read can answer it — so the reader carries it
@@ -403,6 +449,8 @@ function installDownloadsBridge(rows, cachesStub) {
         bbox: entry.bbox,
         // SNOW-844: see the region branch above.
         deps: Array.isArray(entry.deps) ? entry.deps : [],
+        // SNOW-1478: every map the area holds, as the real reader carries it.
+        basemaps: Array.isArray(entry.basemaps) ? entry.basemaps : null,
         // SNOW-932: see the region branch above.
         contentIncomplete: !!entry.contentIncomplete,
         // SNOW-1139: see the region branch above.
@@ -543,6 +591,28 @@ function installDownloadsBridge(rows, cachesStub) {
     // `areas()` above is: the sheet depends on the rule and does not own
     // it, and a stub that answered differently would test nothing.
     areaRenderDependencyUrls: vi.fn(renderDependencyUrls),
+    // SNOW-1478: the same rule over every map a row holds, reimplemented on
+    // the real core's `recordBasemaps` for `areaRenderDependencyUrls`'
+    // reason.
+    areaAllRenderDependencyUrls: vi.fn((row) => {
+      const activeKey = window.pwaBasemapDownloads.activeBasemapKey();
+      const entries = getCore().recordBasemaps(row);
+      const urls = entries.flatMap((entry) =>
+        renderDependencyUrls(entry.deps, !!activeKey && entry.key === activeKey),
+      );
+      return [...new Set(urls)];
+    }),
+    // SNOW-1487: the bucket, measured by URL class. Unless a test says
+    // otherwise (`cachesStub.measured`), the bucket holds what its record
+    // says: the whole total is map, and an opted-in area's terrain is all
+    // there.
+    measureAreaInventory: vi.fn(async (areaId) => {
+      if (cachesStub.measured !== undefined) return cachesStub.measured;
+      const record = areaRecord(areaId);
+      if (!record) return null;
+      return { mapBytes: Number(record.bytes) || 0, terrainBytes: 0, terrainHeld: record.terrain ? true : null };
+    }),
+    swissMapMissing: vi.fn(() => false),
     // SNOW-951: the one control the sheet offers on every row it holds,
     // replacing SNOW-844's `repair` and SNOW-932's `refreshAreaContent`.
     // Reimplemented over the seeded records rather than stubbed to a
@@ -872,6 +942,50 @@ describe('opening the sheet', () => {
 
     expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
     opener.remove();
+  });
+
+  it("opens in place from the account menu's Downloads link", async () => {
+    // includes/_account_menu_items.html: an anchor to /map/?downloads=open,
+    // inside the account menu's <details>. On the map it must not navigate.
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    const menu = document.createElement('details');
+    menu.open = true;
+    menu.innerHTML = '<a href="/map/?downloads=open" data-downloads-open>Downloads</a>';
+    document.body.append(menu);
+
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    menu.querySelector('a').dispatchEvent(event);
+    await settle();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(menu.open).toBe(false);
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+    menu.remove();
+  });
+
+  it('opens on load from ?downloads=open and drops the parameter', async () => {
+    // The account menu's link from any page other than the map.
+    window.history.replaceState(null, '', '/map/?downloads=open#here');
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    await settle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+    expect(window.location.search).toBe('');
+    expect(window.location.hash).toBe('#here');
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('stays shut on load without the parameter', async () => {
+    window.history.replaceState(null, '', '/map/?edit=resorts');
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+    await settle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+    expect(window.location.search).toBe('?edit=resorts');
+    window.history.replaceState(null, '', '/');
   });
 
   it('toggles shut when the roundel is tapped a second time', async () => {
@@ -1506,7 +1620,7 @@ describe('an area that cannot render (SNOW-844)', () => {
     firstRowElement().querySelector('[data-downloads-sync]').click();
     await settle();
 
-    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledWith('region-CH-2101');
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledWith('region-CH-2101', expect.any(Function));
     expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
     // And the sheet re-reads real cache state rather than assuming: the
     // row is a normal download again.
@@ -1585,6 +1699,51 @@ describe('an area that cannot render (SNOW-844)', () => {
     expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
     expect(row.querySelector('[data-downloads-sync]')).toBeNull();
     expect(row.querySelector('[data-downloads-delete]')).not.toBeNull();
+  });
+});
+
+describe('an area holding more than one map (SNOW-1478)', () => {
+  const OFM_STYLE = 'https://tiles.example.invalid/liberty.json';
+  const SWISS_STYLE = 'https://swiss.example.invalid/winter.json';
+
+  /** A custom area across the border, saved on Swisstopo and OpenFreeMap. */
+  function crossBorder() {
+    return [
+      {
+        id: 'custom-x1',
+        ordinal: 1,
+        bbox: [6.0, 46.1, 6.3, 46.3],
+        band: [10, 14],
+        bytes: 40 * MB,
+        savedAt: '2026-08-01T10:00:00.000Z',
+        basemapKey: 'swisstopo_winter',
+        deps: [SWISS_STYLE],
+        basemaps: [
+          { key: 'swisstopo_winter', template: [['s']], deps: [SWISS_STYLE] },
+          { key: 'openfreemap_liberty', template: [['o']], deps: [OFM_STYLE] },
+        ],
+      },
+    ];
+  }
+
+  it('says "Incomplete" when the second map lacks a document', async () => {
+    window.caches.urls = [SWISS_STYLE];
+    seed({ 'basemap.customAreas': crossBorder() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+  });
+
+  it('leaves it alone once both maps are on disk', async () => {
+    window.caches.urls = [SWISS_STYLE, OFM_STYLE];
+    seed({ 'basemap.customAreas': crossBorder() });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).not.toBe('Incomplete');
   });
 });
 
@@ -1820,7 +1979,7 @@ describe('"Sync now" (SNOW-951)', () => {
     firstRowElement().querySelector('[data-downloads-sync]').click();
     await settle();
 
-    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledWith('custom-a1');
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledWith('custom-a1', expect.any(Function));
     expect(window.pwaBasemapDownloads.evict).not.toHaveBeenCalled();
   });
 
@@ -1868,7 +2027,7 @@ describe('"Sync now" (SNOW-951)', () => {
     expect(window.MapSheet.toast).toHaveBeenCalled();
   });
 
-  it('toasts when the content half falls short', async () => {
+  it('toasts when the content half falls short, naming the area', async () => {
     seed({ 'basemap.customAreas': healthyCustomArea() });
     window.caches.refreshFails = true;
     await loadModule();
@@ -1878,7 +2037,7 @@ describe('"Sync now" (SNOW-951)', () => {
     firstRowElement().querySelector('[data-downloads-sync]').click();
     await settle();
 
-    expect(window.MapSheet.toast).toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalledWith("Custom area 1: didn't finish");
   });
 
   it('toasts when the tile half falls short', async () => {
@@ -4434,9 +4593,18 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
    */
   function installSyncAll(verdicts, options) {
     const opts = options || {};
+    const records = opts.records || {};
     const stub = {
-      runState: { running: false, current: '', label: '' },
-      records: vi.fn(async () => new Map(Object.keys(verdicts).map((id) => [id, { id }]))),
+      runState: { running: false, current: '', label: '', index: 0, count: 0, step: null, pending: [] },
+      records: vi.fn(
+        async () =>
+          new Map(
+            [...new Set([...Object.keys(verdicts), ...Object.keys(records)])].map((id) => [
+              id,
+              { id, ...(records[id] || {}) },
+            ]),
+          ),
+      ),
       verdict: vi.fn((record) => (record && verdicts[record.id]) || { verdict: 'unknown', reason: '' }),
       state: vi.fn(() => stub.runState),
       press: vi.fn(async (ids, onChange) => {
@@ -4444,7 +4612,12 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
         onChange();
         return opts.result || { total: ids.length, ready: ids.length, waiting: 0, outcomes: [] };
       }),
-      shortfall: vi.fn(() => opts.shortfall || ''),
+      stop: vi.fn(),
+      outcomeOf: vi.fn(() => 'ready'),
+      closing: vi.fn((_result, ids) => ({
+        areas: ids.map((id) => ({ id, outcome: (opts.outcomes || {})[id] || 'ready' })),
+        queue: opts.queue || '',
+      })),
     };
     window.pwaDownloadsSyncAll = stub;
     return stub;
@@ -4490,6 +4663,18 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
     expect(rowNotice().textContent).toBe('Bulletins out of date');
     expect(rowNotice().classList.contains('hidden')).toBe(false);
     expect(rowNotice().classList.contains('sr-only')).toBe(false);
+  });
+
+  it('paints an area missing its terrain amber, with its reason (SNOW-1483)', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({ [REGION_ID]: { verdict: 'refresh', reason: 'terrain' } });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(rowDot().classList.contains('bg-sync-partial')).toBe(true);
+    expect(rowNotice().textContent).toBe('Terrain not saved');
+    expect(rowNotice().classList.contains('hidden')).toBe(false);
   });
 
   it('paints missing map data red, and an unchecked area grey', async () => {
@@ -4654,9 +4839,13 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
     expect(window.MapSheet.toast).toHaveBeenCalledWith('Syncing needs a connection.');
   });
 
-  it('toasts the shortfall once a run that left an area short settles', async () => {
-    seed({ 'basemap.regions': REGIONS });
-    installSyncAll({}, { shortfall: '0 of 1 ready' });
+  // SNOW-1487: the toast a run ends on names every area with its outcome.
+  it('names every area with how it went once the run settles', async () => {
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    installSyncAll(
+      {},
+      { outcomes: { 'custom-a1': 'unfinished' }, queue: '1 change still waiting to send' },
+    );
     await loadModule();
     openSheet();
     await settle();
@@ -4664,10 +4853,13 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
     syncAllButton().click();
     await settle();
 
-    expect(window.MapSheet.toast).toHaveBeenCalledWith('0 of 1 ready');
+    const text = window.MapSheet.toast.mock.calls.at(-1)[0];
+    expect(text).toContain('Aletsch: up to date');
+    expect(text).toContain("Custom area 1: didn't finish");
+    expect(text).toContain('1 change still waiting to send');
   });
 
-  it('says nothing when every area came up to date', async () => {
+  it('names each area even when every one came up to date', async () => {
     seed({ 'basemap.regions': REGIONS });
     installSyncAll({});
     await loadModule();
@@ -4677,7 +4869,242 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
     syncAllButton().click();
     await settle();
 
-    expect(window.MapSheet.toast).not.toHaveBeenCalled();
+    expect(window.MapSheet.toast).toHaveBeenCalledWith('Aletsch: up to date');
+  });
+});
+
+// SNOW-1487: Sync all says what it is doing, and a failed addition has a
+// notice of its own under the row, which never changes the row's dot.
+describe('what a sync is doing, and what it could not add (SNOW-1487)', () => {
+  const REGION_ID = 'region-CH-2101';
+  const STEP = { done: 0, total: 40, neededMb: 12, freeMb: null };
+
+  function installSyncAll(verdicts, options) {
+    const opts = options || {};
+    const records = opts.records || {};
+    const stub = {
+      runState: { running: false, current: '', label: '', index: 0, count: 0, step: null, pending: [] },
+      records: vi.fn(async () => new Map(Object.entries(records).map(([id, record]) => [id, { id, ...record }]))),
+      verdict: vi.fn((record) => (record && verdicts[record.id]) || { verdict: 'ready', reason: '' }),
+      state: vi.fn(() => stub.runState),
+      press: vi.fn(async (_ids, onChange) => {
+        if (opts.during) await opts.during(stub, onChange);
+        onChange();
+        return { total: 1, ready: 1, waiting: 0, outcomes: [] };
+      }),
+      stop: vi.fn(),
+      outcomeOf: vi.fn(() => 'ready'),
+      closing: vi.fn((_result, ids) => ({ areas: ids.map((id) => ({ id, outcome: 'ready' })), queue: '' })),
+    };
+    window.pwaDownloadsSyncAll = stub;
+    return stub;
+  }
+
+  /** A record whose last sync left `steps` unfinished. */
+  const withSteps = (steps, at) => ({ verified: { at: at || new Date().toISOString(), map: 'yes', steps } });
+
+  const rowsById = () =>
+    Object.fromEntries(
+      Array.from(document.querySelectorAll('#map-downloads-sheet li[data-row-area]')).map((li) => [
+        li.getAttribute('data-row-area'),
+        li,
+      ]),
+    );
+
+  afterEach(() => {
+    delete window.pwaDownloadsSyncAll;
+    delete window.pwaCachedStampCore;
+  });
+
+  it.each([
+    ['basemap', 'network', "The Swiss map didn't finish: the connection dropped.", 'Try again'],
+    ['terrain', 'interrupted', 'Terrain stopped part way.', 'Carry on'],
+    ['basemap', 'budget', 'The Swiss map would take you over your download limit.', 'Change limit'],
+    ['terrain', 'quota', "Terrain won't fit: this phone is nearly full.", null],
+    ['basemap', 'plan', "The Swiss map couldn't be reached.", 'Try again'],
+  ])('says why a %s addition failed (%s), with its remedy, under a green dot', async (step, reason, words, remedy) => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({}, { records: { [REGION_ID]: withSteps([{ step, reason, ...STEP }]) } });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-row-status]').getAttribute('data-area-verdict')).toBe('ready');
+    const notices = row.querySelectorAll('[data-row-step-notice]');
+    expect(notices).toHaveLength(1);
+    expect(notices[0].querySelector('[data-row-step-notice-text]').textContent).toBe(words);
+    const button = notices[0].querySelector('[data-row-step-remedy]');
+    if (remedy === null) expect(button).toBeNull();
+    else expect(button.textContent).toBe(remedy);
+  });
+
+  it('shows no notice for a step that is not an addition', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({}, {
+      records: { [REGION_ID]: withSteps([{ step: 'content', reason: 'network', ...STEP }]) },
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(firstRowElement().querySelector('[data-row-step-notice]')).toBeNull();
+  });
+
+  it('syncs that row again on Try again and on Carry on', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({}, {
+      records: {
+        [REGION_ID]: withSteps([
+          { step: 'basemap', reason: 'network', ...STEP },
+          { step: 'terrain', reason: 'interrupted', ...STEP },
+        ]),
+      },
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const buttons = firstRowElement().querySelectorAll('[data-row-step-remedy]');
+    expect([...buttons].map((button) => button.textContent)).toEqual(['Try again', 'Carry on']);
+    buttons[0].click();
+    await settle();
+    await settle();
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledWith(REGION_ID, expect.any(Function));
+    firstRowElement().querySelectorAll('[data-row-step-remedy]')[1].click();
+    await settle();
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledTimes(2);
+  });
+
+  it('takes the reader to the download limit on Change limit', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({}, { records: { [REGION_ID]: withSteps([{ step: 'basemap', reason: 'budget', ...STEP }]) } });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    firstRowElement().querySelector('[data-row-step-remedy]').click();
+
+    expect(document.activeElement).toBe(document.getElementById('map-downloads-budget'));
+    expect(window.pwaBasemapDownloads.syncArea).not.toHaveBeenCalled();
+  });
+
+  it('paints the row a run is on with its step, its counts and a bar, and the rest as waiting', async () => {
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    const stub = installSyncAll({});
+    stub.runState = {
+      running: true,
+      current: REGION_ID,
+      label: 'Syncing 1 of 2 areas',
+      index: 1,
+      count: 2,
+      step: { name: 'map', done: 212, total: 528 },
+      pending: ['custom-a1'],
+    };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const rows = rowsById();
+    const progress = rows[REGION_ID].querySelector('[data-row-progress]');
+    expect(progress.querySelector('[data-row-progress-step]').textContent).toBe('Saving the map');
+    expect(progress.querySelector('[data-row-progress-counts]').textContent).toBe('212 of 528');
+    expect(progress.querySelector('[data-row-progress-bar]').style.width).toBe('40%');
+    expect(progress.querySelector('[data-row-progress-track]').getAttribute('aria-valuenow')).toBe('40');
+    expect(rows['custom-a1'].querySelector('[data-row-progress]')).toBeNull();
+    expect(rows['custom-a1'].querySelector('[data-row-notice]').textContent).toBe('Waiting');
+    expect(
+      document.querySelector('#map-downloads-sheet [data-sync-all-state="running"]').textContent,
+    ).toBe('Syncing 1 of 2 areas');
+  });
+
+  it('moves the counts in place as they change', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    const stub = installSyncAll({}, {
+      during: async (self, onChange) => {
+        self.runState = {
+          running: true,
+          current: REGION_ID,
+          label: 'Syncing 1 of 1 areas',
+          index: 1,
+          count: 1,
+          step: { name: 'terrain', done: 1, total: 4 },
+          pending: [],
+        };
+        onChange();
+        await settle();
+        self.runState = { ...self.runState, step: { name: 'terrain', done: 3, total: 4 } };
+        onChange({ progress: true });
+        self.seen = firstRowElement().querySelector('[data-row-progress-counts]').textContent;
+        self.runState = { running: false, current: '', label: '', index: 0, count: 0, step: null, pending: [] };
+      },
+    });
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('#map-downloads-sheet [data-downloads-sync-all]').click();
+    await settle();
+    await settle();
+
+    expect(stub.seen).toBe('3 of 4');
+  });
+
+  it('offers Stop while a run goes, and stops it', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    const stub = installSyncAll({});
+    stub.runState = { running: true, current: REGION_ID, label: 'Syncing 1 of 1 areas', index: 1, count: 1, step: null, pending: [] };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const stop = document.querySelector('#map-downloads-sheet [data-downloads-sync-stop]');
+    expect(stop.hidden).toBe(false);
+    stop.click();
+    expect(stub.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides Stop with no run going', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({});
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('#map-downloads-sheet [data-downloads-sync-stop]').hidden).toBe(true);
+  });
+
+  it('says when the areas were last synced and how many did not finish, read from the records', async () => {
+    seed({ 'basemap.regions': REGIONS, 'basemap.customAreas': CUSTOM_AREAS });
+    const earlier = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const newest = new Date().toISOString();
+    // A fresh page over what the last sync stamped: nothing in memory.
+    installSyncAll({}, {
+      records: {
+        [REGION_ID]: withSteps([{ step: 'basemap', reason: 'network', ...STEP }], earlier),
+        'custom-a1': withSteps([], newest),
+      },
+    });
+    await import('../../static/js/cached_stamp_core.js');
+    await loadModule();
+    openSheet();
+    await settle();
+
+    const foot = document.querySelector('#map-downloads-sheet [data-downloads-sync-foot]');
+    expect(foot.hidden).toBe(false);
+    const when = window.pwaCachedStampCore.formatStamp(newest);
+    expect(foot.textContent).toBe(`Last synced ${when} · 1 area didn't finish`);
+  });
+
+  it('says nothing under Sync all for areas never synced', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    installSyncAll({});
+    await import('../../static/js/cached_stamp_core.js');
+    await loadModule();
+    openSheet();
+    await settle();
+
+    expect(document.querySelector('#map-downloads-sheet [data-downloads-sync-foot]').hidden).toBe(true);
   });
 });
 
@@ -4795,94 +5222,118 @@ describe('the inventory under a row (SNOW-1418)', () => {
     expect(li.querySelector('[data-inventory-status]').textContent).toBe('Works offline');
   });
 
-  it('splits the map and terrain sizes for an area saved with terrain', async () => {
+  // SNOW-1487: the sizes are measured from the bucket by URL class.
+  it('shows the map and terrain sizes the bucket was measured to hold', async () => {
     seed({ 'basemap.regions': REGIONS });
+    window.caches.measured = { mapBytes: 35 * MB, terrainBytes: 5 * MB, terrainHeld: true };
     await boot({ [REGION_ID]: record({ terrain: true, bytes: 40 * MB }) });
-    const bridge = window.pwaBasemapDownloads;
-    bridge.terrainDataAvailable = () => true;
-    // 200 class tiles: the same estimate the download was priced at.
-    bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
+    window.pwaBasemapDownloads.terrainExpected = () => true;
     toggleOf(firstRowElement()).click();
     await settle();
 
-    const terrainMb = window.pwaBasemapDownloadCore.terrainClassMb(200);
-    expect(terrainMb).toBeGreaterThan(0);
     const listed = items(firstRowElement());
+    expect(window.pwaBasemapDownloads.measureAreaInventory).toHaveBeenCalledWith(
+      REGION_ID,
+      expect.objectContaining({ terrain: true }),
+    );
     expect(Object.keys(listed).slice(0, 2)).toEqual(['Map', 'Terrain']);
-    expect(listed['Terrain']).toEqual({ value: terrainMb.toFixed(1) + ' MB', state: 'yes' });
-    expect(listed['Map'].value).toBe((40 - terrainMb).toFixed(1) + ' MB');
+    expect(listed['Map'].value).toBe('35.0 MB');
+    expect(listed['Terrain']).toEqual({ value: '5.0 MB', state: 'yes' });
   });
 
-  it('counts the elevation tiles in the terrain size of a stamped area (SNOW-1453)', async () => {
+  it('never says 0 MB: a class with nothing measured in it shows no size', async () => {
     seed({ 'basemap.regions': REGIONS });
-    await boot({
-      [REGION_ID]: record({ terrain: true, elevation: 'https://dem.example.invalid/{z}/{x}/{y}.webp', bytes: 40 * MB }),
-    });
-    const bridge = window.pwaBasemapDownloads;
-    bridge.terrainDataAvailable = () => true;
-    bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
-    bridge.areaElevationTileUrls = vi.fn(() => Array.from({ length: 30 }, (_v, i) => 'e/' + i));
+    window.caches.measured = { mapBytes: 0, terrainBytes: 0, terrainHeld: true };
+    await boot({ [REGION_ID]: record({ terrain: true, bytes: 40 * MB }) });
+    window.pwaBasemapDownloads.terrainExpected = () => true;
     toggleOf(firstRowElement()).click();
     await settle();
 
-    const core = window.pwaBasemapDownloadCore;
-    const terrainMb = core.terrainClassMb(200) + core.elevationMb(30);
-    expect(core.elevationMb(30)).toBeGreaterThan(0);
     const listed = items(firstRowElement());
-    expect(listed['Terrain']).toEqual({ value: terrainMb.toFixed(1) + ' MB', state: 'yes' });
-    expect(listed['Map'].value).toBe((40 - terrainMb).toFixed(1) + ' MB');
+    expect(listed['Map'].value).toBe('');
+    expect(listed['Terrain'].value).toBe('');
+    for (const item of Object.values(listed)) expect(item.value).not.toMatch(/^0(\.0)? MB$/);
   });
 
-  it('leaves elevation out of the terrain size of an area on another basemap (SNOW-1453 review)', async () => {
+  it('paints the other readings without waiting for the bucket to be measured', async () => {
     seed({ 'basemap.regions': REGIONS });
-    const DEM = 'https://dem.example.invalid/dem/2026-11/{z}/{x}/{y}.webp';
-    await boot({
-      [REGION_ID]: record({
-        terrain: true,
-        elevation: DEM,
-        basemapKey: 'openfreemap_liberty',
-        z: { 12: { 1455: [2130, 2131] } },
-        bytes: 40 * MB,
-      }),
-    });
-    const bridge = window.pwaBasemapDownloads;
-    bridge.terrainDataAvailable = () => true;
-    bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
-    // The real rule, which a stamp on another basemap does not get past.
-    bridge.areaElevationTileUrls = vi.fn((row) =>
-      window.pwaBasemapDownloadCore.areaElevationTileURLs(row, DEM, [5, 45, 11, 48]),
+    // Nothing cached: only a reading of the overlay store says so.
+    await boot({ [REGION_ID]: record({ bytes: 40 * MB }) }, { overlay: { geojson: null } });
+    let measuredNow = () => {};
+    window.pwaBasemapDownloads.measureAreaInventory.mockImplementationOnce(
+      () => new Promise((resolve) => (measuredNow = resolve)),
     );
     toggleOf(firstRowElement()).click();
     await settle();
 
-    expect(bridge.areaElevationTileUrls).toHaveBeenCalled();
-    const terrainMb = window.pwaBasemapDownloadCore.terrainClassMb(200);
-    expect(items(firstRowElement())['Terrain'].value).toBe(terrainMb.toFixed(1) + ' MB');
+    expect(items(firstRowElement())['Your routes'].state).not.toBe('yes');
+    expect(items(firstRowElement())['Map'].value).toBe('');
+
+    measuredNow({ mapBytes: 35 * MB, terrainBytes: 0, terrainHeld: null });
+    await settle();
+    expect(items(firstRowElement())['Map'].value).toBe('35.0 MB');
   });
 
-  it('leaves elevation out of the terrain size of an unstamped area (SNOW-1453)', async () => {
+  it('shows no size until the bucket has been measured', async () => {
     seed({ 'basemap.regions': REGIONS });
-    await boot({ [REGION_ID]: record({ terrain: true, bytes: 40 * MB }) });
-    const bridge = window.pwaBasemapDownloads;
-    bridge.terrainDataAvailable = () => true;
-    bridge.areaTerrainClassTileUrls = () => Array.from({ length: 200 }, (_v, i) => 'c/' + i);
-    bridge.areaElevationTileUrls = vi.fn(() => Array.from({ length: 30 }, (_v, i) => 'e/' + i));
+    window.caches.measured = null;
+    await boot({ [REGION_ID]: record({ bytes: 40 * MB }) });
     toggleOf(firstRowElement()).click();
     await settle();
 
-    const terrainMb = window.pwaBasemapDownloadCore.terrainClassMb(200);
-    expect(items(firstRowElement())['Terrain'].value).toBe(terrainMb.toFixed(1) + ' MB');
+    expect(items(firstRowElement())['Map'].value).toBe('');
+  });
+
+  it('reads the terrain row from its own tiles, not from the map', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    window.caches.measured = { mapBytes: 35 * MB, terrainBytes: 4 * MB, terrainHeld: false };
+    await boot({ [REGION_ID]: record({ terrain: true, bytes: 40 * MB }) });
+    window.pwaBasemapDownloads.terrainExpected = () => true;
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(listed['Map'].state).toBe('yes');
+    expect(listed['Terrain'].state).toBe('partial');
+  });
+
+  it('says the Swiss map is not added yet for an area still to gain it', async () => {
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() });
+    window.pwaBasemapDownloads.swissMapMissing = vi.fn(() => true);
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(Object.keys(listed).slice(0, 2)).toEqual(['Map', 'Swiss map']);
+    expect(listed['Swiss map']).toEqual({ value: 'Not added yet', state: 'partial' });
   });
 
   it('says terrain is not saved for an area downloaded without it', async () => {
     seed({ 'basemap.regions': REGIONS });
     await boot({ [REGION_ID]: record() });
-    window.pwaBasemapDownloads.terrainDataAvailable = () => true;
+    window.pwaBasemapDownloads.terrainExpected = () => true;
     toggleOf(firstRowElement()).click();
     await settle();
 
     const listed = items(firstRowElement());
     expect(listed['Terrain']).toEqual({ value: 'Not saved', state: 'missing' });
+    expect(listed['Map'].value).toBe('40.0 MB');
+  });
+
+  it('lists no Terrain row for an area that should hold none (SNOW-1483)', async () => {
+    // Outside the terrain tiles' coverage, or on a page that fetches none:
+    // a row saying "Not saved" would be one no Sync could ever fill.
+    seed({ 'basemap.regions': REGIONS });
+    await boot({ [REGION_ID]: record() });
+    window.pwaBasemapDownloads.terrainDataAvailable = () => true;
+    window.pwaBasemapDownloads.terrainExpected = vi.fn(() => false);
+    toggleOf(firstRowElement()).click();
+    await settle();
+
+    const listed = items(firstRowElement());
+    expect(window.pwaBasemapDownloads.terrainExpected).toHaveBeenCalled();
+    expect(listed['Terrain']).toBeUndefined();
     expect(listed['Map'].value).toBe('40.0 MB');
   });
 
@@ -4991,5 +5442,63 @@ describe('the inventory under a row (SNOW-1418)', () => {
     for (const toggle of toggles) {
       expect(toggle.getAttribute('data-row-disclosure')).not.toBe('');
     }
+  });
+});
+
+describe('Copy report, in the header menu (SNOW-1488)', () => {
+  afterEach(() => {
+    delete window.pwaOfflineAudit;
+    document.querySelector('[data-offline-audit-host]')?.remove();
+  });
+
+  /** The sheet's hidden report host, as _map_downloads_sheet.html renders it. */
+  function mountHost() {
+    const host = document.createElement('div');
+    host.hidden = true;
+    host.setAttribute('data-offline-audit-host', '');
+    host.setAttribute('data-terrain-class-tile-url', 'https://terrain.example/{z}/{x}/{y}.png');
+    document.body.appendChild(host);
+    return host;
+  }
+
+  it('copies the report collected against the hidden host, and says so', async () => {
+    const host = mountHost();
+    const copyReport = vi.fn(async () => true);
+    window.pwaOfflineAudit = { copyReport };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('#map-downloads-sheet [data-downloads-copy-report]').click();
+    await settle();
+
+    expect(copyReport).toHaveBeenCalledWith(host);
+    expect(window.MapSheet.toast).toHaveBeenCalledWith(
+      'Report copied. Paste it into a message to send it.',
+    );
+  });
+
+  it('says so when the copy fails', async () => {
+    mountHost();
+    window.pwaOfflineAudit = { copyReport: vi.fn(async () => false) };
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('#map-downloads-sheet [data-downloads-copy-report]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith("The report couldn't be copied.");
+  });
+
+  it('says so when the report module is missing', async () => {
+    await loadModule();
+    openSheet();
+    await settle();
+
+    document.querySelector('#map-downloads-sheet [data-downloads-copy-report]').click();
+    await settle();
+
+    expect(window.MapSheet.toast).toHaveBeenCalledWith("The report couldn't be copied.");
   });
 });

@@ -75,6 +75,20 @@ Parameters (passed via {% include … with … %}):
                  `body_html`/`body_template` duality, for exactly the
                  same reason. The included template owns its own <li>
                  markup and receives this include's full context.
+  trigger_icon   (string, optional) — template path of the trigger's
+                 glyph. Default includes/_icon_ellipsis.html, the "…".
+                 The routes panel's add menu passes includes/_icon_plus.html.
+  roundel        (bool, optional) — the trigger is a glass roundel
+                 (components.roundel_classes) rather than a bare 44×44
+                 icon button: the shape a map sheet's header action
+                 takes. The routes panel's + beside its × (Hugo,
+                 8 Nov 2026: a bare + "is just floating").
+  trigger_extra  (string, optional) — classes appended to a roundel
+                 trigger, through roundel_classes' ``extra``. The Trips
+                 tab's route picker passes ``app-only``, as the Saved add
+                 roundel beside the other tabs carries it.
+  wide           (bool, optional) — an 18rem menu rather than 11rem, for
+                 items that carry a line of description under the label.
   open           (bool, optional) — renders the menu already expanded,
                  for the component library's own demo (no JS runs there
                  to open it otherwise). Default closed.
@@ -121,15 +135,19 @@ that is not geometry — the box, the elevation and the stacking order.
         aria-expanded="{% if open %}true{% else %}false{% endif %}"
         aria-controls="{{ menu_id }}"
         aria-label="{{ trigger_label }}"
-        class="{% icon_button_classes %}"
+        class="{% if roundel and trigger_extra %}{% roundel_classes extra=trigger_extra %}{% elif roundel %}{% roundel_classes %}{% else %}{% icon_button_classes %}{% endif %}"
     >
-        {% include "includes/_icon_ellipsis.html" only %}
+        {% if trigger_icon %}
+            {% include trigger_icon with size=18 only %}
+        {% else %}
+            {% include "includes/_icon_ellipsis.html" only %}
+        {% endif %}
     </button>
     <ul
         id="{{ menu_id }}"
         role="menu"
         {% if not open %}hidden{% endif %}
-        class="z-10 w-44 rounded-tag border border-border bg-card py-1 shadow-glass"
+        class="z-10 {% if wide %}w-72{% else %}w-44{% endif %} rounded-tag border border-border bg-card py-1 shadow-glass"
     >
         {% if items_template %}
             {% include items_template %}

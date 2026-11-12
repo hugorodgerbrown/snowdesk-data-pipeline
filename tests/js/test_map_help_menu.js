@@ -5,7 +5,9 @@
  * The "?" roundel opens a small menu now: show the welcome again, turn help
  * mode on, test 3D on this device (SNOW-1456), or go to the help pages. help mode hands the roundel's press to
  * this module as 'snowdesk:map-help-menu-requested'; these cases dispatch
- * that event directly and pin what each item asks for.
+ * that event directly and pin what each item asks for. SNOW-1486: on a
+ * phone its header's × closes it, and so does a drag down on its handle
+ * past the distance a Saved sheet closes at; a short one springs back.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +16,12 @@ function buildFixture() {
   document.body.innerHTML = `
     <button id="map-help-toggle" type="button">?</button>
     <div id="map-help-menu" hidden>
+     <div class="map-tour-offer-card">
+      <div data-help-menu-drag>
+        <div data-sheet-handle aria-hidden="true"></div>
+        <span>Help</span>
+        <button type="button" data-action="help-menu-close">×</button>
+      </div>
       <button type="button" data-help-menu-close>×</button>
       <button type="button" data-help-menu="welcome">Show me around again</button>
       <button type="button" data-help-menu="help-mode">What is everything?</button>
@@ -21,6 +29,7 @@ function buildFixture() {
       <button type="button" data-help-menu="relief-tuning">Tune the relief</button>
       <button type="button" data-help-menu="key">Map key</button>
       <a href="#help" data-help-menu="pages">Help pages</a>
+     </div>
     </div>
     <button id="basemap-toggle" type="button">Layers</button>
   `;
@@ -167,3 +176,89 @@ describe("the phone app's Help tab", () => {
   });
 });
 
+/**
+ * Dispatch a pointer event jsdom delivers whether or not it implements
+ * PointerEvent.
+ *
+ * @param {Element} target
+ * @param {string} type
+ * @param {number} clientY
+ * @param {number} timeStamp
+ */
+function pointer(target, type, clientY, timeStamp) {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperties(event, {
+    clientY: { value: clientY },
+    pointerId: { value: 1 },
+    timeStamp: { value: timeStamp },
+  });
+  target.dispatchEvent(event);
+}
+
+describe('the phone card (SNOW-1486)', () => {
+  /** Open the menu with its card 300 px tall. */
+  function openAt300() {
+    request();
+    const card = menu().querySelector('.map-tour-offer-card');
+    card.getBoundingClientRect = () => /** @type {DOMRect} */ ({ top: 400, bottom: 700, height: 300 });
+    return { card, handle: menu().querySelector('[data-sheet-handle]') };
+  }
+
+  it("closes on the header's ×", () => {
+    request();
+    menu().querySelector('[data-action="help-menu-close"]').click();
+    expect(menu().hidden).toBe(true);
+  });
+
+  it('closes on a drag down the handle past half its height', () => {
+    const { card, handle } = openAt300();
+    pointer(handle, 'pointerdown', 400, 0);
+    pointer(handle, 'pointermove', 500, 500);
+    expect(card.style.transform).toBe('translateY(100px)');
+    pointer(handle, 'pointermove', 580, 1000);
+    pointer(handle, 'pointerup', 580, 1000);
+    expect(menu().hidden).toBe(true);
+    expect(card.style.transform).toBe('');
+  });
+
+  it('holds the pointer from the handle press', () => {
+    const { handle } = openAt300();
+    const captured = vi.fn();
+    handle.setPointerCapture = captured;
+    pointer(handle, 'pointerdown', 400, 0);
+    expect(captured).toHaveBeenCalledWith(1);
+  });
+
+  it('springs back from a short drag', () => {
+    const { card, handle } = openAt300();
+    pointer(handle, 'pointerdown', 400, 0);
+    pointer(handle, 'pointermove', 440, 500);
+    pointer(handle, 'pointermove', 480, 1000);
+    pointer(handle, 'pointerup', 480, 1000);
+    expect(menu().hidden).toBe(false);
+    expect(card.style.transform).toBe('');
+  });
+
+  it('closes on a short fast flick down, as a sheet does', async () => {
+    await import('../../static/js/sheet_detents_core.js');
+    try {
+      const { handle } = openAt300();
+      pointer(handle, 'pointerdown', 400, 0);
+      pointer(handle, 'pointermove', 410, 10);
+      pointer(handle, 'pointermove', 500, 50);
+      pointer(handle, 'pointerup', 500, 50);
+      expect(menu().hidden).toBe(true);
+    } finally {
+      delete window.pwaSheetDetentsCore;
+    }
+  });
+
+  it('ignores a drag that starts on the menu rows', () => {
+    openAt300();
+    const row = menu().querySelector('[data-help-menu="welcome"]');
+    pointer(row, 'pointerdown', 400, 0);
+    pointer(row, 'pointermove', 700, 500);
+    pointer(row, 'pointerup', 700, 500);
+    expect(menu().hidden).toBe(false);
+  });
+});

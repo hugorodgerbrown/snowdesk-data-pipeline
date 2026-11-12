@@ -55,7 +55,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import '../../static/js/i18n_strings.js';
 import { loadMapBundle } from './_load_map_bundle.js';
 
-const REGION_ID = 'CH-4115';
+// SNOW-1478: a Swiss region saves Swisstopo whatever is on screen, so the
+// basemap-replacement mechanics pinned here are driven on a region the page
+// cannot place (no country, no `CC-` prefix), which keeps the map on screen.
+// test_map_download_basemap_choice.js covers the Swiss rule itself.
+const REGION_ID = 'R-4115';
 const TEMPLATE_A = 'https://tiles-a.example.invalid/{z}/{x}/{y}.pbf';
 const TEMPLATE_B = 'https://tiles-b.example.invalid/{z}/{x}/{y}.pbf';
 const PINNED_PREFIX = 'snowdesk-basemap-pinned-';

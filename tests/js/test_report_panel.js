@@ -6,7 +6,9 @@
  * "Community reports" map layer was toggled from a row in the layers menu.
  * This ticket collapses the two: the roundel opens a PANEL listing the
  * user's own reports, filing one is an action inside it, and the panel owns
- * the overlay switch. tests/js/test_report_location_flow.js still covers the
+ * the overlay switch. SNOW-1481 moved the panel to Saved › Observations
+ * (window.pwaReportSheet.open()) and gave the binoculars roundel its one
+ * tap back: it starts a report, in a sheet marked `data-report-direct`. tests/js/test_report_location_flow.js still covers the
  * location state machine that CTA starts; this file covers the panel around
  * it, and mirrors tests/js/test_favourites_panel.js, which is the same
  * treatment applied to the other roundel in the same ticket.
@@ -44,6 +46,7 @@ document.body.innerHTML = `
   <div id="map-sheet-toast" class="hidden"><span data-toast-body></span></div>
   <template id="report-list-template">
     <div>
+      <button type="button" data-panel-add data-testid="saved-add-roundel">+</button>
       <div data-report-gate></div>
       <div data-report-rows><p>Loading your reports…</p></div>
       <button type="button" data-panel-add>Report an observation</button>
@@ -61,17 +64,23 @@ const btn = document.getElementById('report-btn');
 const sheet = document.getElementById('report-sheet');
 
 /**
- * Close the panel and open it again.
+ * Open the panel, as Saved › Observations does (SNOW-1481: the binoculars
+ * roundel starts a report instead — its own block below).
  *
- * SNOW-658: the roundel toggles, so a re-open is two taps — the first
- * closes what is on screen. It used to be one, because a second tap simply
- * re-opened an already-open sheet.
+ * @returns {void}
+ */
+function openPanel() {
+  window.pwaReportSheet.open();
+}
+
+/**
+ * Close the panel and open it again.
  *
  * @returns {void}
  */
 function reopen() {
-  btn.click();
-  btn.click();
+  window.pwaReportSheet.close();
+  openPanel();
 }
 
 /** The rows container inside the currently-rendered panel body. */
@@ -129,9 +138,9 @@ afterEach(() => {
   sheet.replaceChildren();
 });
 
-describe('tapping the roundel opens the panel, not the location flow', () => {
+describe('Saved › Observations opens the panel, not the location flow', () => {
   it('opens the sheet on the list body', () => {
-    btn.click();
+    openPanel();
 
     expect(sheet.hidden).toBe(false);
     expect(rows()).not.toBeNull();
@@ -143,7 +152,7 @@ describe('tapping the roundel opens the panel, not the location flow', () => {
     const handler = () => seen.push(true);
     document.addEventListener('snowdesk:locate-request', handler);
 
-    btn.click();
+    openPanel();
     expect(seen).toHaveLength(0);
 
     sheet.querySelector('[data-panel-add]').click();
@@ -152,8 +161,20 @@ describe('tapping the roundel opens the panel, not the location flow', () => {
     document.removeEventListener('snowdesk:locate-request', handler);
   });
 
+  it("starts a report from the app header's + too (SNOW-1479)", () => {
+    const seen = [];
+    const handler = () => seen.push(true);
+    document.addEventListener('snowdesk:locate-request', handler);
+
+    openPanel();
+    sheet.querySelector('[data-testid="saved-add-roundel"]').click();
+    expect(seen).toHaveLength(1);
+
+    document.removeEventListener('snowdesk:locate-request', handler);
+  });
+
   it('loads the rows from observations:list, into the rows container', () => {
-    btn.click();
+    openPanel();
 
     expect(globalThis.htmx.ajax).toHaveBeenCalledTimes(1);
     const [method, url, opts] = globalThis.htmx.ajax.mock.calls[0];
@@ -164,12 +185,12 @@ describe('tapping the roundel opens the panel, not the location flow', () => {
   });
 
   it('drops the gate slot for an eligible user', () => {
-    btn.click();
+    openPanel();
     expect(sheet.querySelector('[data-report-gate]')).toBeNull();
   });
 
   it('re-clones the body on every open, so a stale row cannot survive', () => {
-    btn.click();
+    openPanel();
     rows().innerHTML = '<div id="stale-row"></div>';
 
     reopen();
@@ -190,7 +211,7 @@ describe('a list load that fails', () => {
   it.each(['htmx:responseError', 'htmx:sendError'])(
     'replaces the loading line with a failure line on %s',
     async (eventName) => {
-      btn.click();
+      openPanel();
       const container = rows();
 
       document.dispatchEvent(
@@ -209,7 +230,7 @@ describe('a list load that fails', () => {
     // report.js's own htmx:responseError handler keys off `target === sheet`
     // (the form load) and closes the sheet. The two must not both fire for
     // one request, and this one must not swallow that one.
-    btn.click();
+    openPanel();
     document.dispatchEvent(
       new CustomEvent('htmx:responseError', { detail: { target: sheet } }),
     );
@@ -237,7 +258,7 @@ describe('a failed list load with rows cached on the device (SNOW-661)', () => {
    * @returns {Promise<Element>} The rows container, after the handler ran.
    */
   async function failListLoad() {
-    btn.click();
+    openPanel();
     const container = rows();
     document.dispatchEvent(
       new CustomEvent('htmx:sendError', { detail: { target: container } }),
@@ -342,7 +363,7 @@ describe('a row removed from the panel', () => {
     // that has just lost its last report keeps rendering as a list of
     // none: observations:list's empty state is a server-side clause and
     // only a fresh response can carry it.
-    btn.click();
+    openPanel();
     const container = rows();
     container.innerHTML =
       '<ul><li id="observation-a1b2"><form id="rm" data-row-remove></form></li></ul>';
@@ -368,7 +389,7 @@ describe('a row removed from the panel', () => {
     // it, and nothing else asks for one.
     const changed = vi.fn();
     document.addEventListener('snowdesk:reports-changed', changed);
-    btn.click();
+    openPanel();
     const container = rows();
     container.innerHTML =
       '<ul><li id="observation-a1b2"><form id="rm" data-row-remove></form></li></ul>';
@@ -393,7 +414,7 @@ describe('a row removed from the panel', () => {
     // mistaken for a row removal.
     const changed = vi.fn();
     document.addEventListener('snowdesk:reports-changed', changed);
-    btn.click();
+    openPanel();
 
     const xhr = {};
     document.dispatchEvent(
@@ -417,7 +438,7 @@ describe('framing a report from its row', () => {
 
   /** Put one row carrying `target` into the open panel. */
   function renderRow(target) {
-    btn.click();
+    openPanel();
     rows().innerHTML = `
       <ul><li>
         <button data-row-label data-row-focus="${target}">Whumpfing</button>
@@ -455,6 +476,42 @@ describe('framing a report from its row', () => {
   });
 });
 
+
+describe('the binoculars roundel (SNOW-1481)', () => {
+  it('starts a report in one tap, with no list before it', () => {
+    const seen = [];
+    const handler = () => seen.push(true);
+    document.addEventListener('snowdesk:locate-request', handler);
+
+    btn.click();
+
+    expect(sheet.hidden).toBe(false);
+    expect(seen).toHaveLength(1);
+    expect(rows()).toBeNull();
+    expect(sheet.textContent).toContain('Finding your location');
+    document.removeEventListener('snowdesk:locate-request', handler);
+  });
+
+  it('marks the sheet as not Saved while the form is up', () => {
+    btn.click();
+    expect(sheet.hasAttribute('data-report-direct')).toBe(true);
+  });
+
+  it('closes on a second tap, taking the mark with it', async () => {
+    btn.click();
+    btn.click();
+    await settle();
+    expect(sheet.hidden).toBe(true);
+    expect(sheet.hasAttribute('data-report-direct')).toBe(false);
+  });
+
+  it('leaves the panel unmarked when Saved opens it', () => {
+    btn.click();
+    openPanel();
+    expect(sheet.hasAttribute('data-report-direct')).toBe(false);
+    expect(rows()).not.toBeNull();
+  });
+});
 
 describe('the sheet-level bridge (SNOW-803)', () => {
   it('exposes window.pwaReportSheet.open(), which opens the panel like a tap', () => {
@@ -673,5 +730,53 @@ describe('placing the pin before saying what it was (SNOW-1295)', () => {
     expect(where.querySelector('[data-report-where-text]').textContent).toBe(
       'Using current GPS location',
     );
+  });
+});
+
+describe("reportAt, the hold bar's Report (SNOW-1485)", () => {
+  it('requests the form at the point, MANUAL and placed=1, with lat then lon', () => {
+    window.pwaReportSheet.reportAt(46.25, 7.5);
+
+    expect(globalThis.htmx.ajax).toHaveBeenCalledOnce();
+    const [method, url, opts] = globalThis.htmx.ajax.mock.calls[0];
+    expect(method).toBe('GET');
+    const query = new URL(url, 'http://test').searchParams;
+    expect(url.startsWith(FORM_URL + '?')).toBe(true);
+    expect(query.get('lat')).toBe('46.25');
+    expect(query.get('lon')).toBe('7.5');
+    expect(query.get('location_source')).toBe('MANUAL');
+    expect(query.get('placed')).toBe('1');
+    expect(query.has('gps_lat')).toBe(false);
+    expect(opts).toEqual({ target: '#report-sheet', swap: 'innerHTML' });
+  });
+
+  it('opens the sheet on the form, not the list, and asks for no fix', () => {
+    const seen = [];
+    const handler = () => seen.push(true);
+    document.addEventListener('snowdesk:locate-request', handler);
+
+    window.pwaReportSheet.reportAt(46.25, 7.5);
+
+    expect(sheet.hidden).toBe(false);
+    expect(sheet.hasAttribute('data-report-direct')).toBe(true);
+    expect(rows()).toBeNull();
+    expect(seen).toHaveLength(0);
+    // Straight to the tiles: no placing row is armed.
+    expect(window.PlacePicker.activate).not.toHaveBeenCalled();
+    document.removeEventListener('snowdesk:locate-request', handler);
+  });
+
+  it('the binoculars path still sends no placed flag', () => {
+    btn.click();
+    document.dispatchEvent(
+      new CustomEvent('snowdesk:geolocate', { detail: { lat: 46.1, lon: 7.2, accuracy: 5 } }),
+    );
+    const url = globalThis.htmx.ajax.mock.calls[0][1];
+    expect(new URL(url, 'http://test').searchParams.has('placed')).toBe(false);
+  });
+
+  it('stays on the frozen bridge', () => {
+    expect(Object.isFrozen(window.pwaReportSheet)).toBe(true);
+    expect(typeof window.pwaReportSheet.reportAt).toBe('function');
   });
 });

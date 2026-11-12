@@ -1,0 +1,37 @@
+{% load components %}
+{% comment %}
+templates/includes/_saved_add_roundel.html — the + in a Saved tab's header
+(SNOW-1479; on every screen since SNOW-1481).
+
+includes/_sheet_header.html's ``actions_template``, reached through
+includes/_ugc_panel.html's ``header_actions_template``, right beside the
+Saved tabs (on a phone on the row under "Saved items" and its ×, SNOW-1486).
+The panel's own add button at its foot is not drawn, so this is how a tab
+adds to its list.
+
+A glass roundel, the shape a map sheet's header action takes, as the
+routes panel's add menu trigger is (public/partials/_route_add_menu.html):
+Hugo, 8 Nov 2026, a bare + "is just floating". Its accessible name is the
+panel's own add label ("Add a favourite").
+
+What it adds is the tab's own flow, by hook rather than by script:
+``data-panel-add``, the hook the panel's add button has always carried.
+Places drops a pin (favourites.js), Observations reports one (report.js),
+and Routes, while route drawing is off, uploads a GPX (routes.js). Each
+module removes every element carrying the hook for a visitor who cannot
+add. Trips has a menu instead, of the routes a trip can be planned from
+(public/partials/_trip_route_picker.html); it used to carry a "routes"
+hook here that switched Saved to the Routes tab.
+
+Context (read from the including template's context):
+  cta_label — the panel's add label, the roundel's accessible name.
+{% endcomment %}
+<button
+    type="button"
+    data-panel-add
+    aria-label="{{ cta_label }}"
+    data-testid="saved-add-roundel"
+    class="{% roundel_classes %}"
+>
+    {% include "includes/_icon_plus.html" with size=18 only %}
+</button>

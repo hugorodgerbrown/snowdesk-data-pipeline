@@ -195,6 +195,64 @@ class TestReportFormPlacing:
 
 
 @pytest.mark.django_db
+class TestReportFormFooter:
+    """SNOW-1485: Save and Cancel sit in a sticky footer, with the disclaimer."""
+
+    def test_the_footer_holds_save_cancel_and_the_disclaimer(
+        self, client: Client
+    ) -> None:
+        """Every form's footer is sticky and reads Save, not the old label."""
+        client.force_login(_verified_user())
+        content = client.get(
+            FORM_URL, {"lat": "46.1", "lon": "7.1"}, **HTMX_HEADERS
+        ).content.decode()
+        footer = re.search(
+            r'<div class="([^"]*)" data-report-footer>(.*?)</p>', content, re.S
+        )
+        assert footer is not None
+        assert "sticky" in footer.group(1).split()
+        assert "bottom-0" in footer.group(1).split()
+        body = footer.group(2)
+        assert re.search(r'type="submit"[^>]*>\s*Save\s*</button>', body)
+        assert re.search(r'data-action="dismiss"\s*>\s*Cancel\s*</button>', body)
+        assert "Observations are visible to other users." in content
+        assert "Share with everyone here" not in content
+
+
+@pytest.mark.django_db
+class TestReportFormPlaced:
+    """SNOW-1485: ``placed=1`` (a hold on the map) leaves out the Move pin row."""
+
+    def test_placed_1_is_true_and_omits_the_move_pin_row(self, client: Client) -> None:
+        """The hold path: the pin was just placed, so there is no where row."""
+        client.force_login(_verified_user())
+        response = client.get(
+            FORM_URL,
+            {"lat": "46.1", "lon": "7.1", "location_source": "MANUAL", "placed": "1"},
+            **HTMX_HEADERS,
+        )
+        assert response.context["placed"] is True
+        content = response.content.decode()
+        assert "data-report-where" not in content
+        assert 'data-action="refine-location"' not in content
+        assert "data-report-what" in content
+
+    @pytest.mark.parametrize("params", [{}, {"placed": "0"}, {"placed": "yes"}])
+    def test_any_other_value_is_false_and_keeps_the_row(
+        self, client: Client, params: dict[str, str]
+    ) -> None:
+        """Absent or any value but ``1``: the binoculars path keeps Move pin."""
+        client.force_login(_verified_user())
+        response = client.get(
+            FORM_URL, {"lat": "46.1", "lon": "7.1", **params}, **HTMX_HEADERS
+        )
+        assert response.context["placed"] is False
+        content = response.content.decode()
+        assert "data-report-where" in content
+        assert 'data-action="refine-location"' in content
+
+
+@pytest.mark.django_db
 class TestReportFormManualInputsPresent:
     """MANUAL-state form always contains lat and lon hidden inputs.
 
@@ -1156,6 +1214,18 @@ class TestObservationListThreeWordAddress:
         assert "///filled.count.soap" in content
         assert "Martigny-Verbier" in content
 
+    def test_no_template_comment_leaks_into_the_row(self, client: Client) -> None:
+        """A ``{#`` comment spans one line only; a longer one printed as text."""
+        user = _verified_user()
+        client.force_login(user)
+        FieldObservationFactory.create(user=user)
+
+        content = client.get(LIST_URL, **HTMX_HEADERS).content.decode()
+
+        assert 'data-testid="observation' in content
+        assert "{#" not in content
+        assert "Rendered only when" not in content
+
     @override_flag("what3words", active=True)
     def test_no_address_leaves_the_meta_line_exactly_as_it_was(
         self, client: Client
@@ -1357,19 +1427,19 @@ class TestObservationList:
         assert 'data-row-focus="7.500000,46.100000"' in content
         assert 'aria-label="Zoom to Whumpfing"' in content
 
-    def test_delete_is_a_trash_control_on_the_row(self, client: Client) -> None:
-        """Delete is a visible icon control, not a menu item (SNOW-658/886).
+    def test_delete_is_the_one_item_in_a_menu(self, client: Client) -> None:
+        """The row's "…" holds Delete alone (SNOW-1479).
 
-        The panel rule SNOW-886 states is "more than one action is a '…',
-        exactly one is a bare icon", and this row has exactly one — so
-        where the favourite and route rows collapsed behind a trigger,
-        this one stays a control the user aims at directly. Still a plain
-        HTMX form: the delete endpoint returns an empty 200 and the form
-        targets this row's own id, so no JS is involved.
+        Until SNOW-1479 a lone Delete was a bare trash on the row, by the
+        panel rule "exactly one action is a bare icon". The installed app's
+        Saved tab gives every row the same "…" in the same place, and this
+        row is the recorded exception to that rule (docs/design-system.md).
+        Still a plain HTMX form: the delete endpoint returns an empty 200
+        and the form targets this row's own id, so no JS is involved.
 
         The word is Delete because observations:delete destroys the
-        FieldObservation row (SNOW-886), and it lands in the accessible
-        name because the trash glyph is all this control says out loud.
+        FieldObservation row (SNOW-886), and the item's accessible name
+        names the report it acts on.
         """
         user = _verified_user()
         observation = FieldObservationFactory.create(user=user)
@@ -1378,13 +1448,21 @@ class TestObservationList:
         response = client.get(LIST_URL, **HTMX_HEADERS)
 
         content = response.content.decode()
-        assert 'role="menu"' not in content
-        assert reverse("observations:delete", args=[observation.uuid]) in content
+        menu = re.search(
+            r'<ul\s+id="observation-actions-menu-%s"\s+role="menu".*?</ul>'
+            % observation.uuid,
+            content,
+            re.S,
+        )
+        assert menu
+        items = re.findall(r'role="menuitem"', menu.group(0))
+        assert len(items) == 1
+        assert "Delete" in re.sub(r"<[^>]+>", " ", menu.group(0))
+        assert reverse("observations:delete", args=[observation.uuid]) in menu.group(0)
         assert f'hx-target="#observation-{observation.uuid}"' in content
-        # It names the row it acts on: "Delete" alone names nothing with a
-        # list of reports on screen.
         kind = observation.get_observation_type_display()
         assert f'aria-label="Delete {kind}"' in content
+        assert f'aria-label="Actions for {kind}"' in content
 
     def test_delete_asks_first_through_hx_confirm_naming_the_report(
         self, client: Client

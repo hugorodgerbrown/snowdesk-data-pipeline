@@ -41,6 +41,15 @@ welcome card's own pieces (.map-tour-offer, .map-tour-offer-option), in
 the same corner, because it is the same kind of surface: an offer, not a
 control. static/js/map_help_menu.js opens and closes it.
 
+ON A PHONE IT IS THE SHEETS' CARD (SNOW-1486). Below 640px, in the app and
+in a phone browser alike, static/css/map.css draws it as the Saved sheets
+are drawn: fixed at the sheet insets, the card's corners and shadow, as
+tall as its rows and never past 75dvh. Its header there is
+includes/_sheet_header.html with a grab handle, "Help" and a ×, in a
+``sm:hidden`` wrapper, and the eyebrow and the small corner × are not
+drawn; from ``sm`` it is exactly as before. A drag down on the header
+closes it (map_help_menu.js).
+
 Included from public/partials/_map_embed.html inside #map, on the map page
 only (show_tour_offer) — without the welcome card there is nothing for its
 first item to show, and the "?" keeps going straight to help mode.
@@ -53,6 +62,10 @@ first item to show, and the "?" keeps going straight to help mode.
     hidden
 >
     <div class="map-tour-offer-card">
+        {% trans "Help" as help_menu_title %}
+        <div class="sm:hidden" data-help-menu-drag>
+            {% include "includes/_sheet_header.html" with title=help_menu_title close_action="help-menu-close" title_class="text-lg font-semibold" handle=True %}
+        </div>
         <button
             type="button"
             class="map-tour-offer-close"
