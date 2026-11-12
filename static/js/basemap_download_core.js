@@ -89,6 +89,7 @@
  *   recordBasemaps(record) /
  *   recordHoldsBasemaps(record, keys) / basemapSourceCount(key) /
  *   basemapScaledMb(mb, key, count?) /
+ *   isFetchableTileTemplate(url) /
  *   tileSourcesFromStyleDocuments(styleJson, tileJsons) /
  *   renderDependencyUrlsFromStyle(styleUrl, styleJson) /
  *   glyphPrefixFromStyle(styleJson)
@@ -4383,6 +4384,23 @@
   }
 
   /**
+   * Whether the service worker can fetch a tile template: an http(s) URL,
+   * or one relative to the page. A page-side MapLibre protocol
+   * (SNOW-1460's ``osmclip://``) is drawn by the map alone, and a fetch of
+   * it fails on the scheme, so a download must never list it.
+   *
+   * @param {*} url
+   * @returns {boolean}
+   */
+  function isFetchableTileTemplate(url) {
+    if (typeof url !== 'string' || !url) return false;
+    var scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url);
+    if (!scheme) return true;
+    var name = scheme[1].toLowerCase();
+    return name === 'http' || name === 'https';
+  }
+
+  /**
    * A basemap's tile sources, from its style document and the TileJSON
    * each vector source's ``url`` names — the shape
    * ``activeBasemapTileSources`` reads off a live map, for a map that is
@@ -4406,9 +4424,7 @@
         : doc && Array.isArray(doc.tiles)
           ? doc.tiles
           : null;
-      var urls = (tiles || []).filter(function (url) {
-        return typeof url === 'string' && url;
-      });
+      var urls = (tiles || []).filter(isFetchableTileTemplate);
       if (urls.length) sources.push(urls);
     });
     return sources.length ? sources : null;
@@ -4574,6 +4590,7 @@
     recordHoldsBasemaps: recordHoldsBasemaps,
     basemapSourceCount: basemapSourceCount,
     basemapScaledMb: basemapScaledMb,
+    isFetchableTileTemplate: isFetchableTileTemplate,
     tileSourcesFromStyleDocuments: tileSourcesFromStyleDocuments,
     renderDependencyUrlsFromStyle: renderDependencyUrlsFromStyle,
     glyphPrefixFromStyle: glyphPrefixFromStyle,

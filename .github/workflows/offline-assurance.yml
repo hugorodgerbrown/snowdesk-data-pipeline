@@ -1,28 +1,29 @@
-# .github/workflows/offline-assurance.yml — weekly offline-maps assurance.
+# .github/workflows/offline-assurance.yml — offline-maps assurance.
 #
-# Runs `tox -e offline` (tests/offline/) on a Monday-morning cron. This is
-# NOT a merge gate and is deliberately not a required check:
+# Runs `tox -e offline` (tests/offline/): real downloads of real basemap
+# tiles in a real Chromium, then the network cut.
 #
-#   * It downloads several hundred real basemap tiles from a live origin on
-#     every run, so putting it on the PR path would multiply that by every
-#     push and make someone else's server pay for our CI.
-#   * Its subject is fuzzed from the ISO week, so two runs of the same commit
-#     in different weeks legitimately test different ground. A required check
-#     has to be reproducible from the commit alone; this one is reproducible
-#     from the commit AND the seed, which is a different contract.
-#   * A red run here means the offline map is broken, which is worth waking
-#     someone for — but wedging every merge behind a suite that talks to a
-#     third-party tile origin trades one broken thing for a broken pipeline.
+# Two triggers since 12 Nov 2026
+# (docs/decisions/a-real-download-gates-download-prs.md):
 #
-# So: it fails loudly, it uploads everything needed to reproduce, and it
-# blocks nothing. The failure notification and the artefacts are the product.
+#   * Every pull request that touches the download path — the map's
+#     scripts, the service worker, the map app, the basemap settings or
+#     this suite. It is a required check. The week it was weekly only, it
+#     went red on Monday 9 Nov ("Download failed") and production broke
+#     on the 12th anyway, because a red run blocked nothing. A PR that
+#     cannot reach a download skips the job, which still reports a
+#     (skipped) check and satisfies the ruleset, as e2e.yml does.
+#   * The Monday cron, which keeps walking the fuzzed space of regions and
+#     basemaps on main.
 #
-# The seed is printed in the job output and echoed into the summary. To
-# reproduce a red run exactly, locally or via workflow_dispatch:
+# The subject is fuzzed from the ISO week, so a PR and main in the same week
+# test the same ground; tests/offline/test_martigny_verbier_downloads.py is
+# fixed and runs every time. To reproduce a red run exactly, locally or via
+# workflow_dispatch:
 #
 #     SNOWDESK_OFFLINE_SEED=2026-W37 uv run tox -e offline
 
-name: Offline maps (weekly)
+name: Offline maps
 
 on:
   schedule:
@@ -30,6 +31,9 @@ on:
     # do not contend for runners, and early enough that a red run is waiting
     # at the start of the week rather than discovered at the end of it.
     - cron: "0 5 * * 1"
+
+  pull_request:
+    types: [opened, synchronize, reopened]
 
   # Manual runs, with an optional seed. This is how a red weekly run is
   # reproduced without waiting a week, and how a fix is confirmed.
@@ -41,16 +45,54 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
+  # One run per ref; a new push to a PR replaces its run in flight.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect a download-path diff
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # "true" when this PR can change what a download does; the cron and
+      # manual runs skip the filter and fall through to "true".
+      downloads: ${{ steps.filter.outputs.downloads || 'true' }}
+    steps:
+      - name: Check the PR diff for download-path files
+        id: filter
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Fail closed: an empty file list (API error) runs the suite.
+          files="$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" --paginate --jq '.[].filename')" || files=""
+          downloads=false
+          [ -n "$files" ] || downloads=true
+          while IFS= read -r f; do
+            case "$f" in
+              static/js/*.js | static/js/bundles/* | apps/map/* \
+                | apps/core/sw_shell.py \
+                | apps/public/map_shared.py | apps/public/views.py \
+                | apps/public/api.py | config/settings/base.py \
+                | tests/offline/* | tox.ini | uv.lock | package-lock.json \
+                | .github/workflows/offline-assurance.yml)
+                downloads=true ;;
+            esac
+          done <<< "$files"
+          echo "download-path filter -> downloads=$downloads"
+          echo "downloads=$downloads" >> "$GITHUB_OUTPUT"
+
   offline:
     name: Offline maps assurance
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.downloads == 'true'
     # Generous: a fuzzed draw can pick a 220-tile region, and every tile is
     # a real request to a live origin. Well under the 6h default, so a hung
     # run still frees the runner in reasonable time.

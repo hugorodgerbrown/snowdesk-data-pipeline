@@ -491,6 +491,28 @@ describe('"Download here" (SNOW-1134)', () => {
   });
 });
 
+describe('"Download here" on an area a failed run left behind (12 Nov 2026)', () => {
+  it('repairs an incomplete area instead of refusing it', async () => {
+    await downloadToDone(REGION_A);
+    // Lose a render document, as a run cut short leaves a bucket.
+    const bucket = cachesStub.buckets.get(PINNED_PREFIX + areaId(REGION_A));
+    const deps = (recorded(REGION_A) && recorded(REGION_A).deps) || [];
+    const lost = deps.find((url) => bucket.has(url));
+    expect(lost).toBeTruthy();
+    bucket.delete(lost);
+    select(REGION_B);
+    select(REGION_A);
+    await waitFor(() => state() === 'incomplete');
+    select(REGION_B);
+    await waitFor(() => state() === 'idle');
+
+    const outcome = await window.pwaRegionDownload.start(REGION_A);
+    expect(outcome).toEqual({ started: true, reason: '' });
+    await waitFor(() => bucket.has(lost));
+    expect(bucket.has(lost)).toBe(true);
+  });
+});
+
 describe('"Download here" keeps the region it was asked for (SNOW-1134 review)', () => {
   it('downloads A even when B is selected while A is being probed', async () => {
     select(REGION_B);
