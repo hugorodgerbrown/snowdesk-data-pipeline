@@ -654,6 +654,9 @@ class TestClaimAndSettle:
         publish(region, TOMORROW, render())
         run = evaluate_account(account, NOW)
         held = hold(account, region, run.rows[0].fingerprint, outcome, age)
+        # Off, so only the PENDING-freshness rule decides: ``hold`` writes
+        # the row after evaluation, which the evaluated_at rule would lose.
+        run.evaluated_at = None
         worker = MagicMock()
         with patch.object(alerts, "_worker_deliver_alert", worker):
             deliver(run)

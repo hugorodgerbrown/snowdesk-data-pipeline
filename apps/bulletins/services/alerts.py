@@ -571,6 +571,8 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
     run.today = today
     # timezone.now(), not ``now``: it is compared with rows' updated_at.
     run.evaluated_at = timezone.now()
+    # ``now``, not timezone.now(): the command passes timezone.now(), so the
+    # two agree in production, and tests can pin the stale window.
     stale_before = now - STALE_PENDING
     day_start = datetime.datetime.combine(today, datetime.time(0), tzinfo=ALERT_TZ)
     pins = account_places(account.user)
@@ -1074,6 +1076,8 @@ def _worker_deliver_alert(
         # not leave the alert to be sent again once its row goes stale.
         # One updated_at for every row of the message: it is when it went,
         # and what tells one delivery's rows from another's in recent_alerts.
+        # If this update itself fails (database gone), the rows stay PENDING
+        # and the next run after STALE_PENDING claims them again.
         reached = pushed or emailed
         claimed.update(
             outcome=(
