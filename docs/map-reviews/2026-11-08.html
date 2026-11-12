@@ -1,0 +1,953 @@
+<title>Inside the Snowdesk Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --paper:      #e9edf1;
+  --surface:    #ffffff;
+  --surface-2:  #f2f5f8;
+  --ink:        #0f1720;
+  --ink-2:      #47596b;
+  --ink-3:      #7d8fa0;
+  --rule:       #cdd6de;
+  --rule-soft:  #dfe6ec;
+  --accent:     #1a5f8f;
+  --accent-ink: #ffffff;
+  --accent-soft:#dbe8f1;
+
+  /* EAWS danger scale — mandated by the standard, reused here to rate findings. */
+  --eaws-1: #ccff66;
+  --eaws-2: #ffff00;
+  --eaws-3: #ff9900;
+  --eaws-4: #ff0000;
+  --eaws-5: #820100;
+  --eaws-1-ink: #1c2a05;
+  --eaws-2-ink: #2a2a00;
+  --eaws-3-ink: #331e00;
+  --eaws-4-ink: #ffffff;
+  --eaws-5-ink: #ffffff;
+
+  --measure: 66ch;
+  --shell: 1180px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #0e131a;
+    --surface:    #161d26;
+    --surface-2:  #1c2530;
+    --ink:        #e4ebf2;
+    --ink-2:      #a3b3c2;
+    --ink-3:      #74869a;
+    --rule:       #2c3946;
+    --rule-soft:  #232e3a;
+    --accent:     #6fb3e0;
+    --accent-ink: #08131c;
+    --accent-soft:#1b2c3a;
+  }
+}
+:root[data-theme="dark"] {
+  --paper:      #0e131a;
+  --surface:    #161d26;
+  --surface-2:  #1c2530;
+  --ink:        #e4ebf2;
+  --ink-2:      #a3b3c2;
+  --ink-3:      #74869a;
+  --rule:       #2c3946;
+  --rule-soft:  #232e3a;
+  --accent:     #6fb3e0;
+  --accent-ink: #08131c;
+  --accent-soft:#1b2c3a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, .display {
+  font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.021em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+code, .mono, kbd {
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.86em;
+  font-weight: 400;
+}
+code {
+  background: var(--surface-2);
+  border: 1px solid var(--rule-soft);
+  border-radius: 3px;
+  padding: 0.08em 0.34em;
+  white-space: nowrap;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+/* ---------- shell ---------- */
+
+.wrap { max-width: var(--shell); margin: 0 auto; padding: 0 28px; }
+
+/* ---------- top bar ---------- */
+
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(9px);
+  border-bottom: 1px solid var(--rule);
+}
+.topbar .wrap {
+  display: flex; align-items: center; gap: 22px;
+  height: 46px;
+}
+.topbar .brand {
+  font-family: Archivo, sans-serif; font-weight: 700; font-size: 13px;
+  letter-spacing: -0.01em; white-space: nowrap;
+}
+.topnav { display: flex; gap: 16px; overflow-x: auto; scrollbar-width: none; }
+.topnav::-webkit-scrollbar { display: none; }
+.topnav a {
+  font-family: "JetBrains Mono", monospace; font-size: 11px;
+  color: var(--ink-2); text-decoration: none; white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.topnav a:hover { color: var(--accent); }
+
+/* ---------- masthead ---------- */
+
+.masthead { padding: 76px 0 52px; border-bottom: 1px solid var(--rule); }
+.eyebrow {
+  font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3);
+}
+.masthead h1 {
+  font-size: clamp(40px, 7vw, 74px); line-height: 1.0; margin: 18px 0 0;
+  max-width: 15ch;
+}
+.masthead .standfirst {
+  margin: 22px 0 0; max-width: 60ch; font-size: 20px; color: var(--ink-2);
+}
+.byline {
+  margin-top: 26px; font-family: "JetBrains Mono", monospace; font-size: 11.5px;
+  color: var(--ink-3); letter-spacing: 0.02em;
+}
+
+/* ---------- figures strip ---------- */
+
+.figures {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 1px; background: var(--rule); border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.fig { background: var(--paper); padding: 20px 4px 20px 0; }
+.fig .n {
+  font-family: Archivo, sans-serif; font-weight: 600; font-size: 27px;
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums; display: block;
+}
+.fig .l {
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: var(--ink-3);
+  letter-spacing: 0.05em; text-transform: uppercase; display: block; margin-top: 5px;
+  line-height: 1.4;
+}
+
+/* ---------- sections ---------- */
+
+section { padding: 62px 0; border-bottom: 1px solid var(--rule-soft); }
+section:last-of-type { border-bottom: 0; }
+
+.sec-head { display: grid; grid-template-columns: 62px 1fr; gap: 0; margin-bottom: 26px; }
+.sec-num {
+  font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--ink-3);
+  letter-spacing: 0.08em; padding-top: 9px;
+}
+.sec-head h2 { font-size: clamp(25px, 3.3vw, 34px); line-height: 1.14; max-width: 22ch; }
+.sec-head .kicker {
+  margin: 10px 0 0; color: var(--ink-2); max-width: var(--measure); font-size: 18px;
+}
+
+.body { display: grid; grid-template-columns: 62px minmax(0, 1fr); }
+.body > * { grid-column: 2; min-width: 0; }
+.body > .col { max-width: var(--measure); }
+.body > .col > p { margin: 0 0 1.05em; }
+.body > .col > p:last-child { margin-bottom: 0; }
+.body > .wide { max-width: none; }
+
+.lede { font-size: 19px; }
+
+/* ---------- callout ---------- */
+
+.note {
+  border-left: 3px solid var(--accent);
+  background: var(--surface);
+  padding: 16px 20px; margin: 26px 0;
+  max-width: var(--measure);
+}
+.note .t {
+  font-family: Archivo, sans-serif; font-weight: 600; font-size: 13px;
+  letter-spacing: 0.01em; margin-bottom: 5px;
+}
+.note p { margin: 0; font-size: 16px; color: var(--ink-2); }
+
+/* ---------- figure blocks ---------- */
+
+figure { margin: 30px 0; }
+figure svg { display: block; width: 100%; height: auto; }
+.figframe {
+  background: var(--surface); border: 1px solid var(--rule); padding: 22px;
+  overflow-x: auto;
+}
+figcaption {
+  font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--ink-3);
+  margin-top: 10px; line-height: 1.6; max-width: 74ch;
+}
+
+/* ---------- file-order column ---------- */
+
+.order { display: grid; gap: 5px; margin: 26px 0; max-width: 640px; }
+.order .row {
+  display: grid; grid-template-columns: 24px 1fr auto; gap: 12px; align-items: baseline;
+  background: var(--surface); border: 1px solid var(--rule-soft);
+  padding: 8px 12px;
+}
+.order .row.mark { border-color: var(--accent); background: var(--accent-soft); }
+.order .i {
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.order .f { font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+.order .d { font-size: 14px; color: var(--ink-2); text-align: right; }
+.order .gap {
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: var(--ink-3);
+  padding: 2px 0 2px 36px;
+}
+
+/* ---------- tables ---------- */
+
+.tablewrap { overflow-x: auto; margin: 26px 0; border: 1px solid var(--rule); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 580px; }
+th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th {
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; font-weight: 500;
+  letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-3);
+  background: var(--surface-2); border-bottom: 1px solid var(--rule);
+}
+td { font-size: 15.5px; }
+td.mono, td .path { font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+td.num { font-family: "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; font-size: 13px; white-space: nowrap; }
+
+/* ---------- findings ---------- */
+
+.findings { display: grid; gap: 14px; margin-top: 8px; }
+.finding {
+  background: var(--surface); border: 1px solid var(--rule);
+  display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: stretch;
+}
+.dtile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 14px 0;
+}
+.dtile .lvl {
+  font-family: Archivo, sans-serif; font-weight: 700; font-size: 22px; line-height: 1;
+}
+.dtile .lab {
+  font-family: "JetBrains Mono", monospace; font-size: 8.5px; letter-spacing: 0.08em;
+  text-transform: uppercase; opacity: 0.82;
+}
+.d1 { background: var(--eaws-1); color: var(--eaws-1-ink); }
+.d2 { background: var(--eaws-2); color: var(--eaws-2-ink); }
+.d3 { background: var(--eaws-3); color: var(--eaws-3-ink); }
+.d4 { background: var(--eaws-4); color: var(--eaws-4-ink); }
+.d5 { background: var(--eaws-5); color: var(--eaws-5-ink); }
+
+.fbody { padding: 15px 20px 17px; min-width: 0; }
+.fbody h3 { font-size: 19px; line-height: 1.25; }
+.fbody .where {
+  font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--ink-3);
+  margin: 6px 0 9px; word-break: break-word;
+}
+.fbody p { margin: 0 0 0.75em; font-size: 16px; }
+.fbody p:last-child { margin-bottom: 0; }
+.fix {
+  margin-top: 11px; padding-top: 11px; border-top: 1px dashed var(--rule);
+  font-size: 15.5px; color: var(--ink-2);
+}
+.fix b {
+  font-family: Archivo, sans-serif; font-size: 11px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 3px;
+  font-weight: 600;
+}
+
+.disp {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  font-family: "JetBrains Mono", monospace; font-size: 11px;
+  border: 1px solid var(--rule); background: var(--surface-2);
+  padding: 3px 9px; margin: 0 0 9px;
+}
+.disp .k { color: var(--ink-3); letter-spacing: 0.06em; text-transform: uppercase; font-size: 9.5px; }
+.disp .v { color: var(--ink); }
+.disp.open { border-color: var(--accent); background: var(--accent-soft); }
+
+
+/* ---------- scale legend ---------- */
+
+.scale { display: flex; flex-wrap: wrap; gap: 0; margin: 22px 0 30px; border: 1px solid var(--rule); }
+.scale div {
+  flex: 1 1 90px; padding: 9px 11px;
+  font-family: "JetBrains Mono", monospace; font-size: 10.5px; letter-spacing: 0.03em;
+}
+.scale div b { display: block; font-size: 14px; font-family: Archivo, sans-serif; }
+
+/* ---------- verdict list ---------- */
+
+.holds { display: grid; gap: 0; margin: 22px 0; border-top: 1px solid var(--rule); }
+.holds li {
+  list-style: none; display: grid; grid-template-columns: 30px minmax(0,1fr);
+  gap: 12px; padding: 13px 0; border-bottom: 1px solid var(--rule-soft);
+}
+.holds { padding-left: 0; margin-left: 0; }
+.holds .tick {
+  font-family: Archivo, sans-serif; font-weight: 700; color: var(--accent); font-size: 16px;
+}
+.holds p { margin: 0; font-size: 16px; }
+.holds strong { font-family: Archivo, sans-serif; font-weight: 600; font-size: 16px; }
+
+/* ---------- ordered plan ---------- */
+
+.plan { counter-reset: step; display: grid; gap: 12px; margin: 24px 0 0; padding: 0; }
+.plan li {
+  list-style: none; counter-increment: step;
+  display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 14px;
+  background: var(--surface); border: 1px solid var(--rule); padding: 14px 18px;
+}
+.plan li::before {
+  content: counter(step);
+  font-family: Archivo, sans-serif; font-weight: 700; font-size: 17px; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.plan p { margin: 0; font-size: 16px; }
+.plan .h { font-family: Archivo, sans-serif; font-weight: 600; font-size: 17px; margin-bottom: 3px; }
+
+footer {
+  padding: 40px 0 64px; color: var(--ink-3);
+  font-family: "JetBrains Mono", monospace; font-size: 11.5px; line-height: 1.8;
+}
+
+@media (max-width: 700px) {
+  body { font-size: 16px; }
+  .sec-head, .body { grid-template-columns: 1fr; }
+  .sec-num { padding-top: 0; margin-bottom: 8px; }
+  .body > * { grid-column: 1; }
+  .wrap { padding: 0 18px; }
+  .masthead { padding: 46px 0 34px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
+</style>
+
+<div class="topbar">
+  <div class="wrap">
+    <span class="brand">Inside the Snowdesk Map</span>
+    <nav class="topnav">
+      <a href="#idea">the idea</a>
+      <a href="#stack">what's drawn</a>
+      <a href="#state">the fast trick</a>
+      <a href="#files">the code</a>
+      <a href="#talk">how it talks</a>
+      <a href="#server">the server</a>
+      <a href="#tests">tests</a>
+      <a href="#review">review</a>
+      <a href="#findings">findings</a>
+      <a href="#tickets">tickets</a>
+    </nav>
+  </div>
+</div>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow">Map review · cycle 09 · 8 November 2026</p>
+    <h1>Inside the Snowdesk Map</h1>
+    <p class="standfirst">A 141-commit cycle, almost entirely structural rather than feature-by-feature: the map page and its JSON API moved out of <code>apps/public</code> into their own <code>apps/map</code> app (SNOW-1428), the map's ~130 classic scripts now ship as two built bundles in production instead of one tag each (SNOW-1412), and a second 3D arc folded a full Dated/Terrain mode toggle into the map (SNOW-1394/1421/1422) with 3D as an orthogonal "view" of either mode (SNOW-1449/1452), plus a flag-gated "beyond Switzerland" winter map restyled from OpenStreetMap vector tiles (SNOW-1460). Both findings this series carried in are still open and correctly so: re-derived from the code rather than trusted from Linear, <code>SNOW-1364</code> (14 stale <code>home.html</code> comments) and <code>SNOW-1365</code> (<code>ski_tours_geojson</code> varying on <code>Cookie</code> it doesn't need) are both exactly as they were, both still <code>Ready for dev</code>. No new defect cleared this series' bar for a ticket — the closest candidate, a second endpoint varying on <code>Cookie</code>, turned out on inspection to justify it correctly, unlike its still-unfixed neighbour. Two one-sentence doc corrections were small enough to fix in this cycle's own PR: the split itself, reviewed on the day it landed, left two stale <code>apps/public/api.py</code> references behind in <code>docs/map-and-api.md</code>.</p>
+    <p class="byline">Baseline <span class="mono">0b9ed87</span> → <span class="mono">ababe1f</span> (141 commits, 96 touching this subsystem) · No new findings, so no parent ticket this cycle — see §11 · Sections 01–07 explain the subsystem for engineers who don't write JavaScript, carried forward from cycle 08 and corrected against this week's diff; sections 08–11 are the review, rewritten fresh. Every number was re-measured against this checkout, not carried over.</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="figures">
+    <div class="fig"><span class="n">146</span><span class="l">first-party script<br>files on the page</span></div>
+    <div class="fig"><span class="n">36,329</span><span class="l">lines of our<br>own JS</span></div>
+    <div class="fig"><span class="n">90</span><span class="l">map layers<br>34 data sources</span></div>
+    <div class="fig"><span class="n">7</span><span class="l">SQL queries<br>to render</span></div>
+    <div class="fig"><span class="n">~48 ms</span><span class="l">server render<br>time, warm</span></div>
+    <div class="fig"><span class="n">655.4 KiB</span><span class="l">JS over the<br>wire, gzipped</span></div>
+  </div>
+</div>
+
+<main class="wrap">
+
+<!-- 1 -->
+<section id="idea">
+  <div class="sec-head">
+    <div class="sec-num">01</div>
+    <div>
+      <h2>The one idea you need before reading any of the code</h2>
+      <p class="kicker">A web map is not a picture, and nothing in this codebase draws anything.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p class="lede">The library doing the drawing is MapLibre. Think of it as a small rendering engine with a declarative interface, closer to a scene graph than to a canvas API. You never issue a draw call. You hand it two things:</p>
+      <p><strong>Sources</strong> — where data comes from. A source is a URL plus a format: "fetch this GeoJSON", "fetch these image tiles". <strong>Layers</strong> — how to paint a source. A layer names its source, picks a shape (fill, line, symbol, raster), and gives paint rules for colour, width and opacity. MapLibre resolves that description into WebGL every frame.</p>
+      <p>Everything in <code>map.js</code> is therefore one of four verbs: add a source, add a layer, change a property on a layer, or attach state to a feature. There is no render loop of ours anywhere. When the map changes, it is because one of those four things changed and MapLibre redrew.</p>
+      <p>The second thing worth internalising: paint rules are not functions, they are <em>data</em>. A colour is written as a small JSON expression the engine evaluates per feature — a lookup table, not a callback. That is why colouring 149 polygons costs nothing: we are not calling our code 149 times, we are handing the GPU a table.</p>
+      <div class="note">
+        <div class="t">Why this matters for reading the code</div>
+        <p>If you go looking for the function that draws a region, you will not find it. Look instead for the function that <em>describes</em> the region layer — <code>installRegionsLayers</code> — and for the function that changes one number on it later.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="stack">
+  <div class="sec-head">
+    <div class="sec-num">02</div>
+    <div>
+      <h2>What is actually on screen</h2>
+      <p class="kicker">Three independent stacks, from three different owners — and now one more axis: which of two modes the map is in.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>The map looks like one image. It is three stacks that know nothing about each other, and almost every subtlety in the code comes from that separation.</p>
+    </div>
+    <div class="wide">
+      <figure>
+        <div class="figframe">
+          <svg viewBox="0 0 900 372" role="img" aria-label="Cross-section of the map's layer stack: basemap tiles at the bottom, then the slope raster, then our region polygons and their fill, then markers on top.">
+            <defs>
+              <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+              </marker>
+            </defs>
+            <g font-family="JetBrains Mono, monospace" font-size="11.5">
+
+              <!-- band 4: markers -->
+              <rect x="250" y="16" width="570" height="52" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <circle cx="300" cy="42" r="7" fill="#1a73e8"/>
+              <circle cx="336" cy="42" r="7" fill="#e8711a"/>
+              <path d="M372 35 l14 0 l0 14 l-14 0 z" fill="var(--accent)"/>
+              <text x="410" y="39" fill="var(--ink)" font-size="12.5">markers · favourites, observations, routes, SAC tours</text>
+              <text x="410" y="55" fill="var(--ink-3)">always re-lifted to the top after every install</text>
+
+              <!-- band 3: our data -->
+              <rect x="250" y="82" width="570" height="72" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <rect x="272" y="100" width="34" height="22" fill="#ff9900"/>
+              <rect x="308" y="100" width="34" height="22" fill="#ffff00"/>
+              <rect x="344" y="100" width="34" height="22" fill="#ff0000"/>
+              <rect x="380" y="100" width="34" height="22" fill="#ccff66"/>
+              <text x="430" y="106" fill="var(--ink)" font-size="12.5">regions-fill · the danger choropleth — Dated mode only</text>
+              <text x="430" y="122" fill="var(--ink-3)">one colour per region, from feature-state</text>
+              <text x="272" y="143" fill="var(--ink-3)">regions-line/label · ski tours/rest zones — Terrain mode only · trip/route layers — shared</text>
+
+              <!-- band 2: slope -->
+              <rect x="250" y="168" width="570" height="46" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <rect x="272" y="180" width="142" height="22" fill="var(--accent)" opacity="0.34"/>
+              <text x="430" y="188" fill="var(--ink)" font-size="12.5">slope-raster · steep terrain, and the DEM for 3D</text>
+              <text x="430" y="204" fill="var(--ink-3)">painted on-device, see cycle 06; terrain source new this cycle</text>
+
+              <!-- band 1: basemap -->
+              <rect x="250" y="228" width="570" height="60" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <g opacity="0.5" stroke="var(--ink-3)" fill="none">
+                <path d="M272 268 q22 -22 44 0 t44 0"/>
+                <path d="M272 258 q22 -22 44 0 t44 0"/>
+                <path d="M272 248 q22 -22 44 0 t44 0"/>
+              </g>
+              <text x="430" y="252" fill="var(--ink)" font-size="12.5">basemap · terrain, roads, place names</text>
+              <text x="430" y="268" fill="var(--ink-3)">swisstopo, restyled OSM past the border (flagged)</text>
+
+              <!-- left labels -->
+              <g fill="var(--ink-3)" font-size="10.5" letter-spacing="0.06em">
+                <text x="20" y="46">OURS — DRAWN LAST</text>
+                <text x="20" y="118">OURS — THE PRODUCT</text>
+                <text x="20" y="194">OURS, ON-DEVICE</text>
+                <text x="20" y="262">THIRD PARTY</text>
+              </g>
+              <line x1="230" y1="20" x2="230" y2="288" stroke="var(--rule)"/>
+
+              <!-- right annotation -->
+              <g color="var(--accent)">
+                <line x1="852" y1="288" x2="852" y2="30" stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)"/>
+              </g>
+              <text x="836" y="150" fill="var(--accent)" font-size="11">paint</text>
+              <text x="836" y="164" fill="var(--accent)" font-size="11">order</text>
+
+              <!-- footer note -->
+              <line x1="20" y1="312" x2="880" y2="312" stroke="var(--rule)"/>
+              <text x="20" y="334" fill="var(--ink-2)" font-size="12">Swapping the basemap destroys and rebuilds everything above it — unchanged. New this cycle: which of these layers is even meant to be visible now also depends on Dated vs Terrain mode.</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption>90 layers over 34 data sources — up from 84/32, resolved id by id for every <em>literal</em> call site: <span class="mono">rest_zones.js</span> (+1 source/+2 layers, the wildlife-rest-zones polygons, behind <span class="mono">route_drawing</span>), <span class="mono">map_region_pick.js</span> (+0/+3, an ephemeral pick-task outline removed when the task closes), and <span class="mono">map_3d_terrain.js</span> (+1/+1, the DEM elevation source and its hillshade). <strong>Not counted:</strong> the new "beyond Switzerland" winter map (<span class="mono">map_beyond_switzerland.js</span>) splices a fetched OSM vector-tile style's own <span class="mono">sources</span>/<span class="mono">layers</span> arrays directly into the map style object rather than calling <span class="mono">addSource</span>/<span class="mono">addLayer</span> — a materially different installation path from everything else on this page — so its contribution is data-driven and genuinely not resolvable by reading the source; see §05.</figcaption>
+      </figure>
+    </div>
+    <div class="col">
+      <p>The consequence people trip over: the basemap is not a background image, it is a whole style document. Switching from OpenFreeMap to swisstopo replaces the entire scene — our sources and layers included. Everything we added has to be re-added, and everything we coloured has to be re-coloured. <code>repaintAfterStyleSwap</code> exists for exactly that, and is unchanged this cycle.</p>
+      <div class="note">
+        <div class="t">New this cycle: the map now has two modes, and a layer belongs to one, the other, or both</div>
+        <p>SNOW-1394/1421/1422 (behind the <code>map_modes</code> flag) give the map a Dated segment ("Conditions": the bulletins, the bulletin-grouping outline, weather, the season scrubber) and a Terrain segment (steep terrain, ski tours, ski summits, rest zones) — and most of the stack (regions, routes, resorts, pins) is shared. The discipline is named explicitly in the decision doc: <strong>suppression, never preference</strong>. Switching modes never calls an overlay's own <code>show()</code>/<code>hide()</code> and never writes its stored setting — it ANDs a mode-only <code>SUPPRESSION.MAP_MODE</code> flag onto whatever the reader already chose, through each overlay's <code>setSuppressed</code> hook (<code>pwaMapModeCore.ONLY_IN</code>). Leaving Terrain brings every overlay back exactly as it was. See <a href="../decisions/the-map-has-a-dated-mode-and-a-terrain-mode.md">the decision doc</a>.</p>
+      </div>
+      <div class="note">
+        <div class="t">3D is a view of either mode, not a mode of its own</div>
+        <p>A second 3D arc this cycle (SNOW-1438–1470-ish) replaced the standalone <code>/map/3d/</code> page (now a redirect, SNOW-1450) with <code>?view=3d</code> on <code>/map/</code> itself. SNOW-1449 first offered it in Terrain only; SNOW-1452 (6 Nov) widened it to both modes, so the mode says <em>what</em> the map shows and the view says <em>how</em> it is drawn — in Dated the danger fill becomes a light wash and problem terrain drapes on the relief. The view is never stored and never written into the mode: a bare <code>/map/</code> always opens flat. All of it — <code>map_3d_core.js</code>, the terrain/DEM install, the fly-past recorder, the device test panel — sits behind the <code>map_3d</code> flag and loads outside the map bundle when the flag is off, the same discipline cycle 08 praised for the SAC-tours prototype. A second large prototype, a second clean boundary.</p>
+      </div>
+      <div class="note">
+        <div class="t">And a third: the winter map past the Swiss border</div>
+        <p><code>map_beyond_switzerland</code> (SNOW-1460) restyles OpenStreetMap vector tiles with the winter style's own layers, clips them to outside the swisstopo extent, and adds our own relief from DEM tiles and swisstopo's scree pattern on OSM scree — in 2D and 3D. Also flag-gated, also outside the bundle when off, also correctly inert for an ordinary visitor today.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 -->
+<section id="state">
+  <div class="sec-head">
+    <div class="sec-num">03</div>
+    <div>
+      <h2>The trick that makes the season scrubber instant</h2>
+      <p class="kicker">Separate the shape of a thing from what is currently true about it.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>Dragging the scrubber recolours all 149 regions for a different day. Naïvely, that is a request per day and a re-upload of every polygon. It is neither.</p>
+      <p>MapLibre lets you attach a small bag of values to a feature <em>beside</em> the geometry, without touching the source — <em>feature-state</em>. The fill layer's colour expression reads that bag. So the geometry is uploaded to the GPU exactly once, and changing a day is 149 assignments into a side table.</p>
+    </div>
+    <div class="wide">
+      <figure>
+        <div class="figframe">
+          <svg viewBox="0 0 900 300" role="img" aria-label="Diagram: region geometry is fetched once at 184 kilobytes and cached for a day, while ratings are 3 kilobytes per day; scrubbing a new day costs 149 feature-state writes and no network.">
+            <g font-family="JetBrains Mono, monospace" font-size="11.5">
+
+              <text x="20" y="24" fill="var(--ink-3)" font-size="10.5" letter-spacing="0.08em">FETCHED ONCE, CACHED 24 HOURS</text>
+              <rect x="20" y="36" width="300" height="88" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <text x="38" y="62" fill="var(--ink)" font-size="13">/api/regions.geojson</text>
+              <text x="38" y="82" fill="var(--ink-2)">149 polygons · 184 KB</text>
+              <text x="38" y="100" fill="var(--ink-3)">the shape of Switzerland</text>
+              <text x="38" y="116" fill="var(--ink-3)">changes when a fixture changes</text>
+
+              <text x="20" y="164" fill="var(--ink-3)" font-size="10.5" letter-spacing="0.08em">FETCHED PER SEASON, HELD IN MEMORY</text>
+              <rect x="20" y="176" width="300" height="88" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <text x="38" y="202" fill="var(--ink)" font-size="13">/api/ratings/?country=ch</text>
+              <text x="38" y="222" fill="var(--ink-2)">~3 KB per day requested</text>
+              <text x="38" y="240" fill="var(--ink-3)">{"2026-02-16": {"CH-4115": 3, …}}</text>
+              <text x="38" y="256" fill="var(--ink-3)">one small integer per region per day</text>
+
+              <!-- arrows into the merge -->
+              <g stroke="var(--rule)" fill="none" stroke-width="1.3">
+                <path d="M320 80 L400 80 L400 148"/>
+                <path d="M320 220 L400 220 L400 152"/>
+              </g>
+
+              <rect x="400" y="118" width="216" height="64" fill="var(--accent-soft)" stroke="var(--accent)"/>
+              <text x="418" y="142" fill="var(--ink)" font-size="12.5">setFeatureState()</text>
+              <text x="418" y="162" fill="var(--ink-2)">149 writes · 0 bytes network</text>
+
+              <g stroke="var(--accent)" fill="none" stroke-width="1.3">
+                <path d="M616 150 L680 150"/>
+                <path d="M672 144 L680 150 L672 156" fill="var(--accent)"/>
+              </g>
+
+              <rect x="688" y="106" width="192" height="88" fill="var(--surface-2)" stroke="var(--rule)"/>
+              <text x="704" y="130" fill="var(--ink)" font-size="12.5">fill-color</text>
+              <text x="704" y="148" fill="var(--ink-3)">["match", state.rating,</text>
+              <text x="716" y="164" fill="var(--ink-3)">1 → low, 2 → moderate…]</text>
+              <text x="704" y="184" fill="var(--ink-2)">evaluated on the GPU</text>
+
+              <line x1="20" y1="284" x2="880" y2="284" stroke="var(--rule)"/>
+              <text x="20" y="300" fill="var(--ink-2)" font-size="12">Cost of scrubbing to another day: 149 assignments. No fetch, no re-upload, no re-parse.</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption>The same mechanism drives the timelapse. Unchanged this cycle — the scrubber itself is a Dated-mode-only control now (§02), but the mechanism underneath it is untouched.</figcaption>
+      </figure>
+    </div>
+    <div class="col">
+      <p>This is a genuinely good decision and it pays for itself twice: it is why the scrubber feels native, and it is why the whole season fits in a few tens of kilobytes.</p>
+      <p>It has one sharp edge, and the codebase has been cut by it. Feature-state lives with the source. Destroy the source — which is what a basemap swap does — and every region falls back to "no rating" and the map goes grey. So every style change must trigger a full repaint from whatever day is currently displayed. That is a real coupling between two features that otherwise have nothing to do with each other, and it is the reason a basemap picker is 500 lines rather than 50.</p>
+      <div class="note">
+        <div class="t">The compensating design</div>
+        <p>Danger colours are painted <em>opaque</em>, with transparency pre-blended into the colour by <code>choropleth_core.js</code>. A translucent fill would blend with whatever basemap is underneath, so the same rating rendered as five different colours across five basemaps. On a safety product that is not a cosmetic bug. <code>slope_classes_core.js</code>'s five-degree palette, shared since cycle 06 by the main map's slope layer, the route line's slope colouring and the terrain filter, follows the same rule and is untouched this cycle.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4 -->
+<section id="files">
+  <div class="sec-head">
+    <div class="sec-num">04</div>
+    <div>
+      <h2>Where the code lives, and the one rule that governs it</h2>
+      <p class="kicker">146 first-party files, no bundler, no import statements — but production now ships them as two files, not 129.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>Browsers offer two ways to load a script. <em>Modules</em> declare their dependencies with <code>import</code> and each gets a private namespace. <em>Classic scripts</em> — the older form — all share one namespace, and a name declared in one file is visible in every file that loads after it.</p>
+      <p>Snowdesk uses classic scripts throughout, and the load-order discipline from earlier cycles is completely unchanged: a variable declared in <code>map_state.js</code> is simply <em>in scope</em> by the time <code>map.js</code> runs, and the graph is the order of names in a list rather than the order of <code>&lt;script&gt;</code> tags in a template. What changed this cycle is <strong>where that list lives and what it becomes in production.</strong></p>
+      <div class="note">
+        <div class="t">New this cycle: the map's scripts ship as two built bundles (SNOW-1412)</div>
+        <p><code>static/js/bundles/map.txt</code> (87 members) and <code>static/js/bundles/map_surfaces.txt</code> (42 members) now name the load order as a plain text list, one filename per line, instead of the order of script tags in <code>map.html</code>. <code>{% js_bundle "map" %}</code> (<code>apps/public/templatetags/js_bundles.py</code>) renders one tag per member when <code>settings.JS_BUNDLES</code> is off (development, tests — so every file is still independently debuggable locally) and one tag for the built file when it is on (staging, production, perf). <code>bin/bundle-js</code ) concatenates each list, after <code>bin/minify-js</code> and before <code>collectstatic</code>, in <code>bin/build.sh</code>. The two Python and Node readers share the same tiny list-parsing format on purpose.</p>
+        <p>The reason is reliability, not bytes: each of the ~125 separate scripts was its own entry in the service worker's shell cache, so a device could hold some and not others — after a dropped carry, a part-way-failed warm, an eviction — and the map then booted with some features silently missing. One file per list is either cached or it is not. See <a href="../decisions/the-map-page-ships-one-script-bundle.md">the decision doc</a> for the accepted trade-offs: a top-level throw in one member now stops every member after it in that bundle (accepted — wrapping members in <code>try {}</code> would break the shared scope); there is no source map in production (decided 2026-11-03, nothing reads one today); a member that opened with <code>'use strict'</code> would be refused by <code>bin/bundle-js</code> rather than silently change the whole bundle's strictness.</p>
+      </div>
+      <div class="note">
+        <div class="t">The practical consequence: 22 script tags on production, not 148</div>
+        <p>A development or test request to <code>/map/</code> still renders 148 <code>&lt;script&gt;</code> tags (146 first-party, 2 vendor) exactly as it always has. On staging and production that collapses to the two built bundles, plus the ~18 scripts that are <code>base.html</code>'s own PWA-shell scripts rather than map bundle members (<code>db.js</code>, <code>pwa_install.js</code>, <code>sw_register.js</code> and the rest — unconditional on every page, not just the map), plus the 2 vendored files — 22 tags in total. <strong>Adding a map module now means adding it to the right list at the right position, not tagging it in the template</strong> — <code>tests/public/templatetags/test_js_bundles.py</code> checks every member exists and is listed exactly once and that each list renders as one contiguous run in order, and <code>tests/map/test_map_script_order.py</code> still checks the order Vitest boots against. Both pass against this cycle's own additions.</p>
+      </div>
+    </div>
+    <div class="wide">
+      <div class="order">
+        <div class="row"><span class="i">01</span><span class="f">map_state.js</span><span class="d">declares the shared handles</span></div>
+        <div class="row"><span class="i">02</span><span class="f">map_basemap_downloads.js</span><span class="d">offline tile bookkeeping</span></div>
+        <div class="row"><span class="i">03</span><span class="f">map_shared.js</span><span class="d">date helpers, ratings cache</span></div>
+        <div class="row mark"><span class="i">04</span><span class="f">map.js</span><span class="d">boot · ~10,300 lines</span></div>
+        <div class="gap">↓ 83 more members of static/js/bundles/map.txt, in the order the list gives</div>
+        <div class="row"><span class="i">—</span><span class="f">map_mode_core.js / map_mode.js</span><span class="d">Dated/Terrain toggle</span></div>
+        <div class="row"><span class="i">—</span><span class="f">rest_zones_core.js / rest_zones.js</span><span class="d">wildlife rest zones</span></div>
+        <div class="gap">↓ then map_surfaces.txt's 42 members (panels, sheets)</div>
+        <div class="gap">↓ then, only behind their flags, outside both bundles: map_3d_core.js and friends, map_beyond_switzerland.js and friends</div>
+      </div>
+    </div>
+    <div class="col">
+      <p>Two things stop this being reckless, both unchanged in mechanism though the second now has two things to check: the template's bundle lists and the test harness's own load order are asserted against each other (now via the lists rather than the template's script tags), so adding a file in one place and forgetting the other is a red build rather than a map that silently stops booting. <code>js-globals-lint</code> still fails on any read of a global name that nothing anywhere assigns — <strong>194 JS files scanned, 0 unknown globals</strong>, up from 165, re-run fresh against this checkout rather than assumed from CI.</p>
+      <div class="note">
+        <div class="t">Files outside the bundle</div>
+        <p>Modules loaded from their own partials still reach shared state through <code>window.snowdeskMapState</code>, frozen so a typo throws instead of returning undefined. The two newest families to use the other route — <code>map_3d_core.js</code> and its siblings, and <code>map_beyond_switzerland.js</code> and its siblings — both load inside the main document but outside either bundle list, behind a template <code>{% if %}</code> on their own waffle flag, so a reader without the flag downloads none of it. <code>map_relief_tuning.js</code>, a staff-only sub-panel one level further in, nests a second <code>{% if %}</code> inside the first.</p>
+      </div>
+      <div class="note">
+        <div class="t">The apps/public → apps/map split (SNOW-1428)</div>
+        <p>The map's JSON API and its page both moved out of <code>apps/public</code> into a new <code>apps/map</code> Django app this cycle (<code>docs/decisions/public-splits-by-surface.md</code>): <code>apps/map/api.py</code> (was <code>apps/public/api.py</code>), <code>apps/map/editor.py</code> (the in-map superuser editor's endpoints), <code>apps/map/templates/public/map.html</code> and <code>_map_embed.html</code> (was under <code>apps/public/templates/</code>). URL names are unchanged — they are still all <code>api:…</code>, routed by <code>apps/public/api_urls.py</code> — so nothing that calls these endpoints by name needed to change. <code>apps/public/api.py</code> still exists; it now holds only the bulletin-sharing and PWA-shell endpoints that were never the map's. This review's own reference doc, <code>docs/map-and-api.md</code>, was reviewed the same day the split landed and still missed two lines pointing at the old path — fixed in this cycle's own PR, see §09.</p>
+      </div>
+      <div class="note">
+        <div class="t">The typed-JS rollout: every new core module opted in again, and the same eleven hold-outs are unchanged for a fourth cycle</div>
+        <p><strong>52 of 63</strong> <code>*_core.js</code> modules now carry <code>// @ts-check</code>, up from 40 of 51 — denominator and typed count both grew by exactly 12, so every new core module this cycle shipped typed from its first commit, continuing cycle 08's pattern. The <strong>eleven still untyped are the identical set cycles 06, 07 and 08 all named</strong>: <code>basemap_cache_core.js</code>, <code>basemap_download_core.js</code>, <code>basemap_manage_core.js</code>, <code>basemap_style_core.js</code>, <code>country_load_core.js</code>, <code>elevation_profile_core.js</code>, <code>layer_visibility_core.js</code>, <code>map_edit_locations_core.js</code>, <code>map_weather_core.js</code>, <code>mutation_queue_core.js</code>, <code>reset_data_summary_core.js</code>. Four cycles unchanged is now a stable pattern rather than a coincidence; still not ticketed, on the same reasoning as before — the recommendation for any one of them is "the next time someone is already in the file", which is exactly the shape of thing this series records as watching rather than assigning. <code>js-types</code> re-ran clean (0 errors) across all 52.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 -->
+<section id="talk">
+  <div class="sec-head">
+    <div class="sec-num">05</div>
+    <div>
+      <h2>How files that can't call each other manage to co-operate</h2>
+      <p class="kicker">A message bus, a rule that each fact has exactly one writer — and now a second discipline built the same way: suppress, never prefer.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>Without imports there is no clean way for the calendar to call into the scrubber. So the files broadcast instead. The browser's own event system is used as a publish/subscribe bus: anyone can fire a named message at the document, anyone can listen for it, and neither side needs a reference to the other.</p>
+      <p>The important discipline layered on top is <strong>one writer per fact</strong>. "Which day is shown" is the fact most things depend on. Three surfaces can change it — the scrubber, the calendar, the timelapse — but only one function commits it. Unchanged this cycle, and the table below is identical to cycle 08's.</p>
+    </div>
+    <div class="wide">
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Message</th><th>Fired by</th><th>Who reacts</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">snowdesk:scrub-to</td><td>calendar</td><td>the scrubber — the only committer</td></tr>
+            <tr><td class="mono">snowdesk:date-changed</td><td>the scrubber, once</td><td>choropleth repaint · bulletin boundary refetch · weather re-projection · the "read the bulletin" link</td></tr>
+            <tr><td class="mono">snowdesk:date-preview</td><td>drag, per frame</td><td>blanks the boundary so it can't lag behind</td></tr>
+            <tr><td class="mono">snowdesk:basemap-changing</td><td>basemap picker</td><td>stops any running timelapse cleanly</td></tr>
+            <tr><td class="mono">snowdesk:placement-focus</td><td>the pin-placement flows</td><td>hides every overlay so you can see the ground</td></tr>
+            <tr><td class="mono">snowdesk:map-ready</td><td>map.js, on first paint</td><td>dismisses the app launch screen</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col">
+      <p>The same overlay registry from earlier cycles is unchanged too: a growing set of surfaces float over the map, only one is ever meaningful at once, and each registers a name plus "are you open?" and "close yourself" with <code>window.pwaMapOverlays</code>.</p>
+      <div class="note">
+        <div class="t">The own-styledata-listener pattern is now a recognised fourth instance, not a one-off</div>
+        <p>Cycle 08 noted that the SAC-tours drawing was the second feature (after the staff-only resort editor) to own its own <code>map.on('styledata', …)</code> reinstall rather than go through the central <code>repaintAfterStyleSwap</code> block, and flagged it as "worth knowing before a third feature invents a third one." This cycle adds two more on the same shape: <code>map_view_3d.js</code>'s terrain relief (<code>map.on('styledata', reinstall); map.on('style.load', reinstall)</code>) and <code>rest_zones.js</code> (<code>map.on('styledata', ready)</code>). Both are safe for the reason cycle 08's instance was: the function behind the listener is itself idempotent and cheaply guarded, so re-running it on every style event costs nothing extra. No shared helper has been written for this shape across four independent implementations; see §10.</p>
+      </div>
+      <div class="note">
+        <div class="t">New this cycle: suppression, never preference, as a second instance of the same discipline</div>
+        <p>The Dated/Terrain mode toggle (§02) states its own rule explicitly, in the decision doc, in words that could describe the date-write rule above without changing a noun: a mode switch is never allowed to rewrite a reader's stored choice, only to AND a temporary hold onto it. <code>pwaMapModeCore.ONLY_IN</code> is the per-mode table; <code>isSuppressed(key, mode)</code> and <code>suppressedIn(mode)</code> are read, never written to, by the overlays themselves; what is actually drawn is "the reader's preference AND-ed with not held" (<code>pwaMapModeCore.effective</code>). It is the same shape as "one writer per fact" applied to visibility instead of to a date, and it is reused correctly at both of this cycle's new boundaries — the Dated/Terrain toggle itself and, more narrowly, the one route-draw exception that is also written down: rest zones show in either mode while a route is being drawn, regardless of the switch, and the general-purpose <code>overlay-visibility-changed</code> backstop is told to leave that one key alone.</p>
+      </div>
+      <div class="note">
+        <div class="t">The honest downside, unchanged in direction</div>
+        <p>Comments as a share of the browser code: <strong>55.9%</strong> this cycle, continuing down from 57.6% (cycle 08) and 61.5% (cycle 07) — the series' first time moving in the same direction for two cycles running, against six cycles of alternating moves before that (58, 58.8, 62.3, 60.5, 61.0, 60.3, 61.5, 57.6, 55.9). Code lines grew 19.5% (30,405 → 36,329) against comment lines' 11.9% (41,222 → 46,133) — both still growing, comments just more slowly, consistent with cycle 08's read that this cycle's biggest arcs (the mode toggle, the 3D/relief rebuild) are dense logic rather than heavily-annotated onboarding surfaces. Still nothing to act on; still watching, now with a direction rather than noise.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 -->
+<section id="server">
+  <div class="sec-head">
+    <div class="sec-num">06</div>
+    <div>
+      <h2>The server side is deliberately boring</h2>
+      <p class="kicker">Plain Django views returning JSON — now living in <code>apps/map</code>, not <code>apps/public</code>.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>Every endpoint the map talks to is a function that takes a request and returns a <code>JsonResponse</code>. Region boundaries are stored as JSON columns rather than in PostGIS, and the one geometric operation the request path needs — "which region contains this point?" — is forty lines of ray-casting in pure Python. None of that changed; what changed is the file it all lives in: <code>apps/map/api.py</code> (SNOW-1428, §04), carrying forward the same docstring-as-index convention cycle 02 first described.</p>
+      <p>Measured against this checkout on a warm cache, the page itself renders in <strong>7 queries</strong> (was 8) in roughly 45–58 ms across runs — within cycle 08's 40–63 ms range, not a regression. Two endpoints are genuinely new this cycle: <code>api:rest_zones_geojson</code> (SNOW-1384, the wildlife-rest-zones layer named in §02, behind <code>route_drawing</code> like the SAC-tours endpoints) and <code>api:map_3d_test_receive</code> (SNOW-1456, a rate-limited <code>POST</code> that stores one anonymous device-capability result from "Test 3D on this device").</p>
+      <div class="note">
+        <div class="t">A second endpoint reads the Vary-on-Cookie rule correctly, where its still-unfixed neighbour does not</div>
+        <p><code>rest_zones_geojson</code> carries <code>@vary_on_headers("Accept-Encoding", "Accept-Language", "Cookie")</code> — the same decorator shape as the still-open <code>SNOW-1365</code> finding below — but its own docstring states why: "the flag is read off the session, hence the Vary on Cookie, so a shared cache never hands one reader's answer to a reader the flag does not cover." <code>flag_is_active(request, "route_drawing")</code> genuinely does consult the request's session for per-user targeting, so this one is correct by inspection — the same check this series ran against <code>ski_tours_geojson</code> last cycle, applied to a brand-new endpoint, with the opposite verdict. One file, one rule, one violation that is a carry-over and one new endpoint that gets it right: see §08 and §10.</p>
+      </div>
+    </div>
+    <div class="wide">
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Endpoint</th><th class="num">Size</th><th class="num">Queries</th><th class="num">Time</th><th>Server cache</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">/api/regions.geojson</td><td class="num">184 KB</td><td class="num">0</td><td class="num">7.6 ms</td><td>day-long, keyed on country (SNOW-896/902)</td></tr>
+            <tr><td class="mono">/api/ratings/</td><td class="num">3.0 KB</td><td class="num">0</td><td class="num">0.9 ms</td><td>5 min / 1 h by date</td></tr>
+            <tr><td class="mono">/api/resorts.geojson</td><td class="num">35 KB</td><td class="num">1</td><td class="num">12.7 ms</td><td>HTTP only — re-queries every call, unchanged since cycle 03</td></tr>
+            <tr><td class="mono">/api/ski-tours.geojson</td><td class="num">per bbox</td><td class="num">2</td><td class="num">2.5 ms</td><td>reference data, ETag + <code>Vary: Cookie</code> — see SNOW-1365</td></tr>
+            <tr><td class="mono">/api/rest-zones.geojson</td><td class="num">per bbox</td><td class="num">1</td><td class="num">2.0 ms</td><td>reference data, ETag + <code>Vary: Cookie</code> — correctly, see above</td></tr>
+            <tr><td class="mono">/api/area-items/</td><td class="num">tiny (anon)</td><td class="num">0–3</td><td class="num">0.5 ms</td><td><code>private, no-store</code> — own data</td></tr>
+            <tr><td class="mono">/api/map-3d-test/</td><td class="num">tiny</td><td class="num">1</td><td class="num">—</td><td><code>POST</code> only, rate-limited 10/h per IP — new this cycle</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col">
+      <p>Every endpoint's query count and cache strategy carried from earlier cycles and not named above is unchanged, re-checked against the current file rather than assumed. <code>resorts.geojson</code> remains the one table entry with no server-side cache, same as every cycle since the third.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7 -->
+<section id="tests">
+  <div class="sec-head">
+    <div class="sec-num">07</div>
+    <div>
+      <h2>Testing, and the rule that keeps it affordable</h2>
+      <p class="kicker">Three layers, and putting a test in the wrong one is treated as a defect.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <p>The project's stated rule is unchanged: work top-down and stop at the first layer that can hold the assertion. The third layer is still capped at roughly a dozen tests — now <strong>13 files, 15 test functions</strong> (against <code>e2e-lint</code>'s backstop of 25, up from 12/13 last cycle, one new journey added). The middle layer grew again: <strong>316 files, 118,028 lines</strong> — up from 278/101,444 at cycle 08, tracking the twelve new <code>*_core.js</code> modules (each shipping with its own Vitest file, §04) plus coverage for the mode toggle and the 3D/relief rebuild.</p>
+      <div class="note">
+        <div class="t">Read this as a design signal</div>
+        <p>Needing a bespoke harness to reproduce your own loading model is the clearest evidence of what the no-modules choice costs. Unchanged assessment from every prior cycle.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8 -->
+<section id="review">
+  <div class="sec-head">
+    <div class="sec-num">08</div>
+    <div>
+      <h2>Review — what holds up</h2>
+      <p class="kicker">The parts a sceptical reader should be told about before the criticism.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="col">
+      <ul class="holds">
+        <li><span class="tick">✓</span><p><strong>A second and third large prototype both ship correctly inert.</strong> The 3D rebuild (<code>map_3d</code> flag) and the beyond-Switzerland winter map (<code>map_beyond_switzerland</code> flag) both load outside the map bundle behind a template <code>{% if %}</code>, exactly the discipline cycle 08 praised for the SAC-tours prototype — now observed a second and third time independently, with no shared helper and no drift between the three implementations.</p></li>
+        <li><span class="tick">✓</span><p><strong>A brand-new endpoint gets the Vary-on-Cookie rule right where an older one still doesn't.</strong> <code>rest_zones_geojson</code>'s docstring states, correctly, why its Cookie vary is necessary (the flag it checks reads the session) — the exact reasoning <code>ski_tours_geojson</code> (still open as <code>SNOW-1365</code>) is missing. The rule survived being applied by a different author to a different endpoint in the same file. See §06, §09.</p></li>
+        <li><span class="tick">✓</span><p><strong>A large structural move left the URL contract untouched.</strong> SNOW-1428 relocated the map's entire JSON API and its templates into a new Django app without renaming a single <code>api:</code> URL name, so nothing that calls these endpoints — not <code>static/js</code>, not another app, not this review's own doc — needed to change on that account alone.</p></li>
+        <li><span class="tick">✓</span><p><strong>Two retired modules left zero dangling references.</strong> <code>map_alerts.js</code> and <code>map_between_seasons.js</code>, both superseded by name this cycle (Today's own panel; date windows taken from the data rather than a fixed season), are gone from the tree with no remaining call site anywhere — confirmed by grep, not inferred from the commit message.</p></li>
+        <li><span class="tick">✓</span><p><strong>A gated help topic is actually gated.</strong> The map-modes decision doc states that <code>/help/#help-topic-map-modes</code> should stay out of the public MCP docs corpus until the rollout; <code>apps/mcp_server/docs_corpus.py</code>'s <code>GATED_HELP_TOPICS</code> does in fact include <code>"map-modes"</code>, read directly rather than trusted from the doc's own claim.</p></li>
+        <li><span class="tick">✓</span><p><strong>Every guard this subsystem has re-runs clean against this checkout, at a larger scale than any prior cycle.</strong> Run fresh for this review: <code>ds-lint</code> (552 templates / 0 violations, up from 486), <code>js-globals-lint</code> (194 JS files / 0 unknown globals, up from 165), <code>i18n-lint</code> (clean), <code>fidelity-lint</code> (78 CAAML paths / 11 sentinels, all classified, unchanged), <code>e2e-lint</code> (13 modules / 15 of 25 tests, up from 12/13), and <code>js-types</code> (0 errors across all 52 opted-in <code>*_core.js</code> modules, up from 40).</p></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 9 -->
+<section id="findings">
+  <div class="sec-head">
+    <div class="sec-num">09</div>
+    <div>
+      <h2>Review — closed, unchanged, new</h2>
+      <p class="kicker">Nothing closed this cycle. Both carried findings re-derived from the code, still open, still correctly scoped. Two watching items continue; one small doc slip fixed inline.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="wide">
+      <div class="scale">
+        <div style="background:var(--eaws-1);color:var(--eaws-1-ink)"><b>1</b>cosmetic</div>
+        <div style="background:var(--eaws-2);color:var(--eaws-2-ink)"><b>2</b>carrying cost</div>
+        <div style="background:var(--eaws-3);color:var(--eaws-3-ink)"><b>3</b>structural</div>
+        <div style="background:var(--eaws-4);color:var(--eaws-4-ink)"><b>4</b>user-visible</div>
+        <div style="background:var(--eaws-5);color:var(--eaws-5-ink)"><b>5</b>data or safety</div>
+      </div>
+
+      <h3 style="margin:34px 0 4px;font-size:22px;">Closed</h3>
+      <div class="note" style="max-width:none;">
+        <p>None this cycle. Both findings carried in from cycle 08 remain open in the code, and both are correctly so — see Unchanged.</p>
+      </div>
+
+      <h3 style="margin:44px 0 4px;font-size:22px;">Unchanged</h3>
+
+      <div class="findings">
+
+        <div class="finding">
+          <div class="dtile d1"><span class="lvl">1</span><span class="lab">cosm</span></div>
+          <div class="fbody">
+            <h3>Fourteen files still carry the stale "home.html" comment outside SNOW-1093's original scope</h3>
+            <p class="disp open"><span class="k">SNOW-1364</span><span class="v">Unchanged — still Ready for dev, still unfixed in code</span></p>
+            <p class="where">tests/js/setup.js, test_favourites.js, test_map_community_report_popup.js, test_map_download_bytes.js, test_map_download_eviction.js, test_map_downloads_manager.js, test_map_groupings_guard.js, test_map_help.js, test_map_layers_menu_position.js, test_map_overlay_exclusivity_surfaces.js, test_map_render_scheduling.js, test_map_roundel_overlay_state.js, test_map_route_legs_core_missing.js, test_pwa_client_version.js</p>
+            <p>Re-grepped against HEAD rather than trusted from Linear's status: all fourteen files named by SNOW-1364 still make the identical claim ("home.html loads it", "script tags in public/home.html") read in context to rule out a legitimate reference to the real marketing homepage. Linear confirms <code>Ready for dev</code>, with Codex's review already on record — this is simply unworked yet, not a hygiene mismatch.</p>
+            <div class="fix"><b>Re-verification</b><code>grep -rln 'home\.html' tests/js/</code> against HEAD; each hit read in context; cross-checked against Linear (<code>Ready for dev</code>, parent <code>SNOW-1363</code>).</div>
+          </div>
+        </div>
+
+        <div class="finding">
+          <div class="dtile d2"><span class="lvl">2</span><span class="lab">cost</span></div>
+          <div class="fbody">
+            <h3>The ski-tours endpoint still varies on Cookie, defeating the public-cache policy it's meant to have</h3>
+            <p class="disp open"><span class="k">SNOW-1365</span><span class="v">Unchanged — still Ready for dev, still unfixed, now at apps/map/api.py:1494</span></p>
+            <p class="where">apps/map/api.py:1494 <code>ski_tours_geojson</code> — <code>@vary_on_headers("Accept-Encoding", "Accept-Language", "Cookie")</code>; moved from <code>apps/public/api.py</code> by SNOW-1428, defect unchanged by the move</p>
+            <p>Re-read the full function body: still no <code>request.user</code> or <code>request.session</code> access, still only <code>request.GET</code>; the docstring's own justification for its Vary is "Names are in the request's language where SAC has one, hence the Vary" — Accept-Language only, no mention of Cookie. The file-move changed the line number (was 1549) and nothing else. Contrast with <code>rest_zones_geojson</code>, a brand-new sibling in the same file that gets the identical decorator shape right — see §06, §08.</p>
+            <div class="fix"><b>Re-verification</b>Read the full function body at its new location; confirmed no session/user access; read the docstring's own stated reason for its Vary tuple; cross-checked against Linear (<code>Ready for dev</code>, parent <code>SNOW-1363</code>).</div>
+          </div>
+        </div>
+
+        <div class="finding">
+          <div class="dtile d1"><span class="lvl">1</span><span class="lab">cosm</span></div>
+          <div class="fbody">
+            <h3>A fetch-budget constant is duplicated across two offline modules</h3>
+            <p class="disp"><span class="k">not ticketed</span><span class="v">watching, unchanged</span></p>
+            <p class="where">static/js/map_basemap_downloads.js:1242 <code>AREA_CONTENT_FETCH_BUDGET_MS</code> · static/js/offline_audit.js:133 <code>MANIFEST_FETCH_BUDGET_MS</code> (both = 15000)</p>
+            <p>Re-verified: both constants are still present, still 15000, each still separately justified by a comment cross-referencing the other's reasoning. Line numbers moved in the first file; the duplication itself did not.</p>
+            <div class="fix"><b>Re-verification</b><code>grep -n FETCH_BUDGET_MS</code> against both files; both comments read in full and match prior cycles' quotes.</div>
+          </div>
+        </div>
+
+        <div class="finding">
+          <div class="dtile d1"><span class="lvl">1</span><span class="lab">cosm</span></div>
+          <div class="fbody">
+            <h3>Comments as a share of the browser code — now falling for a second cycle running</h3>
+            <p class="disp"><span class="k">not ticketed</span><span class="v">watching, trend continues</span></p>
+            <p class="where">measured across the 146 first-party files the map page actually serves (dev/test, unbundled)</p>
+            <p>Re-measured: <strong>55.9%</strong>, down from 57.6% (cycle 08) and 61.5% (cycle 07) — the first time in the series this ratio has moved the same direction for two cycles running, against six cycles of alternation before cycle 08. Still nothing to act on, but now worth watching for a direction rather than noise.</p>
+            <div class="fix"><b>Re-verification</b>Classified every line of all 146 currently-served first-party files by leading token (comment vs code vs blank) against today's HEAD.</div>
+          </div>
+        </div>
+
+      </div>
+
+      <h3 style="margin:44px 0 4px;font-size:22px;">New</h3>
+
+      <div class="findings">
+        <div class="finding">
+          <div class="dtile d1"><span class="lvl">1</span><span class="lab">cosm</span></div>
+          <div class="fbody">
+            <h3>The wire cost jumped 49% in one cycle — proportional to real growth, not a regression, but the biggest single-cycle move the series has recorded</h3>
+            <p class="disp"><span class="k">not ticketed</span><span class="v">watching, new this cycle</span></p>
+            <p class="where">measured from an isolated scratch copy of <span class="mono">static/js</span>, built with the real <span class="mono">bin/minify-js</span> then <span class="mono">bin/bundle-js</span>, gzip −9</p>
+            <p><strong>655.4 KiB</strong> (433.5 KiB first-party: 339.1 KiB <code>map.bundle.js</code> + 65.5 KiB <code>map_surfaces.bundle.js</code> + 28.9 KiB for the 18 PWA-shell scripts that load outside either bundle; 221.9 KiB vendor, unchanged), up from 439.0 KiB — every earlier cycle's single-cycle move was under 5%. The always-loaded file count grew from 127 to 147 (bundle members plus shell scripts), and several of this cycle's new always-on files (the mode toggle, rest zones, the SAC-tours continuation) are substantially larger than the page's per-file average, which is the entire explanation: nothing here is behind a flag the way the 3D/relief arc is. No Lighthouse budget in <code>lighthouserc.json</code> asserts on byte size (only category scores), so nothing failed — this is a number to keep watching, not a defect to fix, and its own recommendation is exactly that: re-measure next cycle rather than open a ticket against a trend.</p>
+            <div class="fix"><b>Check</b>Minified and bundled an isolated scratch copy with the production pipeline's own scripts; gzipped the two bundle outputs and the 18 non-bundled shell scripts; checked <code>lighthouserc.json</code> for a byte-size assertion (none).</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note" style="max-width:none;margin-top:20px;">
+        <div class="t">Inline-fixed in this cycle's own PR, not ticketed</div>
+        <p><code>docs/map-and-api.md</code> (last reviewed 2026-11-05 — the same day SNOW-1428 landed) stated twice that <code>apps/public/api.py</code>'s module docstring documents the map's endpoints and the in-map editor's. Both are stale since the split (§04): the map endpoints' index is now <code>apps/map/api.py</code>'s own docstring, and the editor endpoints' is <code>apps/map/editor.py</code>'s. Both corrected in place, with a note of what moved and when. This series' own reference doc missing two lines on the day of its own subject's biggest structural change is exactly the failure mode cycle 01 named as the founding lesson — caught this time by re-reading the doc against the code rather than trusting its own "last reviewed" date. Single file, two one-sentence corrections, no behaviour change.</p>
+      </div>
+
+      <div class="note" style="max-width:none;margin-top:20px;">
+        <div class="t">A large diff, read against the subsystem's boundary, not assumed from commit titles</div>
+        <p>All 141 commits since baseline were checked against whether they touch <code>static/js</code>, <code>apps/map</code>'s or <code>apps/public</code>'s map endpoints, <code>map.html</code>/<code>_map_embed.html</code> or <code>static/css/map.css</code> — 96 did, the series' largest in-scope share yet. Unlike a feature-by-feature cycle, most of this one is three structural moves (the app split, the script bundling, the mode/view rework) that touch almost every file in the subsystem without changing most of their behaviour — each was read against this subsystem's own established patterns (idempotent installs, layer survival across a <code>setStyle</code> swap, the registry-or-documented-exception question, suppression-never-preference, cached-and-public endpoint shape) rather than assumed safe because it was "just a move."</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- 10 -->
+<section id="plan">
+  <div class="sec-head">
+    <div class="sec-num">10</div>
+    <div>
+      <h2>If only three things get done</h2>
+      <p class="kicker">Two are the same two cycle 08 already asked for. The third is now overdue in a way this cycle's own evidence makes sharper.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="wide">
+      <ol class="plan">
+        <li><div><p class="h">Ship SNOW-1365 — drop <code>Cookie</code> from <code>ski_tours_geojson</code>'s vary tuple</p><p>Unchanged advice, now with a live counter-example sitting a few hundred lines away in the same file: <code>rest_zones_geojson</code>, written this cycle, gets the identical decorator right. The fix has had nothing blocking it for two cycles.</p></div></li>
+        <li><div><p class="h">Ship SNOW-1364 — the second tranche of stale "home.html" comments</p><p>Comment-only, fourteen files, no behaviour change, already scoped and reviewed. Unchanged advice for the same reason as last cycle.</p></div></li>
+        <li><div><p class="h">Write the semgrep rule cycle 08 already proposed — before a fifth hand-written instance of the own-styledata-listener shape shows up too</p><p>Last cycle's plan asked for a static rule over <code>@vary_on_headers(..., "Cookie")</code> without a <code>request.user</code>/<code>request.session</code> read in the function body; this cycle shows exactly why by example — one author got it right by reading the file's own rule carefully, which is not a process a team should depend on repeating by hand forever. The same argument now also applies to the own-<code>styledata</code>-listener pattern (§05), independently reinvented four times with no shared helper and no guard checking the ones that exist against each other.</p></div></li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+
+<!-- 11 -->
+<section id="tickets">
+  <div class="sec-head">
+    <div class="sec-num">11</div>
+    <div>
+      <h2>What this cycle raised</h2>
+      <p class="kicker">No new findings clear this series' bar for a ticket, so no parent ticket this cycle. Both carried children stay exactly where they were. One doc slip fixed inline; two items continue watching.</p>
+    </div>
+  </div>
+  <div class="body">
+    <div class="wide">
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Ticket</th><th>Finding</th><th class="num">Size</th><th>State</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="mono">SNOW-1364</td><td>Stale "home.html" comments in 14 test files, outside SNOW-1093's scope</td><td class="num">S (2)</td><td>Unchanged — Ready for dev</td></tr>
+            <tr><td class="mono">SNOW-1365</td><td><code>ski_tours_geojson</code> varies on Cookie, defeating its own public-cache policy</td><td class="num">S (2)</td><td>Unchanged — Ready for dev</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="col">
+      <p><strong>No new findings, so no parent ticket.</strong> Per this series' own rule, a cycle that finds nothing new ticket-worthy raises nothing rather than an empty parent — a cycle with no findings is a good cycle, not a failed one, even at 141 commits and three structural rewrites. <code>SNOW-1363</code> (cycle 08's parent) stays as the home for both still-open children; this cycle's doc is cross-referenced from it but opens no sibling.</p>
+      <p><strong>Both carried findings were re-derived from the code, not trusted from Linear.</strong> <code>SNOW-1364</code>'s fourteen files were re-grepped individually; <code>SNOW-1365</code>'s function body was re-read in full at its new post-split location. Both remain exactly as scoped, both still <code>Ready for dev</code> — this cycle changed nothing about either except confirming neither has drifted.</p>
+      <p><strong>One finding small enough to fix in this cycle's own PR.</strong> <code>docs/map-and-api.md</code>'s two stale <code>apps/public/api.py</code> references — single file, two sentences, no behaviour change. See §09.</p>
+      <p><strong>Two items continue watching, and a third joined them.</strong> The duplicated fetch-budget constant and the falling comment ratio are unchanged from cycle 08; the 49% wire-cost jump is new, flagged rather than ticketed because its own explanation (proportional growth in always-on files, nothing gated that should be) is not a defect to fix. See §09.</p>
+      <p><strong>Why re-verifying two "nothing changed" findings was still worth the pass.</strong> Both carried findings sit in files this cycle's own structural moves touched directly — <code>ski_tours_geojson</code> moved to a different file at a different line number, and the stale-comment files sit in the same <code>tests/js/</code> tree this cycle added twelve new Vitest files to. A move can silently fix or silently reintroduce a finding; checking the actual current line, not the ticket's memory of an old one, is what this pass is for. This document re-ran six lint/type guards (<code>ds-lint</code>, <code>js-globals-lint</code>, <code>i18n-lint</code>, <code>e2e-lint</code>, <code>fidelity-lint</code>, <code>js-types</code> — all clean, see §08) plus <code>docs-lint</code> on itself, re-measured every figure in the strip from scratch against a scratch-built production bundle, and read all 141 commits against the subsystem boundary rather than trusting any commit title.</p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <div>Figures measured against this checkout on 8 November 2026 — page render and query counts via the Django test client (warm cache; <span class="mono">DEBUG=True</span>, <span class="mono">connection.queries</span>). Wire sizes are gzip −9 over the deploy's own pipeline, reproduced in an isolated scratch copy: <span class="mono">static/js</span> copied aside, <span class="mono">bin/minify-js</span> then <span class="mono">bin/bundle-js</span> copied alongside it and a <span class="mono">node_modules</span> link added, laid out as <span class="mono">&lt;scratch&gt;/bin/*</span> next to <span class="mono">&lt;scratch&gt;/static</span> so <span class="mono">path.resolve(__dirname, '..')</span> resolves correctly — the repo's own <span class="mono">static/js</span> was never touched. The wire-cost figure covers everything the page loads unconditionally: the two built bundles (339.1 KiB + 65.5 KiB first-party gzipped, 129 members), the 18 always-loaded PWA-shell scripts that are not bundle members (28.9 KiB), and the 2 vendored <span class="mono">*.min.js</span> files gzipped as shipped (221.9 KiB, unchanged from cycle 08 — a useful cross-check that the measurement method is consistent). It deliberately excludes everything behind the <span class="mono">map_3d</span> and <span class="mono">map_beyond_switzerland</span> flags, which ships to nobody today outside superusers. Layer/source counts are literal, resolvable <span class="mono">addSource</span>/<span class="mono">addLayer</span> call sites only — see §02's figure caption for what this cycle's one data-driven exception (the OSM style splice) is and why it is reported separately rather than estimated. Code/comment lines are classified by each line's leading token across all 146 currently-served first-party files, re-run fresh rather than carried forward.</div>
+  <div>Further reading in the repository: <span class="mono">docs/map-and-api.md</span> · <span class="mono">docs/map-page-functional-spec.md</span> · <span class="mono">docs/offline-map.md</span> · <span class="mono">docs/client-side-tests.md</span> · <span class="mono">docs/decisions/public-splits-by-surface.md</span> · <span class="mono">docs/decisions/the-map-page-ships-one-script-bundle.md</span> · <span class="mono">docs/decisions/the-map-has-a-dated-mode-and-a-terrain-mode.md</span> · <span class="mono">docs/decisions/a-3d-map-is-maplibre-terrain.md</span> · <span class="mono">docs/decisions/the-winter-map-beyond-switzerland-is-restyled-osm.md</span> · <span class="mono">docs/decisions/</span></div>
+  <div>Cycle 09 of the map-review series. Conventions: <span class="mono">docs/map-reviews/README.md</span>. Re-run weekly by the <span class="mono">audit-map</span> skill; run <span class="mono">/audit-map</span> for a fresh read at any time.</div>
+</footer>
