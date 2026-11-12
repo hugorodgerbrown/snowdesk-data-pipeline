@@ -2693,6 +2693,16 @@
     start: startRegionDownload,
     estimate: estimateRegionDownload,
     name: regionName,
+    /**
+     * Resolves once the map's first regions are loaded, so `name` can
+     * answer for them. A region in a country loaded later arrives with
+     * `snowdesk:regions-loaded` instead.
+     *
+     * @returns {Promise<void>}
+     */
+    ready() {
+      return MAP_READY_PROMISE.then(() => undefined);
+    },
 
     /**
      * SNOW-932 review: re-probe the focused region and repaint its roundel.

@@ -865,8 +865,38 @@
    */
   function orphanAreaLabel(orphan) {
     const named = orphan && orphan.regionId ? window.pwaRegionDownload?.name?.(orphan.regionId) : '';
+    if (orphan && orphan.regionId && !named) awaitRegionNames();
     return named || kindLabel(orphan && orphan.custom ? 'custom' : 'region');
   }
+
+  // The map loads its regions after the sheet can first render — a page
+  // opened at /map/?downloads=open renders before them — so a row named
+  // by its kind is named again once they arrive: once when the map's first
+  // regions are in, and on every later country's `snowdesk:regions-loaded`.
+  var regionNamesMissed = false;
+  var regionNamesWaited = false;
+
+  /**
+   * Note that a row could not be named yet, and render once more when the
+   * map's first regions are loaded. Only once: a region the map still does
+   * not hold then waits for `snowdesk:regions-loaded`.
+   *
+   * @returns {void}
+   */
+  function awaitRegionNames() {
+    regionNamesMissed = true;
+    if (regionNamesWaited) return;
+    const bridge = window.pwaRegionDownload;
+    if (!bridge || typeof bridge.ready !== 'function') return;
+    regionNamesWaited = true;
+    bridge.ready().then(function () {
+      if (regionNamesMissed && !sheet.hidden) render();
+    });
+  }
+
+  document.addEventListener('snowdesk:regions-loaded', function () {
+    if (regionNamesMissed && !sheet.hidden) render();
+  });
 
   /**
    * A label for an account-only area that has no name.
@@ -1044,6 +1074,7 @@
    * @returns {Promise<void>}
    */
   async function render() {
+    regionNamesMissed = false;
     const core = manageCore();
     if (!core) return;
 

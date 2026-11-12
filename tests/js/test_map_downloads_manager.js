@@ -1780,6 +1780,39 @@ describe('a download that did not finish (Hugo, 12 Nov 2026)', () => {
     expect(def.querySelector('[data-incomplete-body]').textContent).toContain('Retry');
   });
 
+  it('names it again once the map has loaded its regions', async () => {
+    // A page opened at /map/?downloads=open renders before the regions.
+    let loaded = false;
+    let markReady;
+    window.pwaRegionDownload = {
+      name: vi.fn(() => (loaded ? 'Martigny-Verbier' : '')),
+      ready: vi.fn(() => new Promise((resolve) => (markReady = resolve))),
+    };
+    const row = await render([ORPHAN_REGION]);
+    expect(row.querySelector('[data-row-label]').textContent).toBe('Region');
+
+    loaded = true;
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([ORPHAN_REGION]);
+    markReady();
+    await settle();
+    expect(firstRowElement().querySelector('[data-row-label]').textContent).toBe('Martigny-Verbier');
+  });
+
+  it('names it again when a later country loads', async () => {
+    let loaded = false;
+    window.pwaRegionDownload = {
+      name: vi.fn(() => (loaded ? 'Martigny-Verbier' : '')),
+      ready: vi.fn(() => new Promise(() => {})),
+    };
+    await render([ORPHAN_REGION]);
+
+    loaded = true;
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([ORPHAN_REGION]);
+    document.dispatchEvent(new CustomEvent('snowdesk:regions-loaded', { detail: { regionIDs: ['CH-4115'] } }));
+    await settle();
+    expect(firstRowElement().querySelector('[data-row-label]').textContent).toBe('Martigny-Verbier');
+  });
+
   it('names a region the map does not hold by its kind', async () => {
     window.pwaRegionDownload = { name: vi.fn(() => '') };
     const row = await render([ORPHAN_REGION]);

@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from playwright.sync_api import expect
 from waffle.models import Flag
 
 from apps.core.sw_shell import served_cache_version
@@ -275,7 +276,12 @@ def test_a_failed_region_is_named_and_completes_from_its_row(
         f'#map-downloads-sheet li[data-row-area="region-{subject.region_id}"]'
     )
     row.wait_for(state="visible", timeout=20_000)
-    assert row.locator("[data-row-label]").inner_text() == subject.region_name
+    # The sheet can render before the map has loaded its regions, and then
+    # names the row again once they arrive; wait for that, not the first
+    # paint.
+    expect(row.locator("[data-row-label]")).to_have_text(
+        subject.region_name, timeout=20_000
+    )
     assert row.locator("[data-row-meta]").inner_text() == "Region · Incomplete"
     assert (
         row.locator("[data-row-status]").get_attribute("data-area-verdict")
