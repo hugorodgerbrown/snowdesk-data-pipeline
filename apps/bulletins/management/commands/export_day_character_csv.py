@@ -40,6 +40,7 @@ from apps.bulletins.models import Bulletin
 from apps.bulletins.services.render_model import (
     DayCharacter,
     compute_day_character,
+    has_day_character,
 )
 from apps.core.command_register import RegisteredCommand
 
@@ -252,7 +253,9 @@ def _row_for_bulletin(bulletin: Bulletin) -> list[Any]:
 
     min_lower = min(lower_elevations) if lower_elevations else ""
 
-    day_char = compute_day_character(render_model)
+    day_char = (
+        compute_day_character(render_model) if has_day_character(render_model) else None
+    )
     region_ids = sorted(bulletin.regions.values_list("region_id", flat=True))
 
     return [
@@ -263,7 +266,7 @@ def _row_for_bulletin(bulletin: Bulletin) -> list[Any]:
         len(region_ids),
         ";".join(region_ids),
         _day_character_key(day_char),
-        str(day_char.explainer),
+        str(day_char.explainer) if day_char is not None else "",
         danger_number,
         danger_subdivision,
         len(traits),
@@ -276,16 +279,17 @@ def _row_for_bulletin(bulletin: Bulletin) -> list[Any]:
     ]
 
 
-def _day_character_key(dc: DayCharacter) -> str:
+def _day_character_key(dc: DayCharacter | None) -> str:
     """
     Return the canonical key for a ``DayCharacter`` instance.
 
     ``compute_day_character`` stamps the cascade key on every instance it
     builds, so this reads it straight off the dataclass rather than
     depending on the localised ``label`` proxy, which varies with the
-    active gettext locale.
+    active gettext locale. An unrated bulletin has no character, ``""``
+    (SNOW-1437).
     """
-    return dc.key
+    return dc.key if dc is not None else ""
 
 
 def _bool_csv(value: bool) -> str:

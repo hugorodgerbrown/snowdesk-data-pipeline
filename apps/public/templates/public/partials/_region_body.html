@@ -200,7 +200,13 @@ Context:
             {% else %}
                 {% include "includes/_dated_eyebrow.html" with text=avalanche_problems_label data_testid="avalanche-problems-heading" class_extra="mb-3" day=section_day another_day=another_day only %}
             {% endif %}
-            {% if not panel.problem_cards %}
+            {% if panel.danger_key == "no_rating" %}
+                {# The provider did not assess this day (SNOW-1437): say so, and #}
+                {# never call the snowpack stable.                                #}
+                <div data-testid="no-rating-card">
+                    {% include "includes/_callout.html" with kind="info" heading=panel.danger_label body=panel.danger_sub only %}
+                </div>
+            {% elif not panel.problem_cards %}
                 <div class="rounded-card border border-border bg-card px-4 py-5 text-center mb-4">
                     <p class="text-sm font-medium text-text-1 mb-0.5">
                         {% trans "No avalanche problems reported." %}

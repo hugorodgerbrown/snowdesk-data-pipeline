@@ -2,7 +2,7 @@
 name: day_character_rules_spec
 description: Original implementation spec for the compute_day_character five-label rules cascade and its calibration check
 status: historical
-last-reviewed: 2026-06-10
+last-reviewed: 2026-11-12
 ---
 
 # Day Character Rules — Implementation Spec
@@ -27,6 +27,13 @@ in the UI.
 ## Rules cascade
 
 Evaluate in order. Return the label for the first rule that matches.
+
+**Before the cascade — no rating** (added by SNOW-1437, after this spec):
+a render model with `danger.key == "no_rating"` (the bulletin carried no
+valid `dangerRatings`; SLF publishes such an entry for a region it did not
+assess that day) has **no day character**. `day_character_key` returns
+`""`, `compute_day_character` returns `None` and no callout renders. A
+region nobody assessed is not a "Stable day".
 
 ### Rule 1 — Dangerous conditions
 ```
@@ -78,7 +85,8 @@ OR (danger_rating == 2 AND all problems have problem_type == "no_distinct_avalan
 - If no rule matches (should not happen with valid data), return `"Stable day"`
   as the safe default.
 - **Empty traits** (`render_model["traits"] == []`): return `"Stable day"`
-  immediately. This covers bulletins with no avalanche problems (e.g. very low
+  immediately, unless the model carries no rating (see "Before the
+  cascade" above). This covers bulletins with no avalanche problems (e.g. very low
   danger days where SLF omits problem data entirely).
 - The function is pure — no side effects, no database calls. Derive
   everything from the render model dict passed in.

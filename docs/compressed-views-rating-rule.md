@@ -2,7 +2,7 @@
 name: compressed-views-rating-rule
 description: Peak-rating rule — choropleth, map tooltip and season calendar always show RegionDayRating.max_rating on split days
 status: current
-last-reviewed: 2026-10-20
+last-reviewed: 2026-11-12
 ---
 
 # Compressed-views rating rule
@@ -31,7 +31,8 @@ on days where conditions deteriorate in the afternoon.
 `apps/bulletins/services/day_rating.py` — `recompute_region_day` — selects the
 bulletin, and `apps/ingest/normalise/day_rating.py` — `rate_render_model`, the
 service's since SNOW-1270 — implements the split logic (policy introduced in v8; `DAY_RATING_VERSION = 9` since SNOW-1054 fixed the
-stored subdivision):
+stored subdivision, and `10` since SNOW-1437 made a bulletin with no rating
+an unrated, grey day instead of low):
 
 1. A single authoritative bulletin is selected for each (region, calendar day)
    pair: the morning-of-day issue if present, otherwise the prior-evening

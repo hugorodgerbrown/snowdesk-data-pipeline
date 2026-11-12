@@ -26,7 +26,10 @@ from django.utils.translation import override as language_override
 from pytest_django.fixtures import Settings
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.render_model import RENDER_MODEL_VERSION
+from apps.bulletins.services.render_model import (
+    RENDER_MODEL_VERSION,
+    build_render_model,
+)
 from apps.public import bulletin_panels
 from apps.public.bulletin_panels import BULLETIN_SOURCE_LINKS
 from apps.regions.models import MicroRegion
@@ -6430,3 +6433,75 @@ class TestDayRiskProfileAddsToCards:
             bulletin_panels._day_risk_profile_adds_to_cards(rows, [{"label": "x"}])
             is True
         )
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1437: a region the provider did not assess reads "No rating"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestUnratedBulletinPage:
+    """A bulletin with no ``dangerRatings`` is "No rating", never "Low" (SNOW-1437).
+
+    The render model is built from a trimmed copy of SLF's CH-1122 Gruyère
+    entry: no ``dangerRatings``, no problems, only
+    ``customData.CH.dangerRatingEvolution``.
+    """
+
+    @pytest.fixture()
+    def unrated(self, region: MicroRegion) -> Bulletin:
+        """The unrated bulletin, on 15 Jan 2026 for the test region."""
+        fixture = (
+            Path(settings.BASE_DIR) / "tests" / "fixtures" / "slf_unrated_region.json"
+        )
+        properties = json.loads(fixture.read_text())["properties"]
+        return _make_am_bulletin(
+            region,
+            date(2026, 1, 15),
+            render_model=build_render_model(properties),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+
+    def _get(self, client: Client) -> str:
+        """Render the unrated day's bulletin page."""
+        with language_override("en-gb"):
+            response = client.get(_url("ch-4115", "valais", "2026-01-15"))
+        assert response.status_code == 200
+        return response.content.decode()
+
+    def test_the_page_says_no_rating(self, client: Client, unrated: Bulletin) -> None:
+        """The body names "No rating" and no level, and does not call the day stable."""
+        content = self._get(client)
+        body = content[content.index('data-testid="avalanche-problems-heading"') :]
+        assert 'data-testid="no-rating-card"' in body
+        assert "No rating" in body
+        assert "No assessment for this day" in body
+        assert ">Low<" not in body
+        assert "The snowpack is stable" not in body
+        assert 'data-testid="day-windows-panel"' not in content
+        assert 'data-testid="day-character"' not in content
+
+    def test_the_favicon_is_the_default_mark(
+        self, client: Client, unrated: Bulletin
+    ) -> None:
+        """No danger tint for an unrated day: the default favicon."""
+        content = self._get(client)
+        assert "favicon-no_rating.svg" not in content
+        assert "favicon-low.svg" not in content
+        assert "favicon.svg" in content
+
+    def test_share_metadata_says_no_rating(
+        self, client: Client, unrated: Bulletin
+    ) -> None:
+        """og:description and JSON-LD name "No rating", not "Low (1)"."""
+        content = self._get(client)
+        og = re.search(r'property="og:description"\s+content="([^"]*)"', content)
+        assert og is not None
+        assert og.group(1).startswith("Avalanche danger: No rating.")
+        assert "Low" not in og.group(1)
+        data = _extract_jsonld(content)
+        assert data is not None
+        main = data["mainEntity"]
+        assert main["about"]["name"] == "No rating"
+        assert "termCode" not in main["about"]

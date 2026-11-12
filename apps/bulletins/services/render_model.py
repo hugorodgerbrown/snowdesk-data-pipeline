@@ -64,6 +64,7 @@ __all__ = [
     "band_label_for_elevation",
     "build_render_model",
     "compute_day_character",
+    "has_day_character",
     "compute_period_transition",
     "danger_levels_column",
     "derive_problem_family",
@@ -133,6 +134,22 @@ _DAY_CHARACTER_LABELS: dict[str, StrOrPromise] = {
 }
 
 
+def has_day_character(render_model: dict[str, Any]) -> bool:
+    """Return True when a render model has a day character.
+
+    Every rated model does; one with no rating (``danger.key ==
+    "no_rating"``) does not (SNOW-1437).
+
+    Args:
+        render_model: A render model dict.
+
+    Returns:
+        Whether :func:`compute_day_character` may be called on it.
+
+    """
+    return bool(day_character_key(render_model))
+
+
 def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
     """
     Classify a render model into a day character with a bulletin-specific summary.
@@ -158,7 +175,10 @@ def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
       happens.
 
     When ``traits`` is empty (no avalanche problems reported), returns the
-    ``"stable"`` entry with the quiet-day copy for its danger level.
+    ``"stable"`` entry with the quiet-day copy for its danger level. When
+    the model carries no rating (``danger.key == "no_rating"``) it has no
+    character at all — a region nobody assessed is not a quiet day — so it
+    raises; callers check ``has_day_character`` first (SNOW-1437).
 
     This function is pure — no side effects, no database access.
 
@@ -171,13 +191,18 @@ def compute_day_character(render_model: dict[str, Any]) -> DayCharacter:
         label, and the one-line explainer for the callout on the bulletin
         page.
 
+    Raises:
+        ValueError: The model carries no rating.
+
     """
+    # The service's cascade; empty traits are a quiet day, and an unrated
+    # model has no character at all (SNOW-1437).
+    key = day_character_key(render_model)
+    if not key:
+        raise ValueError("An unrated render model has no day character.")
     danger_info = render_model.get("danger") or {}
     danger = int(danger_info.get("number") or 1)
     traits: list[dict[str, Any]] = render_model.get("traits") or []
-
-    # The service's cascade; empty traits are a quiet day.
-    key = day_character_key(render_model)
 
     # Movement and the window the explainer describes. The transition is
     # the one the service stored with the model (SNOW-1341).

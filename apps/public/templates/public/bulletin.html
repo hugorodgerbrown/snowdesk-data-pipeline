@@ -26,7 +26,8 @@ reachable via the SNOW-81 deep-link in the masthead.
     {# a staging tab is never mistaken for a production one.              #}
     {% if SITE_FAVICON != "favicon.svg" %}
         <link rel="icon" type="image/svg+xml" href="{% static SITE_FAVICON %}">
-    {% elif panel.danger_key %}
+    {% elif panel.danger_key and panel.danger_key != "no_rating" %}
+        {# An unrated bulletin has no danger tint: the default mark (SNOW-1437). #}
         {% with fav_path="favicon-"|add:panel.danger_key|add:".svg" %}
             <link rel="icon" type="image/svg+xml" href="{% static fav_path %}">
         {% endwith %}

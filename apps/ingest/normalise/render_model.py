@@ -143,6 +143,13 @@ Version 10 changes (SNOW-1341):
     each with its own fields. The per-(type, period) lookup it replaced
     kept only the last (found by Codex reviewing SNOW-1342).
 
+Version 11 changes (SNOW-1437):
+  - ``_resolve_danger`` returns ``{"key": "no_rating", "number": "0",
+    "subdivision": None, "ratings": []}`` for a bulletin with no valid
+    ``dangerRatings``. Version 10 and earlier started from ``low``, so a
+    region SLF did not assess read as danger level 1.
+  - ``day_character_key`` returns ``""`` (no character) for such a model.
+
 Also exposes ``compute_period_transition``, a pure function that inspects the
 ``danger.ratings`` list in a render model and derives a ``PeriodTransition``
 dataclass describing whether the day escalates, de-escalates, is flat-but-split,
@@ -182,7 +189,17 @@ logger = logging.getLogger(__name__)
 # problem family, headline inputs, alert state and danger levels, stored
 # once instead of computed per read — and every band of a problem type
 # kept in ALBINA / Météo-France traits.
-RENDER_MODEL_VERSION: int = 10
+#
+# v11 (SNOW-1437): a bulletin with no valid ``dangerRatings`` resolves to
+# ``danger.key == "no_rating"`` (number ``"0"``) instead of ``low``.
+# Stored v10 models read as stale until production runs
+# ``rebuild_source_render_models --commit`` then ``rebuild_render_models
+# --commit`` (the Deploy-Step trailers on this change).
+RENDER_MODEL_VERSION: int = 11
+
+# The headline danger key of a bulletin that carries no valid rating — the
+# same value as ``RegionDayRating.Rating.NO_RATING`` (SNOW-1437).
+NO_RATING_KEY: str = "no_rating"
 
 # ---------------------------------------------------------------------------
 # Constants — EAWS problem-type enum (openapi.json lines 670–683)
@@ -440,6 +457,17 @@ def _resolve_danger(
         source: A provider code, ``PROVIDER_*`` (used to select the adapter for
             per-rating subdivision resolution).
 
+    A bulletin with no valid rating (none at all, or only unknown
+    ``mainValue``s) resolves to ``no_rating`` / ``"0"`` — the value
+    ``RegionDayRating.Rating.NO_RATING`` uses — never to ``low``. SLF's
+    per-region export carries such an entry for a region it did not assess
+    that day (SNOW-1437).
+
+    Args:
+        ratings: The CAAML ``dangerRatings`` list.
+        source: A provider code, ``PROVIDER_*`` (used to select the adapter for
+            per-rating subdivision resolution).
+
     Returns:
         Dict with ``key`` (str), ``number`` (str),
         ``subdivision`` (``"+"``, ``"="``, ``"-"``, or None), and
@@ -447,17 +475,25 @@ def _resolve_danger(
 
     """
     adapter = _get_adapter(source)
-    highest = "low"
+    highest = ""
     raw_subdivision: str = ""
 
     for rating in ratings:
         value = rating.get("mainValue", "")
         if value not in _DANGER_ORDER:
             continue
-        if _DANGER_ORDER.index(value) >= _DANGER_ORDER.index(highest):
+        if not highest or _DANGER_ORDER.index(value) >= _DANGER_ORDER.index(highest):
             highest = value
             ch_data = (rating.get("customData") or {}).get("CH", {})
             raw_subdivision = ch_data.get("subdivision", "") or ""
+
+    if not highest:
+        return {
+            "key": NO_RATING_KEY,
+            "number": "0",
+            "subdivision": None,
+            "ratings": [],
+        }
 
     subdivision: str | None = _SUBDIVISION_MAP.get(raw_subdivision, None)
 
@@ -2230,7 +2266,9 @@ def day_character_key(render_model: dict[str, Any]) -> str:
 
     The five-rule cascade of docs/day_character_rules_spec.md over the
     model's peak danger, its subdivision and its problems. A model with no
-    traits is a quiet day, ``"stable"``. Pure — no database, no locale.
+    traits is a quiet day, ``"stable"``. A model with no rating
+    (``danger.key == "no_rating"``) has no character at all: nothing says
+    the day is quiet (SNOW-1437). Pure — no database, no locale.
 
     Args:
         render_model: A render model dict as produced by
@@ -2238,10 +2276,12 @@ def day_character_key(render_model: dict[str, Any]) -> str:
 
     Returns:
         One of ``"stable"``, ``"manageable"``, ``"hard_to_read"``,
-        ``"widespread"``, ``"dangerous"``.
+        ``"widespread"``, ``"dangerous"``, or ``""`` for an unrated model.
 
     """
     danger_info = render_model.get("danger") or {}
+    if danger_info.get("key") == NO_RATING_KEY:
+        return ""
     danger = int(danger_info.get("number") or 1)
     subdivision: str = danger_info.get("subdivision") or ""
     traits: list[dict[str, Any]] = render_model.get("traits") or []

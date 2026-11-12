@@ -53,6 +53,7 @@ from apps.bulletins.services.render_model import (
     band_label_for_elevation,
     compute_day_character,
     detect_prose_spatial,
+    has_day_character,
     problem_types_for,
 )
 from apps.bulletins.services.selection import (
@@ -373,9 +374,9 @@ def _day_window_row_from_rm(rm_rating: dict[str, Any]) -> dict[str, Any]:
 
     """
     period: str = rm_rating.get("period") or "all_day"
-    level: str = rm_rating.get("key") or "low"
+    level: str = rm_rating.get("key") or "no_rating"
     if level not in DANGER_PANEL_META:
-        level = "low"
+        level = "no_rating"
     suffix: str = rm_rating.get("subdivision") or ""
     number = DANGER_PANEL_META[level]["number"]
     return {
@@ -1084,14 +1085,14 @@ DANGER_PANEL_META: dict[str, dict[str, Any]] = {
         "sub": _("Do not enter avalanche terrain"),
         "icon": "Dry-Snow-4-5.svg",
     },
-    # Defensive fallback for malformed bulletins where an AM/PM half has
-    # no covering dangerRating.  In practice every bulletin carries an
-    # ``all_day`` rating so both halves always match; this entry keeps
-    # ``DANGER_PANEL_META[key]`` lookups safe when they don't.
+    # A bulletin with no valid dangerRating: the provider did not assess the
+    # day (SLF's per-region export carries such entries, SNOW-1437). Also the
+    # fallback for an AM/PM half with no covering rating, which keeps
+    # ``DANGER_PANEL_META[key]`` lookups safe.
     "no_rating": {
         "number": "—",
         "label": _("No rating"),
-        "sub": _("No rating available"),
+        "sub": _("No assessment for this day"),
         "icon": "No-Rating.svg",
     },
 }
@@ -2303,14 +2304,15 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
     # The render model reads customData.CH.subdivision for SLF; ALBINA
     # and METEOFRANCE carry None. This avoids re-reading raw customData here.
     rm_danger: dict[str, Any] = raw_render_model.get("danger") or {}
-    danger_key: str = rm_danger.get("key") or "low"
+    danger_key: str = rm_danger.get("key") or "no_rating"
     danger_subdivision: str = rm_danger.get("subdivision") or ""
-    if not danger_key or danger_key not in DANGER_PANEL_META:
+    if danger_key not in DANGER_PANEL_META:
+        # Never guess "low" for a key we cannot read (SNOW-1437).
         logger.error(
             "_build_panel_context: %s has no usable danger key in render model",
             bulletin.pk,
         )
-        danger_key = "low"
+        danger_key = "no_rating"
     danger_meta = DANGER_PANEL_META[danger_key]
 
     # The key message feeds only the OG / meta description
@@ -2400,7 +2402,7 @@ def _build_panel_context(bulletin: Bulletin) -> dict[str, Any]:
 SHOW_DAY_CHARACTER: bool = False
 
 
-def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:
+def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter | None:
     """
     Return the eyebrow callout to show above the rating blocks.
 
@@ -2416,9 +2418,13 @@ def _resolve_day_lead(raw_render_model: dict[str, Any]) -> DayCharacter:
             retrieved from ``Bulletin.render_model``.
 
     Returns:
-        A :class:`DayCharacter` with label and explainer fields populated.
+        A :class:`DayCharacter` with label and explainer fields populated,
+        or ``None`` for an unrated bulletin, which gets no callout
+        (SNOW-1437).
 
     """
+    if not has_day_character(raw_render_model):
+        return None
     return compute_day_character(raw_render_model)
 
 
