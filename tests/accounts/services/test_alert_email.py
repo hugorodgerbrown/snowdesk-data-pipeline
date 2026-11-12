@@ -59,6 +59,18 @@ class TestSendAlertEmail:
         assert send_alert_email(account, "t", "b", "/") is False
         assert mail.outbox == []
 
+    def test_force_emails_a_never_account(self) -> None:
+        """An operator's resend (SNOW-1493) overrides NEVER."""
+        account = AccountFactory.create(alert_email=Account.AlertEmail.NEVER)
+        assert send_alert_email(account, "t", "b", "/", force=True) is True
+        assert len(mail.outbox) == 1
+
+    def test_force_still_skips_unverified(self) -> None:
+        """Forcing never emails an unproven address."""
+        account = AccountFactory.create(is_verified=False)
+        assert send_alert_email(account, "t", "b", "/", force=True) is False
+        assert mail.outbox == []
+
     def test_unverified_is_not_emailed(self) -> None:
         """An unproven address is never emailed: False."""
         account = AccountFactory.create(is_verified=False)

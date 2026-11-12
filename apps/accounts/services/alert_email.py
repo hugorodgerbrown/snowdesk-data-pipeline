@@ -3,12 +3,13 @@ apps/accounts/services/alert_email.py — The bulletin alert email (SNOW-1327).
 
 Email is the alerts fallback: it reaches an account with no push device,
 and anyone who asked for both. ``send_alert_email`` sends synchronously and
-says whether the message went (SNOW-1362): its one caller is the alert
+says whether the message went (SNOW-1362). Its callers are the alert
 delivery worker (``apps.bulletins.services.alerts._worker_deliver_alert``),
 already a django-tasks task, which needs the result to settle the send log
-as SENT or FAILED. Invariant 3 holds: no SMTP round-trip on the request
-path, because the send only ever runs on the task runner. SMTP errors
-propagate to that worker, which records the alert as not emailed.
+as SENT or FAILED, and the operator's ``resend_bulletin_alert`` command
+(SNOW-1493). Invariant 3 holds: no SMTP round-trip on the request path.
+SMTP errors propagate to the caller, which records the alert as not
+emailed.
 
 Every message carries ``List-Unsubscribe`` with a signed, never-expiring
 link and ``List-Unsubscribe-Post: List-Unsubscribe=One-Click`` (RFC 8058),
@@ -87,25 +88,31 @@ def unsubscribe_url(account: Account) -> str:
     )
 
 
-def send_alert_email(account: Account, title: str, body: str, url: str) -> bool:
+def send_alert_email(
+    account: Account, title: str, body: str, url: str, *, force: bool = False
+) -> bool:
     """
     Render and send one alert email for ``account``, now.
 
-    Called only from the alert delivery worker, never on a request path.
-    An account that turned email off, never verified or has no address is
-    not emailed. SMTP errors are not caught: the worker records them.
+    Called from the alert delivery worker and from ``resend_bulletin_alert``,
+    never on a request path. An account that turned email off, never
+    verified or has no address is not emailed. SMTP errors are not caught:
+    the caller records them.
 
     Args:
         account: The recipient, with ``user`` loaded.
         title: The alert's title, used as the subject.
         body: The alert's body.
         url: The site-relative link the alert opens.
+        force: Send even when the account turned alert email off. An
+            operator's explicit resend (SNOW-1493) sets it; an unverified
+            or empty address is still never emailed.
 
     Returns:
         True only when the mail backend accepted the message.
 
     """
-    if account.alert_email == Account.AlertEmail.NEVER:
+    if account.alert_email == Account.AlertEmail.NEVER and not force:
         return False
     email = account.user.email.lower()
     if not email or not account.is_verified:

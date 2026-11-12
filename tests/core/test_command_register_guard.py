@@ -148,6 +148,7 @@ def test_mcp_runnable_commands_are_pinned() -> None:
         "rebuild_track_renders",
         "recompute_day_ratings",
         "render_ski_tours",
+        "resend_bulletin_alert",
         "sync_waffle_flags",
         "sync_waffle_switches",
     ]
