@@ -159,6 +159,15 @@ override-dependencies = [
     # CVE-2026-59951, CVE-2026-116684, CVE-2026-116685, CVE-2026-116686:
     # fixed in mcp 1.30.0. semgrep 1.181.0 to 1.185.0 pin `mcp==1.29.0`.
     "mcp>=1.30.0,<2",
+    # CVE-2026-114603: fixed in opentelemetry-api 1.45.1. semgrep 1.181.0 to
+    # 1.185.0 pin `opentelemetry-api~=1.37.0` and the rest of the otel set
+    # to match, and the otel packages pin one another exactly, so all five
+    # that semgrep names move together.
+    "opentelemetry-api>=1.45.1,<2",
+    "opentelemetry-sdk>=1.45.1,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.1,<2",
+    "opentelemetry-instrumentation-requests>=0.58b0,<1",
+    "opentelemetry-instrumentation-threading>=0.58b0,<1",
 ]
 
 [tool.uv.sources]
