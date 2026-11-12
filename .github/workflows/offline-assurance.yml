@@ -76,7 +76,8 @@ jobs:
           [ -n "$files" ] || downloads=true
           while IFS= read -r f; do
             case "$f" in
-              static/js/*.js | apps/map/* | apps/core/sw_shell.py \
+              static/js/*.js | static/js/bundles/* | apps/map/* \
+                | apps/core/sw_shell.py \
                 | apps/public/map_shared.py | apps/public/views.py \
                 | apps/public/api.py | config/settings/base.py \
                 | tests/offline/* | tox.ini | uv.lock | package-lock.json \

@@ -9,7 +9,7 @@ last-reviewed: 2026-11-12
 
 **Decision.** `.github/workflows/offline-assurance.yml` runs `tox -e offline`
 on every pull request whose diff can change what a download does:
-`static/js/*.js`, `apps/map/`, the service-worker shell, the map views and
+`static/js/*.js`, the bundle lists in `static/js/bundles/`, `apps/map/`, the service-worker shell, the map views and
 APIs, `config/settings/base.py`, `tests/offline/` and the lockfiles. Its
 `Offline maps assurance` check is required. Any other PR skips the job,
 which still reports a skipped check and satisfies the ruleset. The Monday
