@@ -793,6 +793,42 @@ describe('an unnamed account-only area asks for a label (SNOW-1133)', () => {
   });
 });
 
+describe('a download that did not finish is named (12 Nov 2026)', () => {
+  const isCustomAreaId = (id) => id.indexOf('custom-') === 0;
+  const regionIdForArea = (id) => (id.indexOf('region-') === 0 ? id.slice(7) : '');
+  const orphanLabel = (orphan) =>
+    orphan.custom ? 'Custom area' : orphan.regionId === 'CH-4115' ? 'Martigny-Verbier' : 'Region';
+  const OPTIONS = { isCustomAreaId, regionIdForArea, orphanLabel };
+
+  it('names a region orphan from its region id and marks it completable', () => {
+    const rows = core.manageRows([{ id: 'region-CH-4115', bytes: MB, orphaned: true }], OPTIONS);
+    expect(rows[0].label).toBe('Martigny-Verbier');
+    expect(rows[0].regionId).toBe('CH-4115');
+    expect(rows[0].completable).toBe(true);
+  });
+
+  it('names a custom orphan by the caller, and never marks it completable', () => {
+    const rows = core.manageRows([{ id: 'custom-x9', bytes: MB, orphaned: true }], OPTIONS);
+    expect(rows[0].label).toBe('Custom area');
+    expect(rows[0].regionId).toBe('');
+    expect(rows[0].completable).toBe(false);
+  });
+
+  it('never marks a recorded area completable', () => {
+    const rows = core.manageRows(
+      [{ id: 'region-CH-4115', name: 'Martigny-Verbier', regionId: 'CH-4115', bytes: MB }],
+      OPTIONS,
+    );
+    expect(rows[0].completable).toBe(false);
+  });
+
+  it('falls back to the id without the options', () => {
+    const rows = core.manageRows([{ id: 'region-CH-4115', bytes: MB, orphaned: true }], {});
+    expect(rows[0].label).toBe('region-CH-4115');
+    expect(rows[0].completable).toBe(false);
+  });
+});
+
 describe('reconcileAreas carries the stored name (SNOW-1133)', () => {
   it('passes storedName through for a local area', () => {
     const out = core.reconcileAreas(

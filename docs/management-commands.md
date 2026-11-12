@@ -885,9 +885,15 @@ downloads it (about 17 MB) and:
    `pull_reference_data` runs elsewhere.
 
 Read-only by default: both steps run inside a transaction that is rolled
-back. Tallies `service_<kind>_<outcome>` for the sync and `<kind>_<outcome>`
-for the apply, kinds `ski-network` and `ski-tours`. Exempt from the row
-countdown: each step reconciles a whole layer. `--archive PATH` reads a
+back. Tallies `service_<kind>_<outcome>` for the sync (`created`,
+`updated`, `deleted`, `unchanged`, `failed`) and `<kind>_<outcome>` for the
+apply, kinds `ski-network` and `ski-tours`. A row the import cannot read
+(SNOW-1489) is logged at ERROR, counted `service_<kind>_failed` and keeps
+its stored copy rather than being tombstoned; a tour whose `route_uuid`
+cannot be read holds back that layer's tombstones for the run. An
+unreadable row, like an item this instance cannot apply, makes the command
+exit non-zero; with `--commit` the readable rows are written first. Exempt
+from the row countdown: each step reconciles a whole layer. `--archive PATH` reads a
 local zip instead of downloading, for an instance with no outbound access.
 A first import takes about 20 seconds; an unchanged one about 9. `mcp_runnable` since SNOW-1400: one download and one transaction per
 layer, so it finishes well inside the task worker's minutes, and it stays

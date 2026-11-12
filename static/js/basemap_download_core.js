@@ -89,6 +89,7 @@
  *   recordBasemaps(record) /
  *   recordHoldsBasemaps(record, keys) / basemapSourceCount(key) /
  *   basemapScaledMb(mb, key, count?) /
+ *   isFetchableTileTemplate(url) /
  *   tileSourcesFromStyleDocuments(styleJson, tileJsons) /
  *   renderDependencyUrlsFromStyle(styleUrl, styleJson) /
  *   glyphPrefixFromStyle(styleJson)
@@ -209,6 +210,11 @@
  *     formalises the id a region-download area is keyed under; there was
  *     no such concept before this ticket, region downloads were
  *     identified only by ``region_id`` in the ``basemap.regions`` record.
+ *   regionIdForArea(areaId)
+ *     The inverse: the region id a region download's area id names, or
+ *     ``''`` for any other id. For a bucket a failed run left with no
+ *     record (12 Nov 2026), where the id is all that says which region it
+ *     was.
  *   pinnedCacheName(areaId)
  *     The Cache Storage name for ``areaId``'s pinned bucket
  *     (``PINNED_CACHE_PREFIX + areaId``).
@@ -1345,6 +1351,24 @@
    */
   function areaIdForRegion(regionId) {
     return 'region-' + regionId;
+  }
+
+  /**
+   * The region id ``areaId`` names, or ``''`` when it is not a region's.
+   *
+   * The inverse of ``areaIdForRegion``, kept beside it so the
+   * ``region-<id>`` format is parsed in the one module that writes it. A
+   * download that fails leaves its bucket and no record, and the bucket's
+   * name is then the only thing that says which region it was: the
+   * Downloads sheet reads it to name the row and to complete the download.
+   *
+   * @param {string} areaId
+   * @returns {string}
+   */
+  function regionIdForArea(areaId) {
+    const prefix = 'region-';
+    if (typeof areaId !== 'string' || !areaId.startsWith(prefix)) return '';
+    return areaId.slice(prefix.length);
   }
 
   /**
@@ -4383,6 +4407,23 @@
   }
 
   /**
+   * Whether the service worker can fetch a tile template: an http(s) URL,
+   * or one relative to the page. A page-side MapLibre protocol
+   * (SNOW-1460's ``osmclip://``) is drawn by the map alone, and a fetch of
+   * it fails on the scheme, so a download must never list it.
+   *
+   * @param {*} url
+   * @returns {boolean}
+   */
+  function isFetchableTileTemplate(url) {
+    if (typeof url !== 'string' || !url) return false;
+    var scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url);
+    if (!scheme) return true;
+    var name = scheme[1].toLowerCase();
+    return name === 'http' || name === 'https';
+  }
+
+  /**
    * A basemap's tile sources, from its style document and the TileJSON
    * each vector source's ``url`` names — the shape
    * ``activeBasemapTileSources`` reads off a live map, for a map that is
@@ -4406,9 +4447,7 @@
         : doc && Array.isArray(doc.tiles)
           ? doc.tiles
           : null;
-      var urls = (tiles || []).filter(function (url) {
-        return typeof url === 'string' && url;
-      });
+      var urls = (tiles || []).filter(isFetchableTileTemplate);
       if (urls.length) sources.push(urls);
     });
     return sources.length ? sources : null;
@@ -4537,6 +4576,7 @@
     areaElevationTileURLs: areaElevationTileURLs,
     elevationAreaBoxes: elevationAreaBoxes,
     areaIdForRegion: areaIdForRegion,
+    regionIdForArea: regionIdForArea,
     generateCustomAreaId: generateCustomAreaId,
     isCustomAreaId: isCustomAreaId,
     areaIdForBaseLayer: areaIdForBaseLayer,
@@ -4574,6 +4614,7 @@
     recordHoldsBasemaps: recordHoldsBasemaps,
     basemapSourceCount: basemapSourceCount,
     basemapScaledMb: basemapScaledMb,
+    isFetchableTileTemplate: isFetchableTileTemplate,
     tileSourcesFromStyleDocuments: tileSourcesFromStyleDocuments,
     renderDependencyUrlsFromStyle: renderDependencyUrlsFromStyle,
     glyphPrefixFromStyle: glyphPrefixFromStyle,

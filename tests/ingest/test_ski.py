@@ -4,10 +4,14 @@ tests/ingest/test_ski.py — The service's copy of swisstopo's ski-touring map (
 ``import_ski_archive`` against a small archive built in the test: both
 layers stored, the unnamed lines skipped, a second import writing nothing,
 a dropped line tombstoned and a changed one rewritten, and the refusals.
+An unreadable row (SNOW-1489) is counted failed, logged at ERROR and
+keeps its stored copy; a tour with no readable uuid holds back the
+layer's tombstones.
 """
 
 from __future__ import annotations
 
+import logging
 import zipfile
 from pathlib import Path
 
@@ -56,6 +60,7 @@ def test_a_second_import_of_the_same_release_writes_nothing(tmp_path: Path) -> N
         "updated": 0,
         "deleted": 0,
         "unchanged": 2,
+        "failed": 0,
     }
     assert result[SKI_TOURS]["unchanged"] == 1
 
@@ -71,19 +76,117 @@ def test_a_dropped_line_is_tombstoned_and_a_moved_one_rewritten(tmp_path: Path) 
     assert SourceSkiSegment.objects.get(uuid=segment_uuid(2)).deleted_at is not None
 
 
-def test_an_unreadable_segment_is_skipped_not_fatal(tmp_path: Path) -> None:
-    """One broken line costs only itself."""
+def test_an_unreadable_segment_is_counted_failed_not_fatal(tmp_path: Path) -> None:
+    """One broken line costs only itself, and is counted."""
     archive = _archive(
         tmp_path, segments=[segment_row(1), segment_row(2, geom=b"junk-bytes")]
     )
     result = import_ski_archive(archive)
     assert result[SKI_NETWORK]["created"] == 1
+    assert result[SKI_NETWORK]["failed"] == 1
 
 
-def test_an_unreadable_tour_is_skipped_not_fatal(tmp_path: Path) -> None:
-    """A tour whose uuid cannot be read costs only itself."""
-    archive = _archive(tmp_path, tours=[tour_row(1, route_uuid="not-a-uuid")])
-    assert import_ski_archive(archive)[SKI_TOURS]["created"] == 0
+def test_an_unreadable_segment_keeps_its_stored_copy(tmp_path: Path) -> None:
+    """A line that was readable last release is not tombstoned by a broken one."""
+    import_ski_archive(_archive(tmp_path))
+    before = SourceSkiSegment.objects.get(uuid=segment_uuid(2))
+    result = import_ski_archive(
+        _archive(
+            tmp_path,
+            "b.zip",
+            segments=[segment_row(1), segment_row(2, geom=b"junk-bytes")],
+        )
+    )
+    after = SourceSkiSegment.objects.get(uuid=segment_uuid(2))
+    assert after.deleted_at is None
+    assert after.updated_at == before.updated_at
+    assert result[SKI_NETWORK] == {
+        "created": 0,
+        "updated": 0,
+        "deleted": 0,
+        "unchanged": 1,
+        "failed": 1,
+    }
+
+
+def test_an_unreadable_tour_keeps_its_stored_copy(tmp_path: Path) -> None:
+    """A tour whose line breaks keeps its uuid, so its row is kept."""
+    import_ski_archive(_archive(tmp_path))
+    broken = tour_row(5956)
+    broken["geom"] = b"junk-bytes"
+    result = import_ski_archive(_archive(tmp_path, "b.zip", tours=[broken]))
+    assert SourceSkiTour.objects.get().deleted_at is None
+    assert result[SKI_TOURS]["failed"] == 1
+    assert result[SKI_TOURS]["deleted"] == 0
+
+
+def test_a_tour_without_a_readable_uuid_holds_back_tombstones(
+    tmp_path: Path,
+) -> None:
+    """Counted failed, and no tour is tombstoned while its identity is lost."""
+    import_ski_archive(_archive(tmp_path))
+    archive = _archive(tmp_path, "b.zip", tours=[tour_row(1, route_uuid="not-a-uuid")])
+    result = import_ski_archive(archive)
+    assert result[SKI_TOURS]["created"] == 0
+    assert result[SKI_TOURS]["failed"] == 1
+    assert result[SKI_TOURS]["deleted"] == 0
+    assert SourceSkiTour.objects.get().deleted_at is None
+
+
+def test_a_segment_without_a_readable_id_holds_back_tombstones(
+    tmp_path: Path,
+) -> None:
+    """A malformed segm_id is counted failed and no segment is tombstoned."""
+    import_ski_archive(_archive(tmp_path))
+    malformed = segment_row(2)
+    malformed["segm_id"] = "not-a-number"
+    result = import_ski_archive(
+        _archive(tmp_path, "b.zip", segments=[segment_row(1), malformed])
+    )
+    assert result[SKI_NETWORK]["failed"] == 1
+    assert result[SKI_NETWORK]["deleted"] == 0
+    assert SourceSkiSegment.objects.get(uuid=segment_uuid(2)).deleted_at is None
+
+
+def test_one_unreadable_and_one_dropped_segment(tmp_path: Path) -> None:
+    """The unreadable line is kept; the line swisstopo dropped is tombstoned."""
+    segments = [segment_row(1), segment_row(2, line=LINE_B), segment_row(3)]
+    import_ski_archive(_archive(tmp_path, segments=segments))
+    result = import_ski_archive(
+        _archive(
+            tmp_path,
+            "b.zip",
+            segments=[segment_row(1), segment_row(2, geom=b"junk-bytes")],
+        )
+    )
+    assert result[SKI_NETWORK]["failed"] == 1
+    assert result[SKI_NETWORK]["deleted"] == 1
+    assert SourceSkiSegment.objects.get(uuid=segment_uuid(2)).deleted_at is None
+    assert SourceSkiSegment.objects.get(uuid=segment_uuid(3)).deleted_at is not None
+
+
+def test_each_unreadable_row_is_logged_at_error(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A broken segment, a broken tour and a uuid-less tour each log an ERROR.
+
+    Each layer streams by fid, so tour 7 is read before tour 5956.
+    """
+    broken = tour_row(5956)
+    broken["geom"] = b"junk-bytes"
+    archive = _archive(
+        tmp_path,
+        segments=[segment_row(1), segment_row(2, geom=b"junk-bytes")],
+        tours=[broken, tour_row(7, route_uuid="not-a-uuid")],
+    )
+    with caplog.at_level(logging.ERROR, logger="apps.ingest.ski"):
+        import_ski_archive(archive)
+    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert errors == [
+        "ski import: segment 2 has no readable line",
+        "ski import: tour 7 has no readable route_uuid",
+        "ski import: tour 5956 is unreadable",
+    ]
 
 
 def test_an_archive_that_is_not_swisstopos_is_refused(tmp_path: Path) -> None:

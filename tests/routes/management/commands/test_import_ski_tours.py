@@ -4,7 +4,7 @@ tests/routes/management/commands/test_import_ski_tours.py — import_ski_tours (
 The command end to end against a small archive built in the test: a
 preview that writes nothing, a commit that fills the service and this
 instance, a second commit that changes nothing, the download path, and
-the refusals and non-zero exits.
+the refusals and non-zero exits, including an unreadable row (SNOW-1489).
 """
 
 from __future__ import annotations
@@ -69,7 +69,10 @@ def test_a_commit_fills_the_service_and_this_instance(archive: Path) -> None:
     _run("--archive", str(archive), "--commit")
     assert SourceSkiSegment.objects.count() == SkiSegment.objects.count() == 2
     assert SourceSkiTour.objects.count() == SkiTour.objects.count() == 1
-    assert _counts()["failed"] == 0
+    counts = _counts()
+    assert counts["failed"] == 0
+    assert counts["service_ski-network_failed"] == 0
+    assert counts["service_ski-tours_failed"] == 0
     _run("--archive", str(archive), "--commit")
     counts = _counts()
     assert counts["service_ski-network_unchanged"] == 2
@@ -113,3 +116,51 @@ def test_a_failed_apply_exits_non_zero(archive: Path) -> None:
     ):
         with pytest.raises(CommandError, match="1 item"):
             _run("--archive", str(archive), "--commit")
+
+
+def test_an_unreadable_row_is_tallied_and_exits_non_zero(tmp_path: Path) -> None:
+    """The readable rows are kept; the broken one is counted and fails the run."""
+    archive = write_archive(
+        tmp_path / "broken.zip",
+        [segment_row(1), segment_row(2, geom=b"junk-bytes")],
+        [tour_row(5956)],
+    )
+    with pytest.raises(CommandError, match="1 item.*unreadable or failed"):
+        _run("--archive", str(archive), "--commit")
+    counts = _counts()
+    assert counts["service_ski-network_failed"] == 1
+    assert counts["service_ski-tours_failed"] == 0
+    assert counts["failed"] == 1
+    assert SourceSkiSegment.objects.count() == SkiSegment.objects.count() == 1
+
+
+def test_an_unreadable_row_keeps_the_existing_line(
+    archive: Path, tmp_path: Path
+) -> None:
+    """A line imported before survives a release where it cannot be read."""
+    _run("--archive", str(archive), "--commit")
+    broken = write_archive(
+        tmp_path / "broken.zip",
+        [segment_row(1), segment_row(2, geom=b"junk-bytes")],
+        [tour_row(5956)],
+    )
+    with pytest.raises(CommandError, match="unreadable or failed"):
+        _run("--archive", str(broken), "--commit")
+    assert SourceSkiSegment.objects.filter(deleted_at__isnull=True).count() == 2
+    assert SkiSegment.objects.count() == 2
+
+
+def test_a_preview_of_an_unreadable_row_counts_it_and_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    """The preview reports the same failure and exits non-zero, writing nothing."""
+    broken = write_archive(
+        tmp_path / "broken.zip",
+        [segment_row(1), segment_row(2, geom=b"junk-bytes")],
+        [tour_row(5956)],
+    )
+    with pytest.raises(CommandError, match="1 item.*unreadable or failed"):
+        _run("--archive", str(broken))
+    assert _counts()["service_ski-network_failed"] == 1
+    assert not SourceSkiSegment.objects.exists()
+    assert not SkiSegment.objects.exists()

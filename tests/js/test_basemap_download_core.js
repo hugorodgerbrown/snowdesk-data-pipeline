@@ -1119,6 +1119,19 @@ describe('tileGridPlan', () => {
  * header's "third client-only group" note.
  */
 
+describe('regionIdForArea (12 Nov 2026)', () => {
+  it('reads the region id back out of a region area id', () => {
+    expect(core.regionIdForArea(core.areaIdForRegion('CH-4115'))).toBe('CH-4115');
+  });
+
+  it("answers '' for any other id", () => {
+    expect(core.regionIdForArea('custom-0f3c')).toBe('');
+    expect(core.regionIdForArea(core.CUSTOM_AREA_ID)).toBe('');
+    expect(core.regionIdForArea('')).toBe('');
+    expect(core.regionIdForArea(undefined)).toBe('');
+  });
+});
+
 describe('areaIdForRegion / pinnedCacheName', () => {
   it('prefixes a region id', () => {
     expect(core.areaIdForRegion('CH-4115')).toBe('region-CH-4115');
@@ -3198,6 +3211,27 @@ describe('a basemap from its documents (SNOW-1478)', () => {
     ]);
     expect(core.tileSourcesFromStyleDocuments(style, {})).toBeNull();
     expect(core.tileSourcesFromStyleDocuments(null, tileJsons)).toBeNull();
+  });
+
+  it('leaves out a source drawn through a page-side protocol', () => {
+    const withClip = {
+      ...style,
+      sources: { ...style.sources, osm: { type: 'vector', tiles: ['osmclip://{z}/{x}/{y}'] } },
+    };
+    expect(core.tileSourcesFromStyleDocuments(withClip, tileJsons)).toEqual([
+      tileJsons.relief.tiles,
+      tileJsons.base.tiles,
+    ]);
+  });
+
+  it('calls only http(s) and page-relative templates fetchable', () => {
+    expect(core.isFetchableTileTemplate('https://vt0.example.invalid/{z}/{x}/{y}.pbf')).toBe(true);
+    expect(core.isFetchableTileTemplate('HTTP://vt0.example.invalid/{z}/{x}/{y}.pbf')).toBe(true);
+    expect(core.isFetchableTileTemplate('/tiles/{z}/{x}/{y}.pbf')).toBe(true);
+    expect(core.isFetchableTileTemplate('osmclip://{z}/{x}/{y}')).toBe(false);
+    expect(core.isFetchableTileTemplate('alpinerelief://{z}/{x}/{y}')).toBe(false);
+    expect(core.isFetchableTileTemplate('')).toBe(false);
+    expect(core.isFetchableTileTemplate(null)).toBe(false);
   });
 
   it('lists the style document itself first, then sprites, TileJSON and glyphs', () => {

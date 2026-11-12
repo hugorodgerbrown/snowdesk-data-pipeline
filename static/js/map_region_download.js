@@ -2608,7 +2608,17 @@
       }
       if (currentRegionId !== regionId) return { started: false, reason: 'busy' };
       const state = btn.dataset.downloadState;
-      if (state !== 'idle' && state !== 'error' && state !== 'other-basemap') {
+      // 12 Nov 2026: 'incomplete' and 'partial' are taps too — the roundel
+      // repairs or refreshes them (`handleClick`) — so "Download here" on an
+      // area a failed run left behind finishes it rather than answering
+      // "couldn't be started here".
+      if (
+        state !== 'idle' &&
+        state !== 'error' &&
+        state !== 'other-basemap' &&
+        state !== 'incomplete' &&
+        state !== 'partial'
+      ) {
         // SNOW-863: the refused STATE travels back, because "it did not
         // start" and "here is why" are different facts and the caller
         // could only ever say the first. The state that actually reaches a
@@ -2663,9 +2673,36 @@
     return { mb: mb, terrainMb: terrainMb, tooBig: tooBig };
   }
 
+  /**
+   * A region's own name, from the region the map has loaded, or `''` when
+   * the map does not hold it (yet).
+   *
+   * 12 Nov 2026: the Downloads sheet names a row a failed download left
+   * behind by this, since nothing recorded its name.
+   *
+   * @param {string} regionId
+   * @returns {string}
+   */
+  function regionName(regionId) {
+    const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
+    const name = feature && feature.properties && feature.properties.name;
+    return typeof name === 'string' ? name : '';
+  }
+
   window.pwaRegionDownload = Object.freeze({
     start: startRegionDownload,
     estimate: estimateRegionDownload,
+    name: regionName,
+    /**
+     * Resolves once the map's first regions are loaded, so `name` can
+     * answer for them. A region in a country loaded later arrives with
+     * `snowdesk:regions-loaded` instead.
+     *
+     * @returns {Promise<void>}
+     */
+    ready() {
+      return MAP_READY_PROMISE.then(() => undefined);
+    },
 
     /**
      * SNOW-932 review: re-probe the focused region and repaint its roundel.

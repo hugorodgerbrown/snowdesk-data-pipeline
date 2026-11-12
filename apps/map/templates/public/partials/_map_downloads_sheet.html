@@ -224,10 +224,35 @@ the row's own label, so map.html loads that module once for both.
         <button type="button" data-row-step-remedy class="hover-affordance shrink-0 font-medium underline"></button>
     </span>
 </template>
+{# Hugo, 12 Nov 2026: the meta line of a download that did not finish.   #}
+{# "Incomplete" stands out as the exception — amber — and opens the same  #}
+{# native popover the EAWS glossary terms use (.glossary-term/-def), with #}
+{# what happened and what to do. buildRow fills the kind and the body and #}
+{# gives each clone its own popover id.                                   #}
+<template id="map-downloads-incomplete-template">
+    <span data-incomplete-kind></span> ·
+    <span class="text-status-warning-text"><button
+            type="button"
+            popovertarget=""
+            aria-haspopup="dialog"
+            class="glossary-term font-medium"
+            data-incomplete-term
+            data-testid="downloads-row-incomplete"
+        >
+            {% trans "Incomplete" %}
+        </button></span>
+    <span popover class="glossary-def" data-incomplete-def>
+        <strong class="block font-semibold text-text-1" data-incomplete-title></strong>
+        <span data-incomplete-body></span>
+    </span>
+</template>
 {# Strings the JS needs but cannot hold itself — makemessages only scans    #}
 {# templates and Python, so anything JS renders has to be handed to it      #}
 {# from here. ``%(name)s`` / ``%(size)s`` are substituted by the module.    #}
 <template id="map-downloads-strings-template">
+    {# 12 Nov 2026 (Hugo) supersedes the comment below: an orphan is now   #}
+    {# named, not shown by its bucket id, and a region orphan can be      #}
+    {# completed. See docs/offline-map.md "Incomplete/orphan rows".        #}
     {# SNOW-612: a pinned bucket left on disk by a download that failed    #}
     {# partway, with no record naming it. Listed so the space it is        #}
     {# holding is visible and can be reclaimed. Its title is the bucket    #}
@@ -243,6 +268,21 @@ the row's own label, so map.html loads that module once for both.
     {# second mock shows the shorter form. A genuine msgid change, not a   #}
     {# JS-side truncation, so it stays through makemessages/translation.   #}
     <span data-string="kind-incomplete">{% trans "Incomplete" %}</span>
+    {# 12 Nov 2026 (Hugo): what the "Incomplete" popover says. A failed    #}
+    {# region can be completed; a failed custom area cannot (its box was   #}
+    {# never recorded); a recorded area missing a file is mended by Sync.  #}
+    <span data-string="incomplete-title-failed">{% trans "Download failed" %}</span>
+    <span
+        data-string="incomplete-body-region"
+    >{% trans "This area has not been fully downloaded. Choose Retry in the … menu to get the rest." %}</span>
+    <span
+        data-string="incomplete-body-custom"
+    >{% trans "This area has not been fully downloaded. Remove it and frame the area again." %}</span>
+    <span data-string="incomplete-title-missing">{% trans "Part of the map is missing" %}</span>
+    <span
+        data-string="incomplete-body-missing"
+    >{% trans "This area has not been fully downloaded. Choose Sync now in the … menu to get the rest." %}</span>
+    <span data-string="complete-download-row-label">{% blocktrans %}Retry downloading %(name)s{% endblocktrans %}</span>
     {# SNOW-832: what KIND of download a row is. The two fixed REGIONS /   #}
     {# CUSTOM AREAS headings are gone — the headings name BASEMAPS now —   #}
     {# so the kind comes down into the row's own meta line. The size moved #}

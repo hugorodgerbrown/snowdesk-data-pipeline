@@ -491,6 +491,58 @@ describe('"Download here" (SNOW-1134)', () => {
   });
 });
 
+describe('"Download here" on an area a failed run left behind (12 Nov 2026)', () => {
+  it('repairs an incomplete area instead of refusing it', async () => {
+    await downloadToDone(REGION_A);
+    // Lose a render document, as a run cut short leaves a bucket.
+    const bucket = cachesStub.buckets.get(PINNED_PREFIX + areaId(REGION_A));
+    const deps = (recorded(REGION_A) && recorded(REGION_A).deps) || [];
+    const lost = deps.find((url) => bucket.has(url));
+    expect(lost).toBeTruthy();
+    bucket.delete(lost);
+    select(REGION_B);
+    select(REGION_A);
+    await waitFor(() => state() === 'incomplete');
+    select(REGION_B);
+    await waitFor(() => state() === 'idle');
+
+    const outcome = await window.pwaRegionDownload.start(REGION_A);
+    expect(outcome).toEqual({ started: true, reason: '' });
+    await waitFor(() => bucket.has(lost));
+    expect(bucket.has(lost)).toBe(true);
+  });
+});
+
+describe('"Retry" on a bucket with no record (12 Nov 2026)', () => {
+  it('names the region from the map', () => {
+    expect(window.pwaRegionDownload.name(REGION_A)).toBe('Martigny — Verbier');
+    expect(window.pwaRegionDownload.name('CH-0000')).toBe('');
+    expect(window.pwaRegionDownload.name('')).toBe('');
+  });
+
+  it('completes it, writing the record a failed run never wrote', async () => {
+    await downloadToDone(REGION_A);
+    // A failed run leaves the tiles and no record.
+    dbRows.set(
+      'basemap.regions',
+      (dbRows.get('basemap.regions') || []).filter((entry) => entry.region_id !== REGION_A),
+    );
+    const bucket = cachesStub.buckets.get(PINNED_PREFIX + areaId(REGION_A));
+    // A map tile the run never reached.
+    const lost = [...bucket.keys()].find((url) => url.endsWith('.pbf'));
+    bucket.delete(lost);
+    expect(recorded(REGION_A)).toBeUndefined();
+    select(REGION_B);
+    await waitFor(() => state() === 'idle');
+
+    const outcome = await window.pwaRegionDownload.start(REGION_A);
+    expect(outcome).toEqual({ started: true, reason: '' });
+    await waitFor(() => !!recorded(REGION_A));
+    expect(recorded(REGION_A).name).toBe('Martigny — Verbier');
+    expect(bucket.has(lost)).toBe(true);
+  });
+});
+
 describe('"Download here" keeps the region it was asked for (SNOW-1134 review)', () => {
   it('downloads A even when B is selected while A is being probed', async () => {
     select(REGION_B);
