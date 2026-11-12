@@ -21,9 +21,12 @@ this command with ``--archive`` and a local copy of the zip.
 
 Read-only by default: the import and the apply run inside a transaction
 that is rolled back, so a preview reports exactly what a commit would
-change. Not a row walk: each step reconciles a whole layer against the
-stored one, so there is no per-row countdown (``docs/management-commands.md``,
-the derived-unit exemption). Each step's counts are printed and tallied.
+change. A row swisstopo's file holds but this import cannot read is
+counted ``failed`` by the sync (SNOW-1489) and keeps its stored copy; it
+fails the run, as an item this instance cannot apply does. Not a row
+walk: each step reconciles a whole layer against the stored one, so there
+is no per-row countdown (``docs/management-commands.md``, the derived-unit
+exemption). Each step's counts are printed and tallied.
 
 Usage:
     uv run python manage.py import_ski_tours                 # preview
@@ -55,7 +58,13 @@ from apps.routes.services.ski_network import FAILED, OUTCOMES, apply_from_servic
 logger = logging.getLogger(__name__)
 
 # What the service's sync reports for each kind.
-SYNC_OUTCOMES: tuple[str, ...] = ("created", "updated", "deleted", "unchanged")
+SYNC_OUTCOMES: tuple[str, ...] = (
+    "created",
+    "updated",
+    "deleted",
+    "unchanged",
+    "failed",
+)
 
 
 class _Rollback(Exception):
@@ -107,7 +116,9 @@ class Command(RegisteredCommand):
         failed = self._report(synced, applied, verbosity=verbosity)
         logger.info("import_ski_tours: commit=%s %s %s", commit, synced, applied)
         if failed:
-            raise CommandError(f"import_ski_tours: {failed} item(s) failed to apply")
+            raise CommandError(
+                f"import_ski_tours: {failed} item(s) were unreadable or failed to apply"
+            )
 
         if verbosity >= 1:
             if commit:
@@ -152,13 +163,16 @@ class Command(RegisteredCommand):
     ) -> int:
         """Tally and print both steps' counts; return how many items failed.
 
+        An item fails when the sync could not read it or this instance
+        could not apply it.
+
         Args:
             synced: The service sync's counts, by kind.
             applied: This instance's apply outcomes, by kind.
             verbosity: The run's verbosity.
 
         Returns:
-            The failed items.
+            The unreadable and failed items, both steps together.
 
         """
         lines: list[str] = []
@@ -172,7 +186,9 @@ class Command(RegisteredCommand):
                 self.tally(f"{kind}_{outcome}", outcomes[outcome])
             summary = ", ".join(f"{outcomes[o]} {o}" for o in OUTCOMES)
             lines.append(f"  here {kind}: {summary}")
-        failed = sum(outcomes[FAILED] for outcomes in applied.values())
+        failed = sum(counts.get(FAILED, 0) for counts in synced.values()) + sum(
+            outcomes[FAILED] for outcomes in applied.values()
+        )
         self.tally("failed", failed)
         if verbosity >= 1:
             self.stdout.write("\n".join(lines))

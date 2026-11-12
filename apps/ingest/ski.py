@@ -13,6 +13,12 @@ Both go through ``sync_source_documents``: an unchanged row is not
 rewritten, a line swisstopo drops is tombstoned, and one that comes back
 is revived, so the v2 feeds' "since" stays quiet between releases.
 
+A row that cannot be read is logged at ERROR and handed on as an
+``UnreadableRecord`` (SNOW-1489): its stored copy is kept, not tombstoned,
+and the import's counts show it as ``failed``. A tour whose ``route_uuid``
+is unreadable too carries no uuid, which holds back that layer's
+tombstones for the run.
+
 The zip is read with the standard library: a GeoPackage is a SQLite file,
 and ``apps/ingest/normalise/swisstopo_ski.py`` reads its geometry blobs.
 Each layer is streamed row by row, never loaded whole.
@@ -41,7 +47,11 @@ from apps.ingest.normalise.swisstopo_ski import (
     tour_document,
     tour_uuid,
 )
-from apps.ingest.reference import DocumentRecord, sync_source_documents
+from apps.ingest.reference import (
+    DocumentRecord,
+    UnreadableRecord,
+    sync_source_documents,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,11 +85,14 @@ def _rows(path: Path, table: str) -> Iterator[dict[str, Any]]:
         connection.close()
 
 
-def segment_records(path: Path) -> Iterator[DocumentRecord]:
+def segment_records(path: Path) -> Iterator[DocumentRecord | UnreadableRecord]:
     """Yield the network GeoPackage's segments as records.
 
-    A segment whose geometry cannot be read is logged and skipped rather
-    than failing the import: one broken line must not tombstone the rest.
+    A segment whose geometry cannot be read is logged at ERROR and yielded
+    as an ``UnreadableRecord`` under its uuid rather than failing the
+    import: one broken line must not fail, or tombstone, the rest. One
+    whose ``segm_id`` cannot be read is yielded with no uuid, which holds
+    back the layer's tombstones for that run.
 
     Args:
         path: ``ski_network_2056.gpkg``.
@@ -89,12 +102,18 @@ def segment_records(path: Path) -> Iterator[DocumentRecord]:
 
     """
     for row in _rows(path, NETWORK_TABLE):
+        label = f"segment {row['segm_id']}"
+        try:
+            key = segment_uuid(int(row["segm_id"]))
+        except TypeError, ValueError:
+            logger.error("ski import: %s has no readable segm_id", label)
+            yield UnreadableRecord(uuid=None, label=label)
+            continue
         try:
             document = segment_document(row)
         except GeometryError:
-            logger.warning(
-                "ski import: segment %s has no readable line", row["segm_id"]
-            )
+            logger.error("ski import: %s has no readable line", label)
+            yield UnreadableRecord(uuid=key, label=label)
             continue
         yield DocumentRecord(
             uuid=segment_uuid(document["segment_id"]),
@@ -103,8 +122,13 @@ def segment_records(path: Path) -> Iterator[DocumentRecord]:
         )
 
 
-def tour_records(path: Path) -> Iterator[DocumentRecord]:
+def tour_records(path: Path) -> Iterator[DocumentRecord | UnreadableRecord]:
     """Yield the routes GeoPackage's named tours as records.
+
+    The uuid is read first, so a tour whose document cannot be read is
+    yielded as an ``UnreadableRecord`` under it and its stored copy kept.
+    A tour whose ``route_uuid`` cannot be read is yielded with no uuid.
+    Either is logged at ERROR.
 
     Args:
         path: ``ski_routes_2056.gpkg``.
@@ -116,11 +140,18 @@ def tour_records(path: Path) -> Iterator[DocumentRecord]:
     for row in _rows(path, ROUTES_TABLE):
         if not is_tour(row):
             continue
+        label = f"tour {row['sacid']}"
         try:
             key = tour_uuid(row)
+        except ValueError:
+            logger.error("ski import: %s has no readable route_uuid", label)
+            yield UnreadableRecord(uuid=None, label=label)
+            continue
+        try:
             document = tour_document(row)
         except GeometryError, ValueError:
-            logger.warning("ski import: tour %s is unreadable", row["sacid"])
+            logger.error("ski import: %s is unreadable", label)
+            yield UnreadableRecord(uuid=key, label=label)
             continue
         yield DocumentRecord(
             uuid=key,
@@ -150,7 +181,7 @@ def import_ski_archive(path: Path) -> dict[str, dict[str, int]]:
 
     Returns:
         Each kind's counts (``created``, ``updated``, ``deleted``,
-        ``unchanged``), keyed ``ski-network`` and ``ski-tours``.
+        ``unchanged``, ``failed``), keyed ``ski-network`` and ``ski-tours``.
 
     Raises:
         SkiArchiveError: The zip lacks either GeoPackage.
