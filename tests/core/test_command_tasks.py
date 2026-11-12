@@ -14,6 +14,11 @@ Covers:
   - A list of derived units is walked in order, with a countdown.
   - ``wait_for_slot`` spaces calls ``pace`` apart even when several tasks
     are due at once, and banks no burst across an idle spell.
+  - ``wait_for_slot`` waits for another caller's lock, keeps the larger
+    gap when callers share a service at different paces, reserves without
+    a stale lock once its wait runs out, and leaves no lock behind
+    (SNOW-1477).
+  - ``task_queue_health`` is in tests/core/test_task_queue.py.
 """
 
 from __future__ import annotations
@@ -34,6 +39,8 @@ from apps.core.command_register import RegisteredCommand
 from apps.core.command_tasks import (
     _OUTSIDE_TASKS,
     _SLOT_KEY,
+    _SLOT_LOCK_KEY,
+    _SLOT_LOCK_WAIT_S,
     BULK_TASK_PRIORITY,
     back_off,
     backing_off,
@@ -50,6 +57,8 @@ pytestmark = pytest.mark.django_db
 DATABASE = {"default": {"BACKEND": "django_tasks_db.DatabaseBackend"}}
 
 _SLEEP = "apps.core.command_tasks.time.sleep"
+
+_LOCK = _SLOT_LOCK_KEY.format("test-service")
 
 SEEN: list[int] = []
 
@@ -78,10 +87,10 @@ def _reset() -> Any:
     """Each test starts with nothing seen and the breaker closed."""
     SEEN.clear()
     clear_back_off("test-service")
-    cache.delete(_SLOT_KEY.format("test-service"))
+    cache.delete_many([_SLOT_KEY.format("test-service"), _LOCK])
     yield
     clear_back_off("test-service")
-    cache.delete(_SLOT_KEY.format("test-service"))
+    cache.delete_many([_SLOT_KEY.format("test-service"), _LOCK])
 
 
 def _command() -> RegisteredCommand:
@@ -344,3 +353,67 @@ def test_no_pace_never_waits() -> None:
     with _with_clock(clock):
         assert wait_for_slot("test-service", 0) == 0.0
     assert cache.get(_SLOT_KEY.format("test-service")) is None
+
+
+def test_a_held_lock_is_waited_for_and_its_slot_respected() -> None:
+    """Worker B holds the lock while it reserves; A waits, then starts after B."""
+    clock = _Clock()
+    cache.add(_LOCK, 1)
+    polls: list[float] = []
+    clock_sleep = clock.sleep
+
+    def b_finishes(seconds: float) -> None:
+        """On A's first poll, B writes its slot (now) and lets the lock go."""
+        polls.append(seconds)
+        if len(polls) == 1:
+            cache.set(_SLOT_KEY.format("test-service"), (int(clock.now * 1000), 2000))
+            cache.delete(_LOCK)
+        clock_sleep(seconds)
+
+    clock.sleep = b_finishes  # type: ignore[method-assign]
+    with _with_clock(clock):
+        b_start = clock.now
+        wait = wait_for_slot("test-service", 2.0)
+    a_start = clock.now
+    assert len(polls) >= 2  # one poll for the lock, then the wait
+    assert a_start - b_start >= 2.0
+    assert wait > 0
+
+
+def test_callers_at_different_paces_keep_the_larger_gap() -> None:
+    """A 0.5 s caller after a 2 s one, and the reverse, both wait 2 s."""
+    clock = _Clock()
+    with _with_clock(clock):
+        start = clock.now
+        assert wait_for_slot("test-service", 2.0) == 0.0
+        clock.now = start
+        assert wait_for_slot("test-service", 0.5) == 2.0
+    cache.delete(_SLOT_KEY.format("test-service"))
+    with _with_clock(clock):
+        start = clock.now
+        assert wait_for_slot("test-service", 0.5) == 0.0
+        clock.now = start
+        assert wait_for_slot("test-service", 2.0) == 2.0
+
+
+def test_a_stale_lock_is_waited_out_not_forever() -> None:
+    """A lock nobody releases delays the caller by the wait, then it proceeds."""
+    clock = _Clock()
+    cache.add(_LOCK, 1)
+    with _with_clock(clock):
+        start = clock.now
+        assert wait_for_slot("test-service", 2.0) == 0.0
+    assert clock.now - start >= _SLOT_LOCK_WAIT_S
+    # It did not take a lock it never held, so it did not delete it either.
+    assert cache.get(_LOCK) == 1
+    assert cache.get(_SLOT_KEY.format("test-service")) is not None
+
+
+def test_no_lock_is_left_behind() -> None:
+    """After many calls only the slot key remains; the lock is gone."""
+    clock = _Clock()
+    with _with_clock(clock):
+        for _ in range(5):
+            wait_for_slot("test-service", 1.0)
+    assert cache.get(_LOCK) is None
+    assert cache.get(_SLOT_KEY.format("test-service")) is not None

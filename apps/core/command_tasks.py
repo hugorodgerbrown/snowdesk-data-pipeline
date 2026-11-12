@@ -28,8 +28,9 @@ five rules (3 Nov 2026) the same way:
    is not a rate limit: tasks whose start times passed while the worker
    was busy or down become due together. So an outside task also calls
    ``wait_for_slot(service, pace)`` before it calls out, which reserves the
-   next free start for that service in the shared cache and sleeps until
-   it: whatever the queue does, two calls are never closer than ``pace``.
+   next free start for that service in the shared cache, under a short
+   lock, and sleeps until it: whatever the queue does and however many
+   workers run, two calls are never closer than ``pace``.
    On a 429 or an outage a task calls ``back_off``; every later task sees
    ``backing_off`` and returns at once, leaving its row a candidate.
 5. **MCP runnable.** ``tests/core/test_command_tasks_guard.py`` fails a
@@ -71,6 +72,13 @@ _OUTSIDE_TASKS: set[str] = set()
 
 _BACKOFF_KEY = "command-tasks:back-off:{}"
 _SLOT_KEY = "command-tasks:next-slot:{}"
+# A short lock around reading and writing a service's last slot. It is held
+# for two cache calls, never for the wait; it expires on its own so a
+# crashed holder frees it.
+_SLOT_LOCK_KEY = "command-tasks:slot-lock:{}"
+_SLOT_LOCK_TIMEOUT_S = 10
+_SLOT_LOCK_WAIT_S = 5.0
+_SLOT_LOCK_POLL_S = 0.02
 
 
 def calls_outside(task: Task[Any, Any]) -> Task[Any, Any]:
@@ -139,12 +147,20 @@ def wait_for_slot(service: str, pace: float) -> float:
     """Wait until ``pace`` seconds after the last call to ``service``.
 
     The execution-time half of the pacing: a task calls this just before it
-    calls the outside service. The next free start is a millisecond count
-    in the shared cache, reserved with ``incr``, so each caller gets its
-    own slot ``pace`` after the one before. The reservation is exact on a
-    backend whose ``incr`` is atomic and for one worker on any backend
-    (production runs one ``db_worker``); two workers on the database cache
-    can, rarely, share a slot.
+    calls the outside service. The last reserved start, and the pace it was
+    reserved at, sit under one key in the shared cache. A caller takes a
+    short per-service lock with ``cache.add`` (an atomic insert on every
+    backend, unlike ``incr``, which the database cache does as get-then-set),
+    reserves ``max(now, last + the larger of the two paces)``, writes it and
+    lets the lock go, then sleeps until its start outside the lock. Taking
+    the larger pace keeps two callers that share a service at different
+    paces (weather and elevation both call Open-Meteo) the wider gap apart.
+    So however many workers run, two calls never start closer than ``pace``
+    (SNOW-1477).
+
+    A holder that stalls past ``_SLOT_LOCK_WAIT_S`` between two cache calls
+    is the one case left: the next caller stops waiting and reserves
+    without the lock, and the lock key expires on its own.
 
     Args:
         service: A short name for the outside service.
@@ -157,26 +173,44 @@ def wait_for_slot(service: str, pace: float) -> float:
     if pace <= 0:
         return 0.0
     key = _SLOT_KEY.format(service)
+    lock = _SLOT_LOCK_KEY.format(service)
     step = int(pace * 1000)
-    now = int(time.time() * 1000)
-    # Seed the counter with "now" when it is absent; add is a no-op when
-    # another task got there first. An expired counter is just absent.
-    cache.add(key, now - step, timeout=None)
+    held = _take_slot_lock(lock)
     try:
-        slot = cache.incr(key, step)
-    except ValueError:
-        # It expired between add and incr: start from now.
-        cache.set(key, now, timeout=None)
+        now = int(time.time() * 1000)
+        last = cache.get(key)
         slot = now
-    if slot < now:
-        # The last reservation is in the past: bring the counter up to now,
-        # so an idle spell does not bank a burst of instant slots.
-        cache.set(key, now, timeout=None)
-        slot = now
+        if last is not None:
+            last_start, last_step = last
+            slot = max(now, last_start + max(step, last_step))
+        cache.set(key, (slot, step), timeout=None)
+    finally:
+        if held:
+            cache.delete(lock)
     wait = (slot - now) / 1000
     if wait > 0:
         time.sleep(wait)
     return wait
+
+
+def _take_slot_lock(lock: str) -> bool:
+    """Take the slot lock for a service, polling while another caller has it.
+
+    Args:
+        lock: The lock's cache key.
+
+    Returns:
+        Whether the lock was taken; False when the wait ran out, in which
+        case the caller reserves without it.
+
+    """
+    deadline = time.time() + _SLOT_LOCK_WAIT_S
+    while not cache.add(lock, 1, timeout=_SLOT_LOCK_TIMEOUT_S):
+        if time.time() >= deadline:
+            logger.warning("command tasks: %s held too long; reserving without it", lock)
+            return False
+        time.sleep(_SLOT_LOCK_POLL_S)
+    return True
 
 
 @dataclass(frozen=True)
