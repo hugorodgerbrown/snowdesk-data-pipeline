@@ -14,6 +14,7 @@ from unittest.mock import patch
 import pytest
 
 from apps.bulletins.services import replay
+from apps.bulletins.services.alert_wording import hhmm
 from apps.bulletins.services.alerts import ALERT_TZ
 from apps.bulletins.services.replay import region_issues, replay_archive, replay_region
 
@@ -85,9 +86,11 @@ def test_new_bulletin_schedule() -> None:
     """Every new bulletin: three messages, the night issue held to 06:30."""
     alerts = replay_region(RECORDS, source="SLF")
     sent = [a for a in alerts if a.sent]
-    assert all(a.title.startswith("Martigny-Verbier – ") for a in sent)
-    assert all(a.title.endswith(" bulletin") for a in sent)
-    assert sent[0].body.startswith("First of the season. ")
+    assert all(a.title == "New avalanche bulletin" for a in sent)
+    for alert in sent:
+        released = hhmm(alert.published_at)
+        assert alert.body == f"Bulletin released at {released} by SLF."
+    assert sent[0].kind == "season_start"
     held = sent[2].delivered_at.astimezone(ALERT_TZ)
     assert (held.hour, held.minute) == (6, 30)
 
@@ -132,20 +135,10 @@ def test_committed_slf_season() -> None:
     alerts = replay_archive(source="SLF")
     sent = [a for a in alerts if a.sent]
     assert 150 <= len(sent) <= 260
-    assert all(a.title.startswith("Martigny-Verbier – ") for a in sent)
-    # The level and what moved, never the problems themselves (SNOW-1356).
-    assert all("slab" not in a.body.lower() for a in sent)
-    assert any(a.body.endswith("no change.") for a in sent)
-
-
-@pytest.mark.usefixtures("_fakes")
-def test_new_snow_is_named_when_given() -> None:
-    """A day's snowfall reaches the body; the archive alone names none."""
-    plain = [a for a in replay_region(RECORDS, source="SLF") if a.sent]
-    assert not any("new snow" in a.body for a in plain)
-    snow = dict.fromkeys({a.target_date for a in plain}, 30.0)
-    snowy = [a for a in replay_region(RECORDS, source="SLF", new_snow=snow) if a.sent]
-    assert all(a.body.endswith("30 cm new snow forecast.") for a in snowy)
+    # Cold (Hugo, 2026-11-12): who released it and when, nothing more.
+    assert all(a.title == "New avalanche bulletin" for a in sent)
+    assert all(a.body.startswith("Bulletin released at ") for a in sent)
+    assert all(a.body.endswith(" by SLF.") for a in sent)
 
 
 @pytest.mark.usefixtures("_fakes")
@@ -156,6 +149,5 @@ def test_a_pause_inside_the_season_is_not_a_new_season() -> None:
         issue("2026-01-25T15:00:00+00:00", "2026-01-25T16:00:00+00:00", "low"),
     ]
     first, resumed = (a for a in replay_region(records, source="SLF") if a.sent)
-    assert first.body.startswith("First of the season.")
+    assert first.kind == "season_start"
     assert resumed.kind == "new"
-    assert resumed.body == "Bulletins are back. Low."

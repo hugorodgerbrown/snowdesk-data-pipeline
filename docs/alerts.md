@@ -22,11 +22,11 @@ admin rather than in code. The scheduled sender is behind the
 |------|------|------|
 | State | What a reader would notice in a bulletin: level, subdivision, problems with aspects, elevation band and rating. Version-stamped JSON and a 16-char fingerprint, computed once by the service and stored in the render model's `derived.state` (SNOW-1341) | `apps/ingest/normalise/bulletin_state.py` — `BulletinState`, `bulletin_state`; `state_of` (the stored state, `apps.ingest.public`); `apps/bulletins/services/bulletin_change.py` re-exports them and holds `summarise_change` |
 | Decision | Whether a (place, day) sends, is skipped, or is recorded silently | `apps/bulletins/services/alerts.py` — `decide` (pure) |
-| Words | Titles and bodies, one place or a bundle | `apps/bulletins/services/alert_wording.py` — `alert_message` |
+| Words | One title and body for every alert: a bulletin is out, from whom, when | `apps/bulletins/services/alert_wording.py` — `alert_message` |
 | Run | Per account: evaluate every place, one message, deliver, log | `alerts.evaluate_account`, `alerts.deliver`; `send_bulletin_alerts` |
 | Log | One `BulletinAlert` row per (account, region, day, state). The previous row is the "last told" state, so the log *is* the change memory | `apps/bulletins/models.py::BulletinAlert` |
 | Email | Sent from `ALERTS_FROM_EMAIL` via a django-tasks worker, with one-click `List-Unsubscribe` | `apps/accounts/services/alert_email.py` |
-| Landing | A bundle lands on `/alerts/<day>/`; a one-place alert on the map's region panel (`/map/?d=…#region`) | `apps/public/alert_views.py`, `public/alerts_day.html` |
+| Landing | Every alert lands on `/alerts/<day>/`: a card per place, A–Z, with the detail | `apps/public/alert_views.py`, `public/alerts_day.html` |
 | Since strip | "Since Friday" sentences at the top of the region body, same words as the alert | `templates/includes/_since_strip.html`, `public.bulletin_panels._since_strip` |
 | Settings | Mode, email, this device, and a switch per place | `apps/accounts/alert_views.py`, `_alert_settings.html`, `alerts_optin.js` |
 | Dot | The Today sun in the map's date row shows a red dot (per device) while the newest message of the past week is one this device has not opened Today since; drawn only for an account with alerts on. The bell that listed the messages was retired by SNOW-1366 | `alerts.recent_alerts`, `accounts:alert_recent` (`/account/alerts/recent/`), `alert_views.alert_list_url`, `static/js/today_panel.js` |
@@ -40,7 +40,8 @@ admin rather than in code. The scheduled sender is behind the
   then is recorded as `BASELINE` rather than announced.
 - **Which places.** Region pins and saved resorts, each with
   `Favourite.alerts` (default on). A dropped pin never alerts. Places in
-  one region are one place, named "Martigny-Verbier, Verbier".
+  one region are one place and one send-log row; on `/alerts/<day>/` each
+  name is its own card.
 - **Saved trips (SNOW-947, SNOW-945).** A trip the account has saved
   (organiser or not, `Trip.objects.for_user`) is a place on its own day
   only, covering every region its route crosses — `track_regions`, the
@@ -50,9 +51,8 @@ admin rather than in code. The scheduled sender is behind the
   region, and in a pinned region it is one place and one row, with both
   names. A trip crossing several regions is one place of its own
   (`AlertPlace.regions`, keyed by the trip page): it writes one send-log
-  row per region, fires when any of them does, and reads "For your trip.
-  N bulletins." with no level. A one-place trip alert, and the trip's row
-  on `/alerts/<day>/`, open the trip page. A track outside every region
+  row per region and fires when any of them does. On `/alerts/<day>/` it
+  is a card per region, each opening the trip page. A track outside every region
   adds nothing. Trips follow the account's alert setting; there is no
   per-trip switch
   ([why](decisions/a-route-carries-the-regions-it-crosses.md)).
@@ -68,34 +68,30 @@ admin rather than in code. The scheduled sender is behind the
   to a day already told sends in either mode when the level moved or a
   problem came or went. A reissue a reader
   could not tell apart (same fingerprint) never sends.
-- **The day, the level and what moved (SNOW-1356).** A one-place
-  alert's title names the place and the day the bulletin is for, so
-  Wednesday's 17:00 issue says Thursday: "Verbier – Thursday bulletin";
-  a reissue is "Verbier – Thursday bulletin update". The body is the
-  level and whether it moved: "Considerable, up from Moderate.",
-  "Considerable (3+), up from 3−." within a level, "Moderate, avalanche
-  problems changed." (a problem added or removed), "Moderate, no
-  change." A problem only shifting its aspects, band or rating is no
-  change (`BulletinChange.is_notable`): SLF shifts one most days, and in a
-  replayed season it fired "problems changed" on two days in five. A
-  season start leads "First of the season."; a restart after a pause
-  inside the season (a bulletin within `SEASON_GAP_DAYS`, 60, before
-  yesterday, `had_bulletin_in_season`) leads "Bulletins are back."; a
-  trip leads "For your trip.". SNOW-1332's open
-  door ("Verbier bulletin" / "Valid from … to …") read as the same message
-  every day of a replayed season (Hugo, 2026-11-01). Problems, aspects
-  and heights stay on the page the tap opens. A bundle is unchanged:
-  "Bulletins for your 3 places" / "Chamonix, Davos and Verbier. Valid
-  from …", "and N more" past four. The email carries the same words. The
-  full sentences (`change_sentences`) stay for the since strip and
-  `/alerts/<day>/`.
-- **New snow (SNOW-944).** A one-place alert ends "20 cm new snow
-  forecast." when the `Weather` row for the bulletin's day at the region's
-  `centroid_location` forecasts 5 cm or more (`alerts.forecast_new_snow`:
-  that day's own row and its `snowfall_sum`, refined by every fetch until
-  the day passes, SNOW-1337; `NEW_SNOW_MIN_CM`). The replay archive
-  carries no weather, so `/_alerts-replay/` names none unless
-  `replay_region(new_snow=…)` is given it.
+- **Cold (Hugo, 2026-11-12).** Every alert reads the same, whatever
+  fired: the title "New avalanche bulletin", the body "Bulletin released
+  at 17:00 by SLF." (`release_line`, the bulletins' `source` and
+  `issued_at` in Europe/Zurich). Several providers are joined in a fixed
+  order (SLF, ALBINA, Météo-France); bulletins released at different
+  times drop the time ("Bulletins released by SLF and ALBINA."). A
+  reissue reads the same with its own time. No place, level or count is
+  named. The email carries the same words. The earlier detailed wordings
+  (SNOW-1332's open door, SNOW-1356's level and move, the "Bulletins for
+  your N places" bundle) said too little to act on and too much to
+  ignore; the bundle also miscounted a region followed under two names.
+- **The landing page.** Every alert opens `/alerts/<latest day>/`, which
+  holds the detail and is not clever: one card per name the person
+  follows a place by, A–Z, nothing merged or summarised. A card shows the
+  danger tile, the level and its move since the day before
+  (`alert_wording.trend`: "up from Moderate", "up from 2−", "no change"),
+  each problem with its aspect rose and band, the forecast new snow
+  ("20 cm new snow forecast." at 5 cm or more, `alerts.forecast_new_snow`
+  and `NEW_SNOW_MIN_CM`, SNOW-944), the provider with its release and
+  validity times, and links to the map (or the trip) and the provider's
+  PDF. A trip crossing several regions is a card per region. The full
+  sentences (`change_sentences`) stay for the since strip. A season start
+  or a restart inside the season (`had_bulletin_in_season`,
+  `SEASON_GAP_DAYS`) is still decided and logged, but no longer worded.
 - **One day per place.** If today and tomorrow both fire for one place,
   tomorrow is the message and today is logged `SKIPPED`.
 - **Night hold.** 22:00–06:30 Europe/Zurich nothing is sent; the 06:30

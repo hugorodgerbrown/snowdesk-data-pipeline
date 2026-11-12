@@ -8,16 +8,20 @@ reader would see.
 from __future__ import annotations
 
 import datetime
-from dataclasses import replace
 
 import pytest
 
 from apps.bulletins.services.alert_wording import (
     PlaceAlert,
+    Release,
     alert_message,
     aspect_ranges,
     elevation_phrase,
     headline,
+    new_snow,
+    provider_name,
+    release_line,
+    trend,
 )
 from apps.bulletins.services.bulletin_change import (
     BulletinState,
@@ -48,6 +52,7 @@ def place(
     kind: str = "new",
     day: datetime.date = TOMORROW,
     region_id: str = "CH-4115",
+    releases: tuple[Release, ...] = (),
 ) -> PlaceAlert:
     """Return one place that fired."""
     return PlaceAlert(
@@ -56,7 +61,7 @@ def place(
         target_date=day,
         kind=kind,  # type: ignore[arg-type]
         change=summarise_change(previous, current),
-        compared_to=TODAY if kind == "new" else day,
+        releases=releases,
     )
 
 
@@ -102,292 +107,161 @@ class TestPhrases:
         assert headline(state("")) == "No rating"
 
 
-class TestSinglePlace:
-    """One place names its day, its level and what moved (SNOW-1356)."""
+def at(hour: int, minute: int = 0, day: datetime.date = TODAY) -> datetime.datetime:
+    """Return a UTC moment that is ``hour:minute`` in Zurich in January."""
+    return datetime.datetime(
+        day.year, day.month, day.day, hour - 1, minute, tzinfo=datetime.UTC
+    )
 
-    def test_rise(self) -> None:
-        """A rise names the bulletin's day, the level and where it came from."""
+
+SLF_17 = Release("SLF", at(17))
+
+
+class TestColdMessage:
+    """Every alert reads the same: a bulletin is out (Hugo, 2026-11-12)."""
+
+    def test_one_place(self) -> None:
+        """The title is fixed; the body names the provider and the time."""
         msg = alert_message(
-            [place(state("moderate"), state("considerable", problems=(WIND,)))],
+            [place(state("moderate"), state("considerable"), releases=(SLF_17,))],
             TODAY,
         )
-        assert msg.title == "Verbier – Saturday bulletin"
-        assert msg.body == "Considerable, up from Moderate."
-        assert msg.url == "/map/?d=2026-01-17#CH-4115"
+        assert msg.title == "New avalanche bulletin"
+        assert msg.body == "Bulletin released at 17:00 by SLF."
 
-    def test_fall(self) -> None:
-        """A fall says down."""
-        msg = alert_message([place(state("considerable"), state("moderate"))], TODAY)
-        assert msg.body == "Moderate, down from Considerable."
-
-    def test_no_change(self) -> None:
-        """A restatement says so, so a quiet week is not seven copies."""
-        msg = alert_message([place(state(), state())], TODAY)
-        assert msg.body == "Considerable, no change."
-
-    def test_shifted_problem_is_no_change(self) -> None:
-        """A problem moving its aspects or band is not news."""
-        moved = ProblemState("wind_slab", ("S",), lower=2000, rating="moderate")
+    def test_says_nothing_about_the_level(self) -> None:
+        """No level, place or problem reaches the message."""
         msg = alert_message(
-            [place(state(problems=(WIND,)), state(problems=(moved,)))], TODAY
+            [place(state("low"), state("high", problems=(WIND,)), releases=(SLF_17,))],
+            TODAY,
         )
-        assert msg.body == "Considerable, no change."
+        assert "High" not in msg.body and "Verbier" not in msg.body
+        assert "Verbier" not in msg.title
 
-    def test_problems_changed(self) -> None:
-        """The level held but a problem came or went."""
+    def test_reissue_reads_the_same_with_its_own_time(self) -> None:
+        """An update is told apart only by its release time."""
         msg = alert_message(
-            [place(state(problems=(WIND,)), state(problems=(WET,)))], TODAY
+            [
+                place(
+                    state("moderate"),
+                    state("considerable"),
+                    kind="update",
+                    day=TODAY,
+                    releases=(Release("SLF", at(8, 12)),),
+                )
+            ],
+            TODAY,
         )
-        assert msg.body == "Considerable, avalanche problems changed."
+        assert msg.title == "New avalanche bulletin"
+        assert msg.body == "Bulletin released at 08:12 by SLF."
+
+    def test_many_places_one_issue(self) -> None:
+        """Places sharing one issue name it once; the count is never said."""
+        places = [
+            place(state("moderate"), state("moderate"), label=name, releases=(SLF_17,))
+            for name in ("Andermatt", "Montana, Anzère", "Verbier")
+        ]
+        msg = alert_message(places, TODAY)
+        assert msg.body == "Bulletin released at 17:00 by SLF."
+        assert "places" not in msg.title
+
+    def test_one_provider_several_times_drops_the_time(self) -> None:
+        """Different release times are not named."""
+        msg = alert_message(
+            [
+                place(None, state(), label="A", releases=(SLF_17,)),
+                place(None, state(), label="B", releases=(Release("SLF", at(8)),)),
+            ],
+            TODAY,
+        )
+        assert msg.body == "Bulletins released by SLF."
+
+    def test_several_providers_at_several_times(self) -> None:
+        """Several providers are named in a fixed order, with no time."""
+        msg = alert_message(
+            [
+                place(
+                    None, state(), label="A", releases=(Release("METEOFRANCE", at(16)),)
+                ),
+                place(None, state(), label="B", releases=(SLF_17,)),
+                place(
+                    None, state(), label="C", releases=(Release("ALBINA", at(17, 5)),)
+                ),
+            ],
+            TODAY,
+        )
+        assert msg.body == "Bulletins released by SLF, ALBINA and Météo-France."
+
+    def test_several_providers_at_one_time(self) -> None:
+        """A shared time is still named."""
+        assert (
+            release_line([SLF_17, Release("ALBINA", at(17))])
+            == "Bulletins released at 17:00 by SLF and ALBINA."
+        )
+
+    def test_unknown_provider(self) -> None:
+        """No provider known: the body still says a bulletin is out."""
+        assert release_line([Release("", at(17))]) == "New bulletin."
+        assert release_line([]) == "New bulletin."
+
+    def test_every_alert_opens_the_landing_page(self) -> None:
+        """A single place, too, opens /alerts/<latest day>/."""
+        one = alert_message([place(None, state(), releases=(SLF_17,))], TODAY)
+        assert one.url == f"/alerts/{TOMORROW.isoformat()}/"
+        mixed = alert_message(
+            [place(None, state(), day=TODAY), place(None, state(), day=TOMORROW)],
+            TODAY,
+        )
+        assert mixed.url == f"/alerts/{TOMORROW.isoformat()}/"
+
+    def test_as_push(self) -> None:
+        """The push payload is the title, body and link."""
+        msg = alert_message([place(None, state(), releases=(SLF_17,))], TODAY)
+        assert msg.as_push() == {
+            "title": "New avalanche bulletin",
+            "body": "Bulletin released at 17:00 by SLF.",
+            "url": f"/alerts/{TOMORROW.isoformat()}/",
+        }
+
+    def test_empty_raises(self) -> None:
+        """No places is a programming error."""
+        with pytest.raises(ValueError, match="at least one place"):
+            alert_message([], TODAY)
+
+
+class TestPagePhrases:
+    """The phrases the landing page uses beside each place."""
 
     @pytest.mark.parametrize(
         ("before", "after", "expected"),
         [
-            ("-", "+", "Considerable (3+), up from 3−."),
-            ("+", "-", "Considerable (3−), down from 3+."),
+            (state("moderate"), state("considerable"), "up from Moderate"),
+            (state("considerable"), state("moderate"), "down from Considerable"),
+            (state("moderate", "-"), state("moderate"), "up from 2−"),
+            (state("moderate", "+"), state("moderate", "-"), "down from 2+"),
+            (state("moderate"), state("moderate"), "no change"),
         ],
     )
-    def test_sub_level(self, before: str, after: str, expected: str) -> None:
-        """A move within the level names the figures."""
-        msg = alert_message(
-            [place(state(subdivision=before), state(subdivision=after))], TODAY
-        )
-        assert msg.body == expected
+    def test_trend(
+        self, before: BulletinState, after: BulletinState, expected: str
+    ) -> None:
+        """The level's move reads in a few words."""
+        assert trend(summarise_change(before, after)) == expected
 
-    def test_no_detail(self) -> None:
-        """Problems, aspects and heights stay on the page."""
-        msg = alert_message(
-            [place(state("moderate"), state("considerable", problems=(WIND,)))],
-            TODAY,
-        )
-        text = (msg.title + msg.body).lower()
-        assert "wind" not in text
-        assert "2,400" not in text
-
-    def test_day_is_the_bulletins_day(self) -> None:
-        """A later day is named by its weekday whatever the send date."""
-        msg = alert_message(
-            [place(state(), state(), day=TODAY + datetime.timedelta(days=2))], TODAY
-        )
-        assert msg.title == "Verbier – Sunday bulletin"
-
-    def test_season_start(self) -> None:
-        """The first bulletin of a season says so, with the bare level."""
-        msg = alert_message(
-            [place(None, state(problems=(WIND,)), kind="season_start")], TODAY
-        )
-        assert msg.title == "Verbier – Saturday bulletin"
-        assert msg.body == "First of the season. Considerable."
-
-    def test_update_today(self) -> None:
-        """A morning reissue is the day's bulletin update."""
-        msg = alert_message(
-            [place(state("moderate"), state("considerable"), kind="update", day=TODAY)],
-            TODAY,
-        )
-        assert msg.title == "Verbier – Friday bulletin update"
-        assert msg.body == "Considerable, up from Moderate."
-
-    def test_unrated(self) -> None:
-        """An unrated state reads as no rating."""
-        msg = alert_message([place(None, state(""), kind="season_start")], TODAY)
-        assert msg.body == "First of the season. No rating."
-
-    def test_bulletins_are_back(self) -> None:
-        """A new bulletin with nothing before it resumes after a gap."""
-        msg = alert_message([place(None, state("low"))], TODAY)
-        assert msg.body == "Bulletins are back. Low."
-
-    def test_trip(self) -> None:
-        """A saved trip's alert leads with the trip, and opens it."""
-        p = PlaceAlert(
-            region_id="CH-4115",
-            label="Mont Fort loop",
-            target_date=TOMORROW,
-            kind="new",
-            change=summarise_change(state(), state()),
-            url="/trips/abc/",
-        )
-        msg = alert_message([p], TODAY)
-        assert msg.title == "Mont Fort loop – Saturday bulletin"
-        assert msg.body == "For your trip. Considerable, no change."
-        assert msg.url == "/trips/abc/"
-
-    def test_trip_crossing_several_regions(self) -> None:
-        """A multi-region trip counts its bulletins and states no level."""
-        p = PlaceAlert(
-            region_id="CH-4115",
-            label="Haute Route",
-            target_date=TOMORROW,
-            kind="new",
-            change=summarise_change(state("moderate"), state("considerable")),
-            url="/trips/abc/",
-            new_snow_cm=20,
-            bulletin_count=2,
-            multi_region=True,
-        )
-        msg = alert_message([p], TODAY)
-        assert msg.title == "Haute Route – Saturday bulletins"
-        assert msg.body == "For your trip. 2 bulletins."
-        assert "Considerable" not in msg.body
-        assert "snow" not in msg.body
-        assert msg.url == "/trips/abc/"
-
-    def test_trip_crossing_several_regions_update(self) -> None:
-        """An update to a multi-region trip says so in the title."""
-        p = PlaceAlert(
-            region_id="CH-4115",
-            label="Haute Route",
-            target_date=TOMORROW,
-            kind="update",
-            change=summarise_change(state("moderate"), state("considerable")),
-            compared_to=TOMORROW,
-            url="/trips/abc/",
-            bulletin_count=3,
-            multi_region=True,
-        )
-        msg = alert_message([p], TODAY)
-        assert msg.title == "Haute Route – Saturday bulletins update"
-        assert msg.body == "For your trip. 3 bulletins."
-
-    def test_as_push(self) -> None:
-        """The push payload carries the three fields."""
-        msg = alert_message([place(state(), state())], TODAY)
-        assert set(msg.as_push()) == {"title", "body", "url"}
-
-
-class TestNewSnow:
-    """The forecast new snow follows the level (SNOW-944)."""
-
-    def snowy(self, cm: float | None) -> PlaceAlert:
-        """Return a place with a forecast snowfall."""
-        return replace(place(state("moderate"), state()), new_snow_cm=cm)
-
-    def test_named(self) -> None:
-        """Five centimetres or more is named, rounded."""
-        msg = alert_message([self.snowy(19.6)], TODAY)
-        assert msg.body == "Considerable, up from Moderate. 20 cm new snow forecast."
+    def test_trend_with_nothing_to_compare(self) -> None:
+        """No day before: nothing is said."""
+        assert trend(summarise_change(None, state())) == ""
 
     @pytest.mark.parametrize("cm", [None, 0.0, 4.9])
     def test_dusting_is_not_news(self, cm: float | None) -> None:
-        """Below five centimetres, or unknown, nothing is said."""
-        msg = alert_message([self.snowy(cm)], TODAY)
-        assert msg.body == "Considerable, up from Moderate."
+        """Below five centimetres, no new snow line."""
+        assert new_snow(cm) == ""
 
-    def test_threshold(self) -> None:
-        """Exactly five is named."""
-        msg = alert_message([self.snowy(5.0)], TODAY)
-        assert msg.body.endswith("5 cm new snow forecast.")
+    def test_new_snow(self) -> None:
+        """Five centimetres and more are named, rounded."""
+        assert new_snow(19.6) == "20 cm new snow forecast."
 
-
-class TestBundleValidity:
-    """A bundle still says when its bulletins hold."""
-
-    START = datetime.datetime(2026, 1, 16, 16, 0, tzinfo=datetime.UTC)
-    UNTIL = datetime.datetime(2026, 1, 17, 16, 0, tzinfo=datetime.UTC)
-
-    def timed(self, **kwargs: object) -> PlaceAlert:
-        """Return a place with its bulletin's times."""
-        fields: dict[str, object] = {
-            "region_id": "CH-4115",
-            "label": "Verbier",
-            "target_date": TOMORROW,
-            "kind": "new",
-            "change": summarise_change(state(), state()),
-            "valid_from": self.START,
-            "valid_until": self.UNTIL,
-        }
-        fields.update(kwargs)
-        return PlaceAlert(**fields)  # type: ignore[arg-type]
-
-    def test_minutes_and_morning(self) -> None:
-        """Minutes show when there are any; a morning reads am."""
-        msg = alert_message(
-            [
-                self.timed(
-                    valid_from=datetime.datetime(
-                        2026, 1, 16, 7, 30, tzinfo=datetime.UTC
-                    )
-                ),
-                self.timed(
-                    label="Davos",
-                    region_id="CH-5",
-                    valid_from=datetime.datetime(
-                        2026, 1, 16, 7, 30, tzinfo=datetime.UTC
-                    ),
-                ),
-            ],
-            TODAY,
-        )
-        assert msg.body.startswith("Davos and Verbier. Valid from Friday at 8:30 am to")
-
-    def test_bundle_shares_times(self) -> None:
-        """A bundle whose bulletins share their validity states it once."""
-        msg = alert_message(
-            [self.timed(), self.timed(label="Davos", region_id="CH-5")], TODAY
-        )
-        assert msg.body == (
-            "Davos and Verbier. Valid from Friday at 5 pm to Saturday at 5 pm."
-        )
-
-    def test_bundle_with_different_times(self) -> None:
-        """Different validity falls back to the shared day."""
-        later = self.START + datetime.timedelta(hours=1)
-        msg = alert_message(
-            [
-                self.timed(),
-                self.timed(label="Davos", region_id="CH-5", valid_from=later),
-            ],
-            TODAY,
-        )
-        assert msg.body == "Davos and Verbier, for tomorrow."
-
-
-class TestBundle:
-    """Several places bundle into one message naming them."""
-
-    def test_names_and_day(self) -> None:
-        """The places are named A–Z, with their shared day."""
-        msg = alert_message(
-            [
-                place(state(), state(), "Verbier"),
-                place(state(), state("high"), "Davos", region_id="CH-5"),
-            ],
-            TODAY,
-        )
-        assert msg.title == "Bulletins for your 2 places"
-        assert msg.body == "Davos and Verbier, for tomorrow."
-        assert msg.url == "/alerts/2026-01-17/"
-
-    def test_more_than_four(self) -> None:
-        """Past four places the rest are counted."""
-        places = [
-            place(state(), state(), f"Place {i}", region_id=f"CH-{i}") for i in range(6)
-        ]
-        msg = alert_message(places, TODAY)
-        assert msg.body == (
-            "Place 0, Place 1, Place 2, Place 3 and 2 more, for tomorrow."
-        )
-
-    def test_updates(self) -> None:
-        """Every place updating."""
-        places = [
-            place(state(), state("high"), f"P{i}", "update", TODAY, f"CH-{i}")
-            for i in range(2)
-        ]
-        msg = alert_message(places, TODAY)
-        assert msg.title == "Bulletins updated for your 2 places"
-        assert msg.body == "P0 and P1, for today."
-
-    def test_mixed_days(self) -> None:
-        """Places on different days drop the day."""
-        places = [
-            place(state(), state(), "A", "new", TODAY, "CH-1"),
-            place(state(), state(), "B", "new", TOMORROW, "CH-2"),
-        ]
-        assert alert_message(places, TODAY).body == "A and B."
-
-    def test_empty_raises(self) -> None:
-        """A message needs a place."""
-        with pytest.raises(ValueError):
-            alert_message([], TODAY)
+    def test_provider_name(self) -> None:
+        """Météo-France is written as it writes itself; unknowns pass through."""
+        assert provider_name("METEOFRANCE") == "Météo-France"
+        assert provider_name("XYZ") == "XYZ"

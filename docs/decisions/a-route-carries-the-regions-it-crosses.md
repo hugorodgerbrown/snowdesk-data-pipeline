@@ -2,7 +2,7 @@
 name: a-route-carries-the-regions-it-crosses
 description: Route.crossed_regions / Trip.crossed_regions, track_regions, resolve_track_regions; Plan tiles, trip danger lines, one alert place per trip
 status: current
-last-reviewed: 2026-11-01
+last-reviewed: 2026-11-12
 ---
 
 # A route carries the regions it crosses
@@ -30,11 +30,10 @@ EAWS region ids in the order the track first enters them (SNOW-945).
   as an unrated day always has.
 - **A trip is one alert place.** A trip that crosses several regions is
   one place covering them all, named and linked by the trip. A change in
-  any of its regions makes it fire, and the message counts the bulletins
-  ("For your trip. 2 bulletins."): the regions that have published for
-  the day, changed or not, so one still waiting on its evening issue is
-  not claimed ("For your trip. 1 bulletin."). It never folds into a pin, because its
-  link is the trip page. A trip that stays in one region behaves as
+  any of its regions makes it fire. Since alerts went cold (2026-11-12)
+  the message names no place or count; the landing page gives the trip a
+  card per region, each opening the trip page. It never folds into a pin,
+  because its link is the trip page. A trip that stays in one region behaves as
   before, folding into a pin in that region.
 
 ## Why

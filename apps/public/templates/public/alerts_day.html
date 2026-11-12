@@ -1,20 +1,18 @@
 {% extends "public/base.html" %}
 {% comment %}
-apps/public/templates/public/alerts_day.html — where a bundled bulletin
-alert lands (SNOW-1328).
+apps/public/templates/public/alerts_day.html — where every bulletin alert
+lands (SNOW-1328; rebuilt 2026-11-12 when alerts went cold).
 
-One card per followed place: its name, that day's level, what moved since
-the day before (the alert's own sentences, so the page and the message
-agree word for word) and "Open on the map", which opens the place's region
-panel on that day. A saved trip's row opens the trip instead (SNOW-947);
-a trip on the day before, still to come, keeps a row of its own day.
-Places that moved come first, as in the alert.
+One card per place the person follows, A–Z, with nothing merged: the
+danger tile, the level and how it moved since the day before, each
+avalanche problem with its aspect rose and height band, the forecast new
+snow, who released the bulletin and when, and links to the map (or the
+trip, SNOW-947) and to the provider's own bulletin.
 
-Context: ``rows`` (each with its own ``since_heading``), ``heading``,
-``target_date``
+Context: ``rows``, ``heading``, ``target_date``
 (apps/public/alert_views.py::alerts_day).
 {% endcomment %}
-{% load i18n components %}
+{% load i18n components card_tags %}
 
 {# sharing=False: a signed-in person's own places; an unfurl card would #}
 {# show nothing (the page requires sign-in) and say nothing useful.     #}
@@ -30,30 +28,55 @@ Context: ``rows`` (each with its own ``since_heading``), ``heading``,
             {% include "includes/_page_title.html" with text=heading %}
             {% for row in rows %}
                 {% card padding="p-4" extra="mb-3" %}
-                <div class="flex items-baseline justify-between gap-3" data-testid="alerts-day-row">
-                    <h2 class="text-sm font-semibold text-text-1 min-w-0 truncate">{{ row.label }}</h2>
-                    {% if row.headline %}<span
-                            class="font-mono text-xs text-text-2 shrink-0"
-                        >{{ row.headline }}</span>{% endif %}
+                <div class="flex items-center gap-3" data-testid="alerts-day-row">
+                    {% include "includes/_danger_tile.html" with day_rating=row.rating decorative=True only %}
+                    <div class="min-w-0">
+                        <h2 class="text-sm font-semibold text-text-1 truncate">{{ row.label }}</h2>
+                        {% if row.rating %}
+                            <p class="text-sm text-text-2" data-testid="alerts-day-level">
+                                {{ row.level }}{% if row.trend %} · {{ row.trend }}{% endif %}
+                            </p>
+                        {% else %}
+                            <p class="text-sm text-text-3">{% trans "No bulletin for this day." %}</p>
+                        {% endif %}
+                    </div>
                 </div>
-                {% if not row.headline %}
-                    <p class="mt-1 text-sm text-text-3">{% trans "No bulletin for this day." %}</p>
-                {% elif row.sentences %}
-                    {# The sentences alone: the strip's own box would be a card in a card. #}
-                    {% include "includes/_eyebrow.html" with text=row.since_heading tag="p" class_extra="mt-2" only %}
-                    <ul class="mt-1 text-sm text-text-1 leading-prose">
-                        {% for sentence in row.sentences %}<li>{{ sentence }}</li>{% endfor %}
+                {% if row.problems %}
+                    <ul class="mt-3 border-t border-border">
+                        {% for problem in row.problems %}
+                            <li class="flex items-center gap-3 pt-3" data-testid="alerts-day-problem">
+                                {# aspect_rose returns a fixed SVG built from numeric values; safe to render unescaped. #}
+                                <!-- nosemgrep: python.flask.security.xss.audit.template-unescaped-with-safe.template-unescaped-with-safe -->
+                                {{ problem.aspects|aspect_rose:32|safe }}
+                                <div class="min-w-0">
+                                    <p class="text-sm text-text-1">{{ problem.name }}</p>
+                                    {% if problem.where %}<p class="text-sm text-text-2">{{ problem.where }}</p>{% endif %}
+                                </div>
+                            </li>
+                        {% endfor %}
                     </ul>
-                {% elif row.has_previous %}
-                    <p class="mt-1 text-sm text-text-2">{% trans "No change to the level or the problems." %}</p>
                 {% endif %}
-                {% if row.trip_url %}
-                    {% trans "Open the trip" as open_label %}
-                    {% include "includes/_button.html" with label=open_label href=row.trip_url variant="ghost" size="compact" extra_classes="mt-2" %}
-                {% else %}
-                    {% trans "Open on the map" as open_label %}
-                    {% include "includes/_button.html" with label=open_label href=row.url variant="ghost" size="compact" extra_classes="mt-2" %}
+                {% if row.new_snow %}<p class="mt-3 text-sm text-text-2">{{ row.new_snow }}</p>{% endif %}
+                {% if row.provenance %}
+                    <p class="mt-3 font-mono text-meta text-text-3" data-testid="alerts-day-provenance">{{ row.provenance }}</p>
                 {% endif %}
+                <div class="mt-2 flex items-center justify-between gap-3">
+                    {% if row.trip_url %}
+                        {% trans "Open the trip" as open_label %}
+                        {% include "includes/_button.html" with label=open_label href=row.trip_url variant="ghost" size="compact" %}
+                    {% else %}
+                        {% trans "Open on the map" as open_label %}
+                        {% include "includes/_button.html" with label=open_label href=row.url variant="ghost" size="compact" %}
+                    {% endif %}
+                    {% if row.pdf_url %}
+                        <a
+                            href="{{ row.pdf_url }}"
+                            target="_blank"
+                            rel="noopener"
+                            class="inline-flex items-center gap-1 text-sm text-text-2 underline"
+                        >{% blocktrans with provider=row.provider %}{{ provider }} bulletin{% endblocktrans %}{% include "includes/_icon_external_link.html" with size=14 %}</a>
+                    {% endif %}
+                </div>
                 {% endcard %}
             {% empty %}
                 <p class="text-sm text-text-2">

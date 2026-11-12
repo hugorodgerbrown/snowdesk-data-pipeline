@@ -1,12 +1,17 @@
 """
 apps/public/alert_views.py — The bulletin alert landing page (SNOW-1328).
 
-``/alerts/<date>/`` is where a bundled alert lands: one row per place the
-signed-in person follows, each with that day's level, what moved since the
-day before in the alert's own words, and a link that opens the place's
-region panel on the map for that day. A saved trip on that day is a row too
-(SNOW-947), its region the route's start, and its link opens the trip. A
-single-place alert skips this page and opens the map, or the trip, directly.
+``/alerts/<date>/`` is where every alert lands (Hugo, 2026-11-12): the alert
+itself only says a bulletin is out, and this page holds the detail. One
+card per place the signed-in person follows, A–Z, each with that day's
+danger tile, level and how it moved since the day before, the avalanche
+problems with their aspects and heights, the forecast new snow, the
+provider and when it released the bulletin, and links to the map and the
+provider's own bulletin.
+
+Nothing is merged or summarised: two favourites in one region are two cards,
+and a trip crossing several regions is a card per region. A saved trip on
+that day is a card too (SNOW-947), and its link opens the trip.
 
 Sign-in required, not flag-gated: an account that opted in keeps its alerts
 if the rollout flag narrows, so the page they open must keep working too.
@@ -25,9 +30,21 @@ from django.utils import timezone
 from django.utils.formats import date_format
 from django.utils.translation import gettext as _
 
+from apps.bulletins.models import Bulletin
 from apps.bulletins.services import alerts as alerts_service
-from apps.bulletins.services.alert_wording import change_sentences, headline
-from apps.bulletins.services.bulletin_change import summarise_change
+from apps.bulletins.services.alert_wording import (
+    ALERT_TZ,
+    aspect_ranges,
+    elevation_phrase,
+    hhmm,
+    level_word,
+    new_snow,
+    problem_name,
+    provider_name,
+    trend,
+)
+from apps.bulletins.services.bulletin_change import BulletinState, summarise_change
+from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -53,117 +70,146 @@ def alerts_day(request: HttpRequest, day: str) -> HttpResponse:
     except ValueError as exc:
         raise Http404 from exc
     user = request.user
+    today = timezone.localdate()
     places = alerts_service.places_on(
         alerts_service.account_places(user),  # type: ignore[arg-type]  # login_required guarantees a User
         alerts_service.trip_places(user, target),  # type: ignore[arg-type]  # as above
     )
-    rows = [_row(place, target) for place in places]
-    # A bundled alert links to the latest day it names, so a trip on the day
+    rows = [row for place in places for row in _rows(place, target, today)]
+    # An alert links to the latest day it names, so a trip on the day
     # before (today, under tomorrow's link) would vanish from the page it
-    # was announced on. Its row keeps its own day, while that day is not
+    # was announced on. Its cards keep their own day, while that day is not
     # yet past.
     previous_date = target - datetime.timedelta(days=1)
-    if previous_date >= timezone.localdate():
+    if previous_date >= today:
         rows += [
-            _row(place, previous_date, day_label=True)
+            row
             for place in alerts_service.trip_places(user, previous_date)  # type: ignore[arg-type]  # as above
+            for row in _rows(place, previous_date, today, day_label=True)
         ]
-    # Places that moved first, as in the alert itself.
-    rows.sort(key=lambda r: (not r["sentences"], r["label"]))
+    rows.sort(key=lambda r: r["label"].casefold())
     return render(
         request,
         "public/alerts_day.html",
         {
             "rows": rows,
             "target_date": target,
-            "is_today": target == timezone.localdate(),
-            "heading": _("Your places on %(day)s")
-            % {"day": date_format(target, "l j F")},
+            "heading": date_format(target, "l j F"),
         },
     )
 
 
-def _row(
-    place: alerts_service.AlertPlace, day: datetime.date, *, day_label: bool = False
-) -> dict:
+def _rows(
+    place: alerts_service.AlertPlace,
+    day: datetime.date,
+    today: datetime.date,
+    *,
+    day_label: bool = False,
+) -> list[dict]:
     """
-    Return one card's context: a place's bulletin on a day, and what moved.
+    Return a place's cards: one per name it is followed by, per region.
 
     Args:
         place: The place.
         day: The day its bulletin is read for.
-        day_label: Name the day after the label, for a row not on the
+        today: The local date, for the new snow forecast.
+        day_label: Name the day after the label, for a card not on the
             page's own day.
 
     Returns:
-        The row.
+        The cards' contexts.
 
     """
-    previous_date = day - datetime.timedelta(days=1)
-    label = place.label
-    if day_label:
-        label = f"{label} · {date_format(day, 'l')}"
-    if len(place.covered) > 1:
-        top, sentences, has_previous = _covered_regions(place, day, previous_date)
-    else:
-        current = alerts_service.day_state(place.region, day)
-        previous = alerts_service.day_state(place.region, previous_date)
-        sentences = []
-        if current is not None and previous is not None:
-            sentences = change_sentences(summarise_change(previous, current))
-        top = headline(current) if current is not None else ""
-        has_previous = previous is not None
-    return {
+    regions = place.covered
+    out = []
+    for name in place.labels or [place.region.name]:
+        for region in regions:
+            label = name if len(regions) == 1 else f"{name} · {region.name}"
+            if day_label:
+                label = f"{label} · {date_format(day, 'l')}"
+            out.append(_card(label, region, day, today, place.trip_url))
+    return out
+
+
+def _card(
+    label: str,
+    region: MicroRegion,
+    day: datetime.date,
+    today: datetime.date,
+    trip_url: str,
+) -> dict:
+    """
+    Return one card's context: a region's bulletin on a day.
+
+    Args:
+        label: The card's name.
+        region: The region whose bulletin it shows.
+        day: The day.
+        today: The local date.
+        trip_url: The trip page when the card is a trip's, else "".
+
+    Returns:
+        The card.
+
+    """
+    bulletin = alerts_service.authoritative_bulletin(region, day)
+    current = alerts_service.day_state(region, day)
+    card: dict = {
         "label": label,
-        "region": place.region,
-        "headline": top,
-        "sentences": sentences,
-        "since_heading": _("Since %(day)s") % {"day": date_format(previous_date, "l")},
-        "has_previous": has_previous,
-        "url": f"{reverse('public:map')}?d={day.isoformat()}#{place.region.region_id}",
-        "trip_url": place.trip_url,
+        "url": f"{reverse('public:map')}?d={day.isoformat()}#{region.region_id}",
+        "trip_url": trip_url,
+        "rating": None,
+    }
+    if bulletin is None or current is None:
+        return card
+    previous = alerts_service.day_state(region, day - datetime.timedelta(days=1))
+    card.update(
+        rating=_tile(current),
+        level=level_word(current),
+        trend=trend(summarise_change(previous, current)) if previous else "",
+        problems=[
+            {
+                "name": problem_name(p.problem_type, capital=True),
+                "aspects": list(p.aspects),
+                "where": " · ".join(
+                    part
+                    for part in (aspect_ranges(p.aspects), elevation_phrase(p))
+                    if part
+                ),
+            }
+            for p in current.problems
+        ],
+        new_snow=new_snow(alerts_service.forecast_new_snow(region, day, today)),
+        provenance=_provenance(bulletin),
+        provider=provider_name(bulletin.source),
+        pdf_url=bulletin.pdf_url,
+    )
+    return card
+
+
+def _tile(state: BulletinState) -> dict:
+    """Return what ``_danger_tile.html`` reads, from a bulletin state."""
+    return {
+        "max_rating": state.rating or "no_rating",
+        "max_subdivision": state.subdivision if state.subdivision in ("+", "-") else "",
     }
 
 
-def _covered_regions(
-    place: alerts_service.AlertPlace,
-    day: datetime.date,
-    previous_date: datetime.date,
-) -> tuple[str, list[str], bool]:
+def _provenance(bulletin: Bulletin) -> str:
     """
-    Return a multi-region trip's card: a bulletin count, then each region.
-
-    One region's level would misstate the others (SNOW-945), so the card
-    says how many bulletins the trip covers and gives each region its own
-    line: its level, then what moved in it, named by region.
+    Write who released a bulletin, when, and until when it holds.
 
     Args:
-        place: A trip place covering several regions.
-        day: The day its bulletins are read for.
-        previous_date: The day before, for what moved.
+        bulletin: The bulletin.
 
     Returns:
-        The headline ("" when no region has a bulletin), the sentences, and
-        whether any region had a bulletin the day before.
+        "SLF · released Thu 17:00 · valid to Fri 17:00".
 
     """
-    sentences: list[str] = []
-    rated = 0
-    has_previous = False
-    for region in place.covered:
-        current = alerts_service.day_state(region, day)
-        if current is None:
-            continue
-        rated += 1
-        previous = alerts_service.day_state(region, previous_date)
-        has_previous = has_previous or previous is not None
-        values = {"region": region.name, "text": headline(current)}
-        sentences.append(_("%(region)s: %(text)s") % values)
-        if previous is not None:
-            for sentence in change_sentences(summarise_change(previous, current)):
-                values = {"region": region.name, "text": sentence}
-                sentences.append(_("%(region)s: %(text)s") % values)
-    if not rated:
-        return "", [], False
-    top = _("%(count)d bulletins") % {"count": rated}
-    return top, sentences, has_previous
+    released = bulletin.issued_at.astimezone(ALERT_TZ)
+    until = bulletin.valid_to.astimezone(ALERT_TZ)
+    return _("%(provider)s · released %(released)s · valid to %(until)s") % {
+        "provider": provider_name(bulletin.source) or _("Unknown provider"),
+        "released": f"{date_format(released, 'D')} {hhmm(released)}",
+        "until": f"{date_format(until, 'D')} {hhmm(until)}",
+    }
