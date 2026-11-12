@@ -71,7 +71,10 @@ BULK_TASK_PRIORITY = -50
 _OUTSIDE_TASKS: set[str] = set()
 
 _BACKOFF_KEY = "command-tasks:back-off:{}"
-_SLOT_KEY = "command-tasks:next-slot:{}"
+# v2 holds (start_ms, pace_ms). The v1 key held a bare int that ``incr``
+# grew; it is left to lie, so an old worker mid-deploy and a new one never
+# read each other's shape (SNOW-1477).
+_SLOT_KEY = "command-tasks:next-slot-v2:{}"
 # A short lock around reading and writing a service's last slot. It is held
 # for two cache calls, never for the wait; it expires on its own so a
 # crashed holder frees it.
@@ -180,8 +183,10 @@ def wait_for_slot(service: str, pace: float) -> float:
         now = int(time.time() * 1000)
         last = cache.get(key)
         slot = now
-        if last is not None:
-            last_start, last_step = last
+        # Anything but the (start, pace) pair this function writes is
+        # treated as absent rather than trusted.
+        if isinstance(last, tuple) and len(last) == 2:
+            last_start, last_step = (int(part) for part in last)
             slot = max(now, last_start + max(step, last_step))
         cache.set(key, (slot, step), timeout=None)
     finally:

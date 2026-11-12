@@ -417,3 +417,15 @@ def test_no_lock_is_left_behind() -> None:
             wait_for_slot("test-service", 1.0)
     assert cache.get(_LOCK) is None
     assert cache.get(_SLOT_KEY.format("test-service")) is not None
+
+
+def test_an_unexpected_slot_value_is_treated_as_absent() -> None:
+    """A bare int (the old shape) under the key does not break the call."""
+    clock = _Clock()
+    cache.set(_SLOT_KEY.format("test-service"), 123456, timeout=None)
+    with _with_clock(clock):
+        assert wait_for_slot("test-service", 2.0) == 0.0
+    assert cache.get(_SLOT_KEY.format("test-service")) == (
+        int(clock.now * 1000),
+        2000,
+    )
