@@ -118,7 +118,8 @@ def run_at(now: datetime.datetime, *args: str) -> dict[str, int]:
     """Call the command with the whole clock at ``now``; return its tally."""
     with freeze_time(now):
         call_command("send_bulletin_alerts", *args, stdout=StringIO())
-    return CommandRun.objects.latest("id").counts
+    counts: dict[str, int] = CommandRun.objects.latest("id").counts
+    return counts
 
 
 def publish(account: Account, key: str) -> None:
