@@ -234,3 +234,72 @@ def test_sync_all_finishes_over_a_downloaded_region(
         "not ready.\n  " + offline_map_page.diagnostics()
     )
     _assert_clean(offline_map_page)
+
+
+# A failed run's leftovers: the tiles stay in the area's bucket and the
+# record is never written. Remove the record and one map tile, as a run cut
+# short leaves them, and say which tile went.
+_LEAVE_AS_A_FAILED_RUN_JS = """async (regionId) => {
+    const key = 'basemap.regions';
+    const row = await window.pwaDb.get('meta:app', key);
+    const kept = ((row && row.value) || []).filter((entry) => entry.region_id !== regionId);
+    await window.pwaDb.put('meta:app', { key: key, value: kept });
+    const name = self.pwaBasemapDownloadCore.pinnedCacheName('region-' + regionId);
+    const bucket = await caches.open(name);
+    const tile = (await bucket.keys()).find((request) => /\\/\\d+\\/\\d+\\/\\d+(\\.\\w+)?(\\?|$)/.test(request.url));
+    if (!tile) return '';
+    await bucket.delete(tile);
+    return tile.url;
+}"""
+
+
+def test_a_failed_region_is_named_and_completes_from_its_row(
+    every_flag_on: None, offline_map_page: OfflineMapPage
+) -> None:
+    """A region a failed run left behind reads by name and completes.
+
+    Hugo, 12 Nov 2026: the row read "region-CH-4115", and Remove was all
+    it offered.
+    """
+    page = offline_map_page.page
+    subject = offline_map_page.subject
+    offline_map_page.choose_basemap("swisstopo_winter")
+    offline_map_page.select_region(subject.region_name)
+    offline_map_page.download_selected_region()
+    lost = page.evaluate(_LEAVE_AS_A_FAILED_RUN_JS, subject.region_id)
+    assert lost, "The download left no map tile to take away."
+
+    page.goto(offline_map_page.live_server_url + "/map/?downloads=open")
+    page.wait_for_load_state("load")
+    row = page.locator(
+        f'#map-downloads-sheet li[data-row-area="region-{subject.region_id}"]'
+    )
+    row.wait_for(state="visible", timeout=20_000)
+    assert row.locator("[data-row-label]").inner_text() == subject.region_name
+    assert row.locator("[data-row-meta]").inner_text() == "Region · Incomplete"
+    assert (
+        row.locator("[data-row-status]").get_attribute("data-area-verdict")
+        == "incomplete"
+    )
+
+    # "Incomplete" is the exception on the row, and says why when tapped.
+    row.locator("[data-incomplete-term]").click()
+    popover = row.locator("[data-incomplete-def]")
+    popover.wait_for(state="visible", timeout=5_000)
+    assert "Download failed" in popover.inner_text()
+    page.keyboard.press("Escape")
+    popover.wait_for(state="hidden", timeout=5_000)
+
+    row.locator('[data-overflow-menu] [aria-haspopup="menu"]').click()
+    row.locator("[data-downloads-complete]").click()
+    page.wait_for_function(
+        """async ([regionId, url]) => {
+            const row = await window.pwaDb.get('meta:app', 'basemap.regions');
+            const recorded = ((row && row.value) || []).some((e) => e.region_id === regionId);
+            const name = self.pwaBasemapDownloadCore.pinnedCacheName('region-' + regionId);
+            return recorded && !!(await (await caches.open(name)).match(url));
+        }""",
+        arg=[subject.region_id, lost],
+        timeout=240_000,
+    )
+    _assert_clean(offline_map_page)

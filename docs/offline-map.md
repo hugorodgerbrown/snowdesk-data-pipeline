@@ -2,7 +2,7 @@
 name: offline-map
 description: PWA shell — sw.js, CACHE_VERSION, BASEMAP_CACHE, X-SW-Principal partitioning, Download basemap, custom-area download, overlay offline caches
 status: current
-last-reviewed: 2026-11-10
+last-reviewed: 2026-11-12
 ---
 
 # PWA shell
@@ -2578,6 +2578,22 @@ considered and dropped: a REGION orphan's bucket id (`region-<regionId>`)
 could in principle drive one, but a CUSTOM-AREA orphan has no record at
 all — no bbox, no band — to rebuild from, and a link that silently does
 nothing for one of the two row kinds reads worse than no link for either.
+
+*Superseded 12 Nov 2026 (Hugo).* The row read "region-CH-4115" after a
+failed Martigny-Verbier download, which exposed an internal id. An orphan
+is now named — a region by its own name (`regionIdForArea` on the bucket
+id, then `pwaRegionDownload.name`), a custom area by its kind — and its
+meta reads "Region · Incomplete" with an amber dot and no reason line.
+"Incomplete" is amber and opens the native popover the EAWS glossary terms
+use (`.glossary-term` / `.glossary-def`, from
+`#map-downloads-incomplete-template`), saying what happened and what to do.
+A region orphan is `completable`: its "…" menu offers **Complete
+download**, then Remove, and the download it runs keeps the tiles already
+saved. A custom-area orphan still has nothing to rebuild from, so it keeps
+the bare Remove. A recorded area that fails the render check gets the same
+amber "Incomplete", whose popover points at Sync now.
+`tests/offline/test_martigny_verbier_downloads.py` fails a real download and
+completes it from the row.
 
 **An orphan's left rule was a PALE version of its basemap's colour, not a
 flat neutral (Hugo's correction) — GONE, with the rule, in SNOW-832.**

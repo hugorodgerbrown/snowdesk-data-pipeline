@@ -175,6 +175,8 @@ function buildFixture() {
             <ul id="downloads-row-actions-menu" role="menu" hidden>
               <li role="none"><button type="button" role="menuitem" data-downloads-here
                                       aria-label="Download here">Download here</button></li>
+              <li role="none"><button type="button" role="menuitem" data-downloads-complete
+                                      aria-label="Complete download">Complete download</button></li>
               <li role="none"><button type="button" role="menuitem" data-downloads-sync
                                       aria-label="Sync now">Sync now</button></li>
               <li role="none"><button type="button" role="menuitem" data-row-rename
@@ -199,6 +201,14 @@ function buildFixture() {
         <span data-row-progress-track role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <span data-row-progress-bar></span>
         </span>
+      </span>
+    </template>
+    <template id="map-downloads-incomplete-template">
+      <span data-incomplete-kind></span> · <span class="text-status-warning-text"><button
+        type="button" popovertarget="" aria-haspopup="dialog" class="glossary-term"
+        data-incomplete-term>Incomplete</button></span>
+      <span popover class="glossary-def" data-incomplete-def>
+        <strong data-incomplete-title></strong> <span data-incomplete-body></span>
       </span>
     </template>
     <template id="map-downloads-step-notice-template">
@@ -800,6 +810,16 @@ function groupLabels() {
 }
 
 /** The first (or only) rendered row's own `<li>`. */
+/**
+ * The meta line of an incomplete row as it reads — its kind and the
+ * "Incomplete" term, without the closed popover's words.
+ */
+function incompleteMeta(row) {
+  const kind = row.querySelector('[data-incomplete-kind]');
+  const term = row.querySelector('[data-incomplete-term]');
+  return kind && term ? `${kind.textContent} · ${term.textContent}` : null;
+}
+
 function firstRowElement() {
   return document.querySelector('#map-downloads-sheet [data-group-rows] > li');
 }
@@ -1602,7 +1622,10 @@ describe('an area that cannot render (SNOW-844)', () => {
     await settle();
 
     const row = firstRowElement();
-    expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+    expect(incompleteMeta(row)).toBe('Region · Incomplete');
+    // 12 Nov 2026: its popover says a file is missing, and that Sync fetches it.
+    expect(row.querySelector('[data-incomplete-title]').textContent).toBe('Part of the map is missing');
+    expect(row.querySelector('[data-incomplete-body]').textContent).toContain('Sync now');
   });
 
   it('leaves a complete area alone', async () => {
@@ -1690,7 +1713,7 @@ describe('an area that cannot render (SNOW-844)', () => {
     openSheet();
     await settle();
 
-    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+    expect(incompleteMeta(firstRowElement())).toBe('Region · Incomplete');
   });
 
   it('leaves an orphan remove-only', async () => {
@@ -1708,8 +1731,100 @@ describe('an area that cannot render (SNOW-844)', () => {
     await settle();
 
     const row = firstRowElement();
-    expect(row.querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+    expect(incompleteMeta(row)).toBe('Region · Incomplete');
     expect(row.querySelector('[data-downloads-sync]')).toBeNull();
+    expect(row.querySelector('[data-downloads-delete]')).not.toBeNull();
+  });
+});
+
+describe('a download that did not finish (Hugo, 12 Nov 2026)', () => {
+  // A failed run leaves its pinned bucket and no record. The row used to
+  // read as the bucket id ("region-CH-4115") with Remove alone.
+  const ORPHAN_REGION = { id: 'region-CH-4115', orphaned: true, bytes: 5 * MB, savedAt: undefined };
+  const ORPHAN_CUSTOM = { id: 'custom-x9', orphaned: true, bytes: 2 * MB, savedAt: undefined };
+
+  afterEach(() => {
+    delete window.pwaRegionDownload;
+  });
+
+  async function render(areas) {
+    seed({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce(areas);
+    openSheet();
+    await settle();
+    return firstRowElement();
+  }
+
+  it('names a region by the region, not the bucket id', async () => {
+    window.pwaRegionDownload = {
+      name: vi.fn((id) => (id === 'CH-4115' ? 'Martigny-Verbier' : '')),
+      start: vi.fn(async () => ({ started: true, reason: '' })),
+    };
+    const row = await render([ORPHAN_REGION]);
+
+    expect(row.querySelector('[data-row-label]').textContent).toBe('Martigny-Verbier');
+    expect(incompleteMeta(row)).toBe('Region · Incomplete');
+  });
+
+  it('makes "Incomplete" open a popover saying it failed and how to finish it', async () => {
+    window.pwaRegionDownload = { name: vi.fn(() => 'Martigny-Verbier') };
+    const row = await render([ORPHAN_REGION]);
+
+    const term = row.querySelector('[data-incomplete-term]');
+    const def = row.querySelector('[data-incomplete-def]');
+    expect(def.id).toBe('downloads-incomplete-region-CH-4115');
+    expect(term.getAttribute('popovertarget')).toBe(def.id);
+    expect(term.closest('.text-status-warning-text')).not.toBeNull();
+    expect(def.querySelector('[data-incomplete-title]').textContent).toBe('Download failed');
+    expect(def.querySelector('[data-incomplete-body]').textContent).toContain('Complete download');
+  });
+
+  it('names a region the map does not hold by its kind', async () => {
+    window.pwaRegionDownload = { name: vi.fn(() => '') };
+    const row = await render([ORPHAN_REGION]);
+
+    expect(row.querySelector('[data-row-label]').textContent).toBe('Region');
+  });
+
+  it('offers Complete download, then Remove, on a region', async () => {
+    window.pwaRegionDownload = {
+      name: vi.fn(() => 'Martigny-Verbier'),
+      start: vi.fn(async () => ({ started: true, reason: '' })),
+    };
+    const row = await render([ORPHAN_REGION]);
+
+    const items = [...row.querySelectorAll('[data-overflow-menu] [role="menuitem"]')];
+    expect(items.map((item) => item.textContent.trim())).toEqual(['Complete download', 'Remove']);
+    expect(items[0].getAttribute('aria-label')).toBe('Complete the download of Martigny-Verbier');
+    expect(row.querySelector('[data-downloads-sync]')).toBeNull();
+    expect(row.querySelector('[data-downloads-here]')).toBeNull();
+  });
+
+  it('runs the region download on Complete download', async () => {
+    window.pwaRegionDownload = {
+      name: vi.fn(() => 'Martigny-Verbier'),
+      start: vi.fn(async () => ({ started: true, reason: '' })),
+    };
+    const row = await render([ORPHAN_REGION]);
+
+    row.querySelector('[data-downloads-complete]').click();
+    await settle();
+
+    expect(window.pwaRegionDownload.start).toHaveBeenCalledWith('CH-4115', { terrain: false });
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(true);
+  });
+
+  it('names a custom area by its kind and leaves it remove-only', async () => {
+    const row = await render([ORPHAN_CUSTOM]);
+
+    expect(row.querySelector('[data-row-label]').textContent).toBe('Custom area');
+    expect(incompleteMeta(row)).toBe('Custom area · Incomplete');
+    expect(row.querySelector('[data-incomplete-body]').textContent).toContain('frame the area again');
+    // Its box was never recorded, so there is nothing to complete: one
+    // action, the bare Remove.
+    expect(row.querySelector('[data-downloads-complete]')).toBeNull();
+    expect(row.querySelector('[data-overflow-menu]')).toBeNull();
     expect(row.querySelector('[data-downloads-delete]')).not.toBeNull();
   });
 });
@@ -1745,7 +1860,7 @@ describe('an area holding more than one map (SNOW-1478)', () => {
     openSheet();
     await settle();
 
-    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+    expect(incompleteMeta(firstRowElement())).toBe('Custom area · Incomplete');
   });
 
   it('leaves it alone once both maps are on disk', async () => {
@@ -1755,7 +1870,7 @@ describe('an area holding more than one map (SNOW-1478)', () => {
     openSheet();
     await settle();
 
-    expect(firstRowElement().querySelector('[data-row-meta]').textContent).not.toBe('Incomplete');
+    expect(firstRowElement().querySelector('[data-row-meta]').textContent).not.toContain('Incomplete');
   });
 });
 
@@ -4099,7 +4214,7 @@ describe('terrain data (SNOW-1072)', () => {
     openSheet();
     await settle();
 
-    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+    expect(incompleteMeta(firstRowElement())).toBe('Region · Incomplete');
   });
 
   it('reads an opted-in area holding every class tile as complete', async () => {
@@ -4140,7 +4255,7 @@ describe('terrain data (SNOW-1072)', () => {
     openSheet();
     await settle();
 
-    expect(firstRowElement().querySelector('[data-row-meta]').textContent).toBe('Incomplete');
+    expect(incompleteMeta(firstRowElement())).toBe('Region · Incomplete');
   });
 
   it('reads an opted-in area holding its elevation tiles as complete (SNOW-1453)', async () => {
@@ -4758,24 +4873,41 @@ describe('the offline answer on each row, and Sync all (SNOW-1420)', () => {
     );
   });
 
-  it('gives a row this device does not hold, or an orphan, no dot and no reason', async () => {
+  it('gives a row this device does not hold no dot and no reason', async () => {
     seed({});
     installSyncAll({});
     await loadModule();
     window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
       { id: 'region-CH-2000', name: "Pays d'Enhaut", bytes: 0, onDevice: false, synced: true },
+    ]);
+    openSheet();
+    await settle();
+
+    const row = firstRowElement();
+    expect(row.querySelector('[data-row-status]')).toBeNull();
+    expect(row.querySelector('[data-row-notice]')).toBeNull();
+    // And Sync all has nothing to run over.
+    expect(syncAllButton().hidden).toBe(true);
+  });
+
+  it('gives an orphan an amber dot and no reason line (Hugo, 12 Nov 2026)', async () => {
+    seed({});
+    installSyncAll({});
+    await loadModule();
+    window.pwaBasemapDownloads.areas.mockResolvedValueOnce([
       { id: 'orphan-1', orphaned: true, bytes: 5 * MB, savedAt: undefined },
     ]);
     openSheet();
     await settle();
 
-    const rows = document.querySelectorAll('#map-downloads-sheet [data-group-rows] > li');
-    expect(rows.length).toBe(2);
-    for (const row of rows) {
-      expect(row.querySelector('[data-row-status]')).toBeNull();
-      expect(row.querySelector('[data-row-notice]')).toBeNull();
-    }
-    // And Sync all has nothing to run over.
+    const row = firstRowElement();
+    const dot = row.querySelector('[data-row-status]');
+    expect(dot.getAttribute('data-area-verdict')).toBe('incomplete');
+    expect(dot.classList.contains('bg-sync-partial')).toBe(true);
+    const notice = row.querySelector('[data-row-notice]');
+    expect(notice.textContent).toBe('');
+    expect(notice.classList.contains('hidden')).toBe(true);
+    // An orphan is not synced, so Sync all still has nothing to run over.
     expect(syncAllButton().hidden).toBe(true);
   });
 

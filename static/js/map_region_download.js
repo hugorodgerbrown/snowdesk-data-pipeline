@@ -2673,9 +2673,26 @@
     return { mb: mb, terrainMb: terrainMb, tooBig: tooBig };
   }
 
+  /**
+   * A region's own name, from the region the map has loaded, or `''` when
+   * the map does not hold it (yet).
+   *
+   * 12 Nov 2026: the Downloads sheet names a row a failed download left
+   * behind by this, since nothing recorded its name.
+   *
+   * @param {string} regionId
+   * @returns {string}
+   */
+  function regionName(regionId) {
+    const feature = regionId ? FEATURE_BY_REGION_ID[regionId] : null;
+    const name = feature && feature.properties && feature.properties.name;
+    return typeof name === 'string' ? name : '';
+  }
+
   window.pwaRegionDownload = Object.freeze({
     start: startRegionDownload,
     estimate: estimateRegionDownload,
+    name: regionName,
 
     /**
      * SNOW-932 review: re-probe the focused region and repaint its roundel.

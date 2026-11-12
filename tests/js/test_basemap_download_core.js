@@ -1119,6 +1119,19 @@ describe('tileGridPlan', () => {
  * header's "third client-only group" note.
  */
 
+describe('regionIdForArea (12 Nov 2026)', () => {
+  it('reads the region id back out of a region area id', () => {
+    expect(core.regionIdForArea(core.areaIdForRegion('CH-4115'))).toBe('CH-4115');
+  });
+
+  it("answers '' for any other id", () => {
+    expect(core.regionIdForArea('custom-0f3c')).toBe('');
+    expect(core.regionIdForArea(core.CUSTOM_AREA_ID)).toBe('');
+    expect(core.regionIdForArea('')).toBe('');
+    expect(core.regionIdForArea(undefined)).toBe('');
+  });
+});
+
 describe('areaIdForRegion / pinnedCacheName', () => {
   it('prefixes a region id', () => {
     expect(core.areaIdForRegion('CH-4115')).toBe('region-CH-4115');
