@@ -901,16 +901,19 @@ class TestDefaultIssueSelection:
     )
     def test_agrees_with_the_map(self, region: MicroRegion, make: tuple) -> None:
         """The panels' pick is the bulletin the map's day rating was built from."""
+        # A rated model: an unrated one names no source bulletin (SNOW-1437).
+        rated = {
+            "render_model": {
+                "version": RENDER_MODEL_VERSION,
+                "traits": [],
+                "danger": {"key": "low", "number": "1", "ratings": []},
+            },
+            "render_model_version": RENDER_MODEL_VERSION,
+        }
         builders = {
-            "prev": lambda: _make_pm_bulletin(
-                region, date(2026, 3, 14), render_model_version=RENDER_MODEL_VERSION
-            ),
-            "am": lambda: _make_am_bulletin(
-                region, date(2026, 3, 15), render_model_version=RENDER_MODEL_VERSION
-            ),
-            "pm": lambda: _make_pm_bulletin(
-                region, date(2026, 3, 15), render_model_version=RENDER_MODEL_VERSION
-            ),
+            "prev": lambda: _make_pm_bulletin(region, date(2026, 3, 14), **rated),
+            "am": lambda: _make_am_bulletin(region, date(2026, 3, 15), **rated),
+            "pm": lambda: _make_pm_bulletin(region, date(2026, 3, 15), **rated),
         }
         for name in make:
             builders[name]()

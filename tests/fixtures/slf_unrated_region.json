@@ -1,0 +1,27 @@
+{
+  "type": "Feature",
+  "geometry": null,
+  "properties": {
+    "bulletinID": "23b94339-909b-47bc-b400-fb2851bd4d45",
+    "lang": "en",
+    "validTime": {
+      "startTime": "2026-01-15T07:00:00Z",
+      "endTime": "2026-01-15T15:00:00Z"
+    },
+    "nextUpdate": "2026-01-15T15:00:00Z",
+    "unscheduled": false,
+    "publicationTime": "2026-01-15T06:30:00Z",
+    "regions": [{ "regionID": "CH-1122", "name": "Gruyère" }],
+    "customData": {
+      "CH": {
+        "dangerRatingEvolution": [
+          {
+            "date": "2026-01-14T00:00:00Z",
+            "dangerRating": { "mainValue": "moderate", "validTimePeriod": "all_day" }
+          },
+          { "date": "2026-01-15T00:00:00Z" }
+        ]
+      }
+    }
+  }
+}

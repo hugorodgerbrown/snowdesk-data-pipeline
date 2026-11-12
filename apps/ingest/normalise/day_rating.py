@@ -22,7 +22,9 @@ states the full v9 policy.
 
 plus AM/PM keys whenever there are both morning and afternoon traits, the
 ALBINA elevation-band breakdown, and ``no_rating`` when no trait carries a
-usable level. Every rule is unchanged from the app's version.
+usable level. Every rule is unchanged from the app's version, except that
+from v10 a model whose headline is ``no_rating`` (it carried no valid
+``dangerRatings``) is an unrated day, never low (SNOW-1437).
 """
 
 from __future__ import annotations
@@ -46,7 +48,10 @@ NO_RATING = "no_rating"
 # v9 (SNOW-1054): the headline subdivision is read through. v8 re-mapped the
 # render model's display character through a table keyed on the raw CAAML
 # tokens, matched nothing, and stored "" on every row.
-DAY_RATING_VERSION: int = 9
+#
+# v10 (SNOW-1437): a render model whose headline is ``no_rating`` (no valid
+# ``dangerRatings``) rates as an unrated day. v9 rated it low / low.
+DAY_RATING_VERSION: int = 10
 
 # Map trait danger_level int (1–5) to rating key string.
 _DANGER_LEVEL_TO_KEY: dict[int, str] = {
@@ -151,13 +156,13 @@ def _extract_headline_from_render_model(render_model: dict) -> tuple[str, str]:
         render_model: A render model dict produced by build_render_model.
 
     Returns:
-        A ``(rating_key, subdivision)`` tuple. ``rating_key`` defaults to
-        ``"low"`` when nothing usable is found; ``subdivision`` defaults to
-        ``""``.
+        A ``(rating_key, subdivision)`` tuple. ``rating_key`` is
+        ``"no_rating"`` when nothing usable is found — never a guessed
+        ``"low"`` (SNOW-1437); ``subdivision`` defaults to ``""``.
 
     """
     danger = render_model.get("danger") or {}
-    key: str = danger.get("key") or "low"
+    key: str = danger.get("key") or NO_RATING
     raw_sub: str = danger.get("subdivision") or ""
     subdivision = raw_sub if raw_sub in _SUBDIVISION_SUFFIXES else ""
     return key, subdivision
@@ -519,6 +524,14 @@ def rate_render_model(render_model: dict | None, bulletin_id: str) -> DayRating:
     rm_ratings: list[dict] = (rm.get("danger") or {}).get("ratings") or []
     source = str(rm.get("source") or "")
     bands = _derive_albina_bands(rm) if source == PROVIDER_ALBINA else None
+
+    # A headline of ``no_rating`` means the bulletin carried no valid rating:
+    # the provider did not assess the day, so it is never rated low
+    # (SNOW-1437). A genuine elevation-band split always carries ratings, so
+    # checking it first keeps every split as it was.
+    if headline_key == NO_RATING and _detect_elevation_band_split(rm_ratings) is None:
+        logger.debug("Bulletin %s carries no rating; the day is unrated.", bulletin_id)
+        return DayRating(**{**unrated_day(), "source": source, "bands": bands})
 
     if not traits:
         # Quiet day: an elevation-band split first, otherwise the headline.

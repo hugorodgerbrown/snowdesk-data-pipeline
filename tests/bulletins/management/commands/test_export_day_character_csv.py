@@ -114,6 +114,28 @@ class TestExportDayCharacterCsv:
         assert row["min_lower_elevation"] == ""
         assert row["day_character_explainer"]  # non-empty
 
+    def test_an_unrated_bulletin_has_no_day_character(self) -> None:
+        """No rating is not a stable day: blank character, number 0 (SNOW-1437)."""
+        BulletinFactory.create(
+            bulletin_id="b-unrated",
+            issued_at=datetime(2026, 1, 10, 8, 0, tzinfo=UTC),
+            valid_from=datetime(2026, 1, 10, 7, 0, tzinfo=UTC),
+            valid_to=datetime(2026, 1, 10, 18, 0, tzinfo=UTC),
+            render_model={
+                "version": 11,
+                "danger": {"key": "no_rating", "number": "0", "ratings": []},
+                "traits": [],
+            },
+        )
+
+        out = StringIO()
+        call_command("export_day_character_csv", stdout=out)
+        (row,) = _read_rows(out.getvalue())
+
+        assert row["day_character"] == ""
+        assert row["day_character_explainer"] == ""
+        assert row["danger_number"] == "0"
+
     def test_each_rule_branch_emits_expected_key(self) -> None:
         """One bulletin per cascade branch — labels match compute_day_character."""
         # Rule 1: danger 4 → dangerous.

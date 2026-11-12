@@ -2,7 +2,7 @@
 name: calendar
 description: RegionDayRating, day_rating policy, the danger calendar (_season_calendar.html, build_season_months, first_rated_date, season_header)
 status: current
-last-reviewed: 2026-11-05
+last-reviewed: 2026-11-12
 ---
 
 # Calendar and RegionDayRating
@@ -111,10 +111,14 @@ danger • {region} region".
   `None`.
 - `source_bulletin` — FK to the chosen `Bulletin` (nullable on
   `no_rating` days).
-- `version` — `DAY_RATING_VERSION` at compute time (currently 9); bump
+- `version` — `DAY_RATING_VERSION` at compute time (currently 10); bump
   the service constant when the aggregation policy changes. v9 changed no
   policy: it fixed the subdivision columns, which v8 and earlier stored as
-  `""` on every row (SNOW-1054).
+  `""` on every row (SNOW-1054). v10 (SNOW-1437): a bulletin whose render
+  model carries no rating (`danger.key == "no_rating"`, from a CAAML with
+  no valid `dangerRatings`) rates the day `no_rating` with no source
+  bulletin. v9 rated it low / low, so the map and calendar showed level 1
+  for a region SLF had not assessed.
 - `unique_together = (region, date)`; ordering `["-date", "region__region_id"]`.
 
 **Aggregation policy** (v8 — see the module docstring of

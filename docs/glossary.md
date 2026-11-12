@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-11-10
+last-reviewed: 2026-11-12
 ---
 
 # Glossary — domain terms to code symbols
@@ -63,7 +63,7 @@ L3 is deliberately skipped. All in `apps/regions/models.py`.
 | RegionBulletin | Through table (bulletin, MicroRegion); snapshots `region_name_at_time` because region names drift | `apps/bulletins/models.py` |
 | PipelineRun | One execution of an ingestion run — status (`SUCCESS`, `PARTIAL` when it finished with `records_failed > 0` via `mark_finished`, or `FAILED`), timings, created/updated/failed counts | `apps/bulletins/models.py` |
 | Render model | Versioned interpretation of a bulletin, built at ingest so templates contain no derivation logic (reference data, built by the service — see reference-data ADR); `RENDER_MODEL_VERSION = 9` | `apps/ingest/normalise/render_model.py` (`build_render_model()`, via `apps.ingest.public`, SNOW-1270); stored on `SourceBulletin.render_model` and served in the bulletins feed, copied onto `Bulletin.render_model` when the versions match |
-| Danger rating | EAWS 1–5 scale (low → very_high) plus `no_snow` / `no_rating` | `DangerRatingValue` in `apps/bulletins/schema.py`; numeric map `_DANGER_NUMBER` in `render_model.py` |
+| Danger rating | EAWS 1–5 scale (low → very_high) plus `no_snow` / `no_rating`. A bulletin with no valid `dangerRatings` has render-model `danger.key == "no_rating"` (number `"0"`), the same value as an unrated day's `RegionDayRating`, and reads "No rating" everywhere, never low (SNOW-1437) | `DangerRatingValue` in `apps/bulletins/schema.py`; numeric map `_DANGER_NUMBER` in `render_model.py`; `_resolve_danger` and `NO_RATING_KEY` in `apps/ingest/normalise/render_model.py` |
 | Subdivision | SLF's +/=/− refinement of a level (e.g. `4-`) | carried through render model and `RegionDayRating.subdivisions` |
 | RegionDayRating | Denormalised per-(region, date) min/max rating from the authoritative bulletin; feeds the calendar and CSV export | `apps/bulletins/models.py`; built by `apps/bulletins/services/day_rating.py` (`recompute_region_day` selects the bulletin), read by the service's `rate_render_model` (`apps/ingest/normalise/day_rating.py`, SNOW-1270) |
 | SourceDayRating | The service's `RegionDayRating`: a region's danger range for one day, keyed by EAWS region code and date, computed from `SourceBulletin` rows whenever one is stored, served at `/api/data/v2/day-ratings/` and copied into `RegionDayRating` by `apply_day_rating_item` | `apps/ingest/models.py`; `apps/ingest/day_ratings.py` (`refresh_source_day_ratings`, SNOW-1270) |

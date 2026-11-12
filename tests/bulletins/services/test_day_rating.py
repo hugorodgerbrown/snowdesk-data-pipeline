@@ -544,11 +544,11 @@ class TestRecomputeRegionDay:
         assert rdr.max_rating == RegionDayRating.Rating.NO_RATING
         assert rdr.min_rating == RegionDayRating.Rating.NO_RATING
 
-    def test_empty_render_model_falls_back_to_low(self) -> None:
+    def test_empty_render_model_is_unrated(self) -> None:
         """
         A bulletin whose render_model is an empty dict has no traits and no
-        danger key, so _extract_headline_from_render_model defaults to "low"
-        and the result is min=max=low (quiet-day fallback path).
+        danger key, so _extract_headline_from_render_model gives "no_rating"
+        and the day is unrated, never a guessed "low" (SNOW-1437).
         """
         region = MicroRegionFactory.create(region_id="CH-4115")
         day = datetime.date(2026, 1, 15)
@@ -572,9 +572,10 @@ class TestRecomputeRegionDay:
         recompute_region_day(region, day, commit=True)
 
         rdr = RegionDayRating.objects.get(region=region, date=day)
-        # Empty render_model → traits=[] → fallback to danger.key → defaults to "low".
-        assert rdr.min_rating == "low"
-        assert rdr.max_rating == "low"
+        # Empty render_model → no danger key → unrated (SNOW-1437).
+        assert rdr.min_rating == "no_rating"
+        assert rdr.max_rating == "no_rating"
+        assert rdr.source_bulletin is None
 
     def test_no_bulletin_writes_no_rating(self) -> None:
         """When no qualifying bulletin exists, both min and max are no_rating."""
@@ -757,6 +758,35 @@ class TestApplyBulletinDayRatings:
         ).exists()
         # No row created for any other date.
         assert RegionDayRating.objects.filter(region=region).count() == 1
+
+    def test_an_unrated_slf_region_writes_no_rating(self) -> None:
+        """SLF's entry for a region it did not assess is no_rating (SNOW-1437).
+
+        The render model is built from a trimmed copy of the CH-1122 Gruyère
+        entry in SLF's v5 sample: no ``dangerRatings``, no problems, only
+        ``customData.CH.dangerRatingEvolution``.
+        """
+        region = MicroRegionFactory.create(region_id="CH-1122")
+        fixture = Path(__file__).parents[2] / "fixtures" / "slf_unrated_region.json"
+        properties = json.loads(fixture.read_text())["properties"]
+        bulletin = BulletinFactory.create(
+            valid_from=datetime.datetime(2026, 1, 15, 7, 0, tzinfo=UTC),
+            valid_to=datetime.datetime(2026, 1, 15, 15, 0, tzinfo=UTC),
+            render_model=build_render_model(properties),
+            render_model_version=RENDER_MODEL_VERSION,
+        )
+        RegionBulletinFactory.create(
+            bulletin=bulletin, region=region, region_name_at_time=region.name
+        )
+
+        apply_bulletin_day_ratings(bulletin)
+
+        rdr = RegionDayRating.objects.get(
+            region=region, date=datetime.date(2026, 1, 15)
+        )
+        assert rdr.max_rating == RegionDayRating.Rating.NO_RATING
+        assert rdr.min_rating == RegionDayRating.Rating.NO_RATING
+        assert rdr.source_bulletin is None
 
     def test_evening_bulletin_creates_one_row_for_next_day(self) -> None:
         """An evening bulletin (valid_from.hour >= 12) creates exactly one row for day+1."""
