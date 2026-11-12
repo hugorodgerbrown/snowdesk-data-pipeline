@@ -203,6 +203,15 @@ _DANGER_MAP: dict[str, dict[str, Any]] = {
         "verdict": _("AVOID"),
         "colour": "#ff0000",
     },
+    # A bulletin with no rating (SNOW-1437): the provider did not assess the
+    # day. It is not on the EAWS scale, so it carries no number, verdict or
+    # colour, and the JSON-LD names it without a termCode.
+    "no_rating": {
+        "number": "",
+        "label": _("No rating"),
+        "verdict": "",
+        "colour": "",
+    },
 }
 
 
@@ -2057,7 +2066,12 @@ def _build_og_description(panel: dict[str, Any] | None) -> str:
         return ""
 
     label = str(panel.get("danger_label") or "")
-    number = str(panel.get("danger_number") or "")
+    # An unrated bulletin has no level number to show (SNOW-1437).
+    number = (
+        ""
+        if panel.get("danger_key") == "no_rating"
+        else str(panel.get("danger_number") or "")
+    )
     raw_key_message = strip_tags(str(panel.get("key_message") or "")).strip()
 
     if label and number:
@@ -2160,8 +2174,8 @@ def _build_structured_data(
     major_name = (major.name_en or major.name_native) if major else ""
 
     # Danger level label and numeric code.
-    danger_key: str = panel.get("danger_key") or "low"
-    danger_meta = _DANGER_MAP.get(danger_key, _DANGER_MAP["low"])
+    danger_key: str = panel.get("danger_key") or "no_rating"
+    danger_meta = _DANGER_MAP.get(danger_key, _DANGER_MAP["no_rating"])
     danger_label = str(danger_meta["label"])
     danger_number = str(danger_meta["number"])
 
@@ -2219,6 +2233,10 @@ def _build_structured_data(
             "inDefinedTermSet": "https://www.avalanches.org/standards/avalanche-danger-scale/",
         },
     }
+    if not danger_number:
+        # No rating is not a term of the EAWS scale (SNOW-1437).
+        del report["about"]["termCode"]
+        del report["about"]["inDefinedTermSet"]
     # SNOW-394: isBasedOn points at the upstream source document — the
     # per-bulletin ``pdf_url`` populated at ingest by SLF / ALBINA /
     # Météo-France fetchers. Stronger citation than sourceOrganization

@@ -101,10 +101,12 @@ def test_an_albina_bulletin_carries_its_bands() -> None:
     assert [band["band_id"] for band in bands] == ["above-2000", "below-2000"]
 
 
-def test_a_missing_render_model_is_rated_low() -> None:
-    """None reads as an empty model: the headline defaults to low."""
+def test_a_missing_render_model_is_unrated() -> None:
+    """None reads as an empty model: no rating, never a guessed low (SNOW-1437)."""
     rating = rate_render_model(None, "b-1")
-    assert rating["min_rating"] == "low"
+    assert rating["min_rating"] == "no_rating"
+    assert rating["max_rating"] == "no_rating"
+    assert rating["rated"] is False
 
 
 def test_an_unrated_day_names_nothing() -> None:
@@ -113,3 +115,43 @@ def test_an_unrated_day_names_nothing() -> None:
     assert rating["rated"] is False
     assert rating["source"] == ""
     assert rating["min_rating"] == rating["max_rating"] == NO_RATING
+
+
+def _unrated_model() -> dict[str, Any]:
+    """The render model of a region SLF did not assess (SNOW-1437).
+
+    What ``_resolve_danger`` gives a bulletin with no ``dangerRatings``: SLF's
+    per-region export carries one for a region it did not rate that day.
+    """
+    return _model(
+        danger={"key": NO_RATING, "number": "0", "subdivision": None, "ratings": []},
+        traits=[],
+    )
+
+
+def test_an_unrated_bulletin_is_an_unrated_day() -> None:
+    """A ``no_rating`` headline rates no_rating / no_rating, not low (SNOW-1437)."""
+    rating = rate_render_model(_unrated_model(), "b-1")
+    assert rating["min_rating"] == rating["max_rating"] == NO_RATING
+    assert rating["rated"] is False
+    assert rating["am_rating"] is None and rating["pm_rating"] is None
+
+
+def test_a_quiet_low_day_is_still_low() -> None:
+    """Empty traits with a real low rating stays a rated low day."""
+    rating = rate_render_model(
+        _model(
+            danger={
+                "key": "low",
+                "number": "1",
+                "subdivision": None,
+                "ratings": [
+                    {"period": "all_day", "key": "low", "subdivision": None},
+                ],
+            },
+            traits=[],
+        ),
+        "b-1",
+    )
+    assert rating["min_rating"] == rating["max_rating"] == "low"
+    assert rating["rated"] is True

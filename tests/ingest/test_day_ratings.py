@@ -140,6 +140,30 @@ class TestRefresh:
         assert refresh_source_day_ratings({("CH-1", DAY)}) == 1
         assert SourceDayRating.objects.get().max_rating == "high"
 
+    def test_an_unrated_bulletin_writes_no_rating(self) -> None:
+        """A bulletin with no rating governs nothing: no_rating, no source (SNOW-1437).
+
+        SLF's per-region export carries an entry with empty ``dangerRatings``
+        for a region it did not assess; ``run_slf_pipeline`` writes through
+        here.
+        """
+        row = _bulletin("unrated", 7, ["CH-1122"])
+        SourceBulletin.objects.filter(pk=row.pk).update(
+            render_model={
+                **_model(),
+                "danger": {
+                    "key": NO_RATING,
+                    "number": "0",
+                    "subdivision": None,
+                    "ratings": [],
+                },
+            }
+        )
+        assert refresh_source_day_ratings({("CH-1122", DAY)}) == 1
+        rating = SourceDayRating.objects.get()
+        assert rating.min_rating == rating.max_rating == NO_RATING
+        assert rating.bulletin_id == ""
+
     def test_without_commit_nothing_is_written(self) -> None:
         """The preview counts."""
         _bulletin("b", 7, ["CH-1"])

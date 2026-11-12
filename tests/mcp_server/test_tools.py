@@ -21,6 +21,7 @@ import pytest
 from django.core.cache import cache
 
 from apps.bulletins.models import Bulletin, RegionDayRating
+from apps.bulletins.services.day_rating import recompute_region_day
 from apps.bulletins.services.render_model import (
     RENDER_MODEL_VERSION,
     build_render_model,
@@ -290,6 +291,19 @@ class TestGetCurrentConditions:
         assert result["danger_level"] == history["days"][0]["max_rating"]
         assert result["danger_ratings"] == ["moderate", "considerable"]
         assert "considerable" in result["summary"]
+
+    def test_an_unrated_bulletin_reports_no_rating(self, region: MicroRegion) -> None:
+        """A bulletin with no rating answers no_rating, never "low" (SNOW-1437)."""
+        target_date = datetime.date(2026, 4, 8)
+        _make_bulletin(region, target_date, danger_key="no_rating", ratings=[])
+        recompute_region_day(region, target_date, commit=True)
+
+        result = tools.get_current_conditions(region.region_id, target_date)
+
+        assert result["has_bulletin"] is True
+        assert result["danger_level"] == "no_rating"
+        assert result["danger_ratings"] == []
+        assert "low" not in result["summary"].lower()
 
     def test_query_count_is_bounded(
         self, region: MicroRegion, django_assert_max_num_queries: Any

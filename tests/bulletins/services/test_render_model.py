@@ -25,7 +25,10 @@ from typing import Any
 import pytest
 
 from apps.bulletins.models import Bulletin
-from apps.bulletins.services.render_model import compute_day_character
+from apps.bulletins.services.render_model import (
+    compute_day_character,
+    has_day_character,
+)
 from apps.ingest.normalise.render_model import (
     RENDER_MODEL_VERSION,
     RenderModelBuildError,
@@ -43,6 +46,7 @@ from apps.ingest.normalise.render_model import (
     band_id_for_problem,
     band_label_for_elevation,
     build_render_model,
+    day_character_key,
     detect_source,
 )
 from apps.ingest.public import parse_dpbra_xml
@@ -236,11 +240,22 @@ class TestResolveDanger:
         result = _resolve_danger([{"mainValue": "moderate"}])
         assert result["subdivision"] is None
 
-    def test_empty_ratings_returns_low(self) -> None:
-        """Empty ratings list defaults to low/1."""
+    def test_empty_ratings_returns_no_rating(self) -> None:
+        """No ratings is no rating, never a guessed low (SNOW-1437)."""
         result = _resolve_danger([])
-        assert result["key"] == "low"
-        assert result["number"] == "1"
+        assert result == {
+            "key": "no_rating",
+            "number": "0",
+            "subdivision": None,
+            "ratings": [],
+        }
+
+    def test_only_unknown_main_values_returns_no_rating(self) -> None:
+        """Ratings whose mainValues are all unknown are no rating too."""
+        result = _resolve_danger([{"mainValue": "no_snow"}, {"mainValue": ""}])
+        assert result["key"] == "no_rating"
+        assert result["number"] == "0"
+        assert result["ratings"] == []
 
     def test_unknown_main_value_is_skipped(self) -> None:
         """Unknown mainValue entries are skipped, not raising."""
@@ -1225,6 +1240,17 @@ class TestComputeDayCharacterRoundTrip:
         }
         assert compute_day_character(rm).label == "Stable day"
 
+    def test_an_unrated_model_has_no_day_character(self) -> None:
+        """No rating is not a quiet day: no character, no callout (SNOW-1437)."""
+        rm: dict[str, Any] = {
+            "danger": {"key": "no_rating", "number": "0", "ratings": []},
+            "traits": [],
+        }
+        assert day_character_key(rm) == ""
+        assert has_day_character(rm) is False
+        with pytest.raises(ValueError, match="no day character"):
+            compute_day_character(rm)
+
 
 # ---------------------------------------------------------------------------
 # Version 3 — RENDER_MODEL_VERSION constant and build_render_model version
@@ -1236,7 +1262,7 @@ class TestRenderModelVersion:
 
     def test_constant_is_current(self) -> None:
         """RENDER_MODEL_VERSION constant equals the current version."""
-        assert RENDER_MODEL_VERSION == 10
+        assert RENDER_MODEL_VERSION == 11
 
     def test_build_render_model_returns_current_version(self) -> None:
         """build_render_model returns a dict with the current version."""
