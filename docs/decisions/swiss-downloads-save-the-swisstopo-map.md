@@ -2,7 +2,7 @@
 name: swiss-downloads-save-the-swisstopo-map
 description: Swiss downloads save the Swisstopo map whatever is on screen; offline the map switches to it (SNOW-1478, basemapsForGround)
 status: current
-last-reviewed: 2026-11-09
+last-reviewed: 2026-11-12
 ---
 
 # A Swiss download saves the Swisstopo map
@@ -73,3 +73,15 @@ Swisstopo after landing, with no memory of choosing it.
   always is.
 - `swisstopo_extent.js` loads for every reader, not only behind
   `map_beyond_switzerland`, because the download reads it.
+
+## Tapping download on an old Swiss copy offers Sync
+
+Hugo, 12 Nov 2026. A Swiss region saved on another map before this
+decision still showed the replace confirm when its download control was
+tapped, in terms of basemaps ("Replace and download"). A Sync adds the
+Swiss map and keeps the copy there, so the region control now asks
+"You already have <area>. Sync it to add the Swiss map?" instead
+(`confirmSyncInstead`, gated by `pwaBasemapDownloads.syncAddsSwissMap`).
+Its Sync button opens the Downloads sheet and syncs that row
+(`pwaDownloadsManager.sync`), so the progress shows where every other
+Sync does. The replace confirm stays for every other basemap change.

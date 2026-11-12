@@ -525,6 +525,11 @@ const MAP_STRINGS = self.pwaStrings.read('map-strings-template', {
   // must never be interpolated into the named string.
   'download-replace-body': 'Your %(basemap)s copy of %(region)s (%(size)s)',
   'download-replace-body-unnamed': 'Your earlier copy of %(region)s (%(size)s)',
+  // Hugo, 12 Nov 2026: the confirm raised instead of the replace one when a
+  // Sync would add the Swiss map to the copy already held
+  // (`confirmSyncInstead`, map_basemap_downloads.js). Placeholder copy.
+  'download-sync-instead-title': 'You already have %(region)s. Sync it to add the Swiss map?',
+  'download-sync-instead-body': 'Nothing you have saved is removed.',
   // SNOW-749: the roundel's ninth state. Downloading is gated on an
   // account, and the control stays
   // VISIBLE and tappable while the visitor is signed out — a hidden

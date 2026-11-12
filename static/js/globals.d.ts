@@ -347,7 +347,7 @@ interface Window {
     reportAt(lat: number, lon: number): void;
   };
   /** static/js/map_downloads_manager.js — the downloads sheet. */
-  pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void };
+  pwaDownloadsManager: { open(): void; toggle(): void; refresh(): void; sync(areaId: string): Promise<void> };
   /** SNOW-1481: Saved, the four sheets as one panel (static/js/saved_panel.js). */
   pwaSavedPanel: {
     open(): void;

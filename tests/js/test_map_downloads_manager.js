@@ -964,6 +964,18 @@ describe('opening the sheet', () => {
     menu.remove();
   });
 
+  it('opens and syncs one area for the region control (Hugo, 12 Nov 2026)', async () => {
+    // The "Sync it to add the Swiss map?" confirm's Sync button.
+    seed({ 'basemap.regions': REGIONS });
+    await loadModule();
+
+    await window.pwaDownloadsManager.sync('region-CH-2101');
+    await settle();
+
+    expect(document.getElementById('map-downloads-sheet').hidden).toBe(false);
+    expect(window.pwaBasemapDownloads.syncArea).toHaveBeenCalledWith('region-CH-2101', expect.any(Function));
+  });
+
   it('opens on load from ?downloads=open and drops the parameter', async () => {
     // The account menu's link from any page other than the map.
     window.history.replaceState(null, '', '/map/?downloads=open#here');

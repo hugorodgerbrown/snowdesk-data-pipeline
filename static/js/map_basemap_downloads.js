@@ -3415,6 +3415,15 @@ window.pwaBasemapDownloads = Object.freeze({
   syncArea: (areaId, onStage, signal) => syncArea(areaId, onStage, signal),
 
   /**
+   * Hugo, 12 Nov 2026: whether a Sync would add the Swiss map to this area
+   * — see `syncAddsSwissMap`.
+   *
+   * @param {string} areaId
+   * @returns {Promise<boolean>}
+   */
+  syncAddsSwissMap: (areaId) => syncAddsSwissMap(areaId),
+
+  /**
    * SNOW-1487: what one area's bucket holds, measured by URL class, for
    * the Downloads sheet's inventory — see `measureAreaInventory`.
    *
@@ -3625,6 +3634,51 @@ function confirmBasemapReplace(previous) {
     },
     body,
   );
+}
+
+/**
+ * Hugo, 12 Nov 2026: ask whether to Sync an area instead of replacing it.
+ *
+ * Raised by the region control in place of `confirmBasemapReplace` when
+ * the copy already held is a Swiss region on another map, which a Sync
+ * brings up to date by adding the Swiss map and keeping what is there
+ * (`syncAddsSwissMap`). The replace confirm asked the same user about
+ * basemaps; this asks about the area, by its name.
+ *
+ * @param {string} name The area's own name.
+ * @returns {Promise<boolean>} `true` = run the Sync, `false` = do nothing.
+ */
+function confirmSyncInstead(name) {
+  const title = document.getElementById('map-download-sync-instead-title');
+  if (title) {
+    title.textContent = self.pwaStrings.interpolate(MAP_STRINGS['download-sync-instead-title'], {
+      region: name,
+    });
+  }
+  return confirmViaOverlayBanner(
+    {
+      banner: 'map-download-sync-instead',
+      body: 'map-download-sync-instead-body',
+      cta: 'map-download-sync-instead-cta',
+    },
+    MAP_STRINGS['download-sync-instead-body'],
+  );
+}
+
+/**
+ * Hugo, 12 Nov 2026: whether a Sync of this Swiss region would add the
+ * Swiss map, the one map `_basemapsToAdd` adds. True for a region in
+ * Switzerland downloaded on another map before SNOW-1478. Only a region
+ * placed in Switzerland answers yes, because the confirm it leads to says
+ * "the Swiss map".
+ *
+ * @param {string} areaId
+ * @returns {Promise<boolean>}
+ */
+async function syncAddsSwissMap(areaId) {
+  const found = await _areaRecordById(areaId);
+  if (!found || !found.regionId || regionGround(found.regionId).country !== 'CH') return false;
+  return _basemapsToAdd(found).length > 0;
 }
 
 // SNOW-568: the basemap-download failure toasts in _map_embed.html. Only

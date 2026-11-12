@@ -2764,6 +2764,18 @@ Optional context:
 {% trans "Downloading this region for this basemap will replace the copy you already have. Continue?" as basemap_download_replace_confirm_title %}
 {% trans "Replace and download" as basemap_download_replace_confirm_cta_label %}
 {% include "includes/_overlay_banner.html" with id="map-download-replace-confirm" variant="floating" title=basemap_download_replace_confirm_title title_id="map-download-replace-confirm-title" body="" body_id="map-download-replace-confirm-body" cta_id="map-download-replace-confirm-cta" cta_label=basemap_download_replace_confirm_cta_label dismissible=True aria_live="assertive" %}
+{# Hugo, 12 Nov 2026: SYNC INSTEAD of replace. A Swiss region downloaded  #}
+{# on another map, before Swiss downloads saved the Swisstopo map         #}
+{# (SNOW-1478), raised the replace confirm above when tapped, in terms of #}
+{# basemaps. A Sync adds the Swiss map and keeps what is there, so this   #}
+{# asks that instead, and its CTA runs the area's Sync in the Downloads   #}
+{# sheet (confirmSyncInstead). The title names the area and is written by #}
+{# JS from map-strings-template; this one is the fallback. Copy is a      #}
+{# placeholder for Hugo.                                                  #}
+{% trans "You already have this area. Sync it to add the Swiss map?" as basemap_download_sync_instead_title %}
+{% trans "Nothing you have saved is removed." as basemap_download_sync_instead_body %}
+{% trans "Sync" as basemap_download_sync_instead_cta_label %}
+{% include "includes/_overlay_banner.html" with id="map-download-sync-instead" variant="floating" title=basemap_download_sync_instead_title title_id="map-download-sync-instead-title" body=basemap_download_sync_instead_body body_id="map-download-sync-instead-body" cta_id="map-download-sync-instead-cta" cta_label=basemap_download_sync_instead_cta_label dismissible=True aria_live="assertive" %}
 {# SNOW-620: strings templates for the three modules whose surface is this   #}
 {# partial. makemessages scans templates and Python, never JavaScript, so a  #}
 {# string a module writes into the DOM itself has to be rendered here to     #}
@@ -3033,6 +3045,12 @@ Optional context:
             (%(size)s){% endblocktrans %}</span>
     <span data-string="download-replace-body-unnamed">{% blocktrans %}Your earlier copy of %(region)s
             (%(size)s){% endblocktrans %}</span>
+    {# Hugo, 12 Nov 2026: the sync-instead confirm below                    #}
+    {# (#map-download-sync-instead). Its title names the area, so it is     #}
+    {# written by JS from this line; the body is the reassurance.           #}
+    <span data-string="download-sync-instead-title">{% blocktrans %}You already have %(region)s. Sync it to add the
+            Swiss map?{% endblocktrans %}</span>
+    <span data-string="download-sync-instead-body">{% trans "Nothing you have saved is removed." %}</span>
     {# SNOW-749: the signed-out state. Starting a download needs an        #}
     {# account, and the roundel stays                                      #}
     {# on screen and tappable rather than disappearing — a control that    #}
