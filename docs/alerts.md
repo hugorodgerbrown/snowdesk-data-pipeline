@@ -99,7 +99,22 @@ admin rather than in code. The scheduled sender is behind the
 - **One day per place.** If today and tomorrow both fire for one place,
   tomorrow is the message and today is logged `SKIPPED`.
 - **Night hold.** 22:00–06:30 Europe/Zurich nothing is sent; the 06:30
-  run picks up what was held.
+  run picks up what was held. A held run tallies `held`.
+- **Gate (SNOW-1491).** A run looks back to the start of the last
+  committed run that evaluated (`last_evaluated_at`; held, gated, dry,
+  failed and partial runs never count) and evaluates only the accounts
+  `accounts_to_evaluate` names since then, less a 15-minute overlap. Four
+  things reopen an account: a bulletin changed in a region one of its
+  places covers (a `Bulletin` linked to the region written since, which
+  survives a deleted `RegionDayRating`, or a rating for today or tomorrow
+  written since, or a day the last run did not look at); an undelivered
+  alert for today or tomorrow (`FAILED`, or `PENDING` past
+  `STALE_PENDING`); a favourite saved or changed, a trip joined, or a
+  trip it is on edited; alerts turned on (`alerts_enabled_at`, never a
+  profile save). With none the run prints "Nothing changed since …:
+  skipped." and tallies `gated`. With no evaluating run yet, or
+  `--full`, every alerting account is evaluated
+  ([why](decisions/the-alert-run-is-gated-on-change.md)).
 - **Reach.** `deliver` writes the rows `PENDING` and queues one worker
   (`_worker_deliver_alert`). It pushes to every active `PushSubscription`
   first, then emails from what actually happened: `ALWAYS` emails anyway,
