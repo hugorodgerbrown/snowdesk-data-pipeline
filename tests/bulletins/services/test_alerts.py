@@ -1526,6 +1526,61 @@ class TestAccountsToEvaluate:
             )
         assert gate() == set()
 
+    def test_superseded_failure_does_not_select(self, world: World) -> None:
+        """A failure a later send has superseded leaves nothing to retry."""
+        with freeze_time(BEFORE - datetime.timedelta(minutes=30)):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                fingerprint="a" * 16,
+                outcome=BulletinAlert.Outcome.FAILED,
+            )
+        with freeze_time(BEFORE):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                fingerprint="b" * 16,
+                outcome=BulletinAlert.Outcome.SENT,
+            )
+        assert gate() == set()
+
+    def test_failure_after_a_send_still_selects(self, world: World) -> None:
+        """A failure newer than the last send is still undelivered."""
+        with freeze_time(BEFORE - datetime.timedelta(minutes=30)):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                fingerprint="a" * 16,
+                outcome=BulletinAlert.Outcome.SENT,
+            )
+        with freeze_time(BEFORE):
+            BulletinAlertFactory.create(
+                account=world.elsewhere,
+                region=world.other,
+                target_date=TOMORROW,
+                fingerprint="b" * 16,
+                outcome=BulletinAlert.Outcome.FAILED,
+            )
+        assert gate() == {world.elsewhere.pk}
+
+    @pytest.mark.parametrize("extra", [0, 6])
+    def test_trip_queries_do_not_grow_with_trips(
+        self, world: World, extra: int, django_assert_max_num_queries: Any
+    ) -> None:
+        """Stored trips are matched without a query each (Codex, PR #1567)."""
+        with freeze_time(BEFORE):
+            for _ in range(extra):
+                TripFactory.create(
+                    date=TOMORROW, crossed_regions=[world.other.region_id]
+                )
+        with freeze_time(AFTER):
+            world.bulletin.save()
+        with django_assert_max_num_queries(6):
+            assert gate() == world.followers
+
     def test_new_favourite_selects_its_account(self, world: World) -> None:
         """A place saved since is evaluated for its owner only."""
         with freeze_time(AFTER):

@@ -79,7 +79,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 from django_tasks import task
@@ -109,14 +109,17 @@ from apps.bulletins.services.bulletin_change import (
 from apps.core.models import CommandRun
 from apps.favourites.models import Favourite
 from apps.ingest.public import state_of
-from apps.regions.services.track_regions import track_regions
+from apps.regions.models import MicroRegion
+from apps.regions.services.track_regions import (
+    resolve_track_regions,
+    track_regions,
+)
 from apps.trips.models import Trip, TripParticipant
 from apps.weather.models import Weather
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
 
-    from apps.regions.models import MicroRegion
 
 logger = logging.getLogger(__name__)
 
@@ -1267,9 +1270,11 @@ def _trips_crossing(regions: set[int], days: list[datetime.date]) -> list[int]:
     """
     Return the trips on ``days`` whose route crosses any of ``regions``.
 
-    The regions are worked out as ``trip_places`` does (``track_regions``),
-    one trip at a time: only trips dated today or tomorrow are read, which
-    is a handful.
+    The regions are read as ``trip_places`` reads them: a trip's stored
+    ``crossed_regions``, or for one not yet resolved, the regions worked
+    out live from its track (``resolve_track_regions``). The changed
+    regions' region ids are loaded once, so a stored trip costs no
+    query of its own (Codex, PR #1567).
 
     Args:
         regions: Region primary keys.
@@ -1279,15 +1284,20 @@ def _trips_crossing(regions: set[int], days: list[datetime.date]) -> list[int]:
         The trips' primary keys.
 
     """
+    wanted = set(
+        MicroRegion.objects.filter(pk__in=regions).values_list("region_id", flat=True)
+    )
     trips = Trip.objects.filter(date__in=days).only("pk", "points", "crossed_regions")
-    return [
-        trip.pk
-        for trip in trips
-        if any(
-            region.pk in regions
-            for region in track_regions(trip.crossed_regions, trip.points)
+    crossing: list[int] = []
+    for trip in trips:
+        ids = (
+            resolve_track_regions(trip.points)
+            if trip.crossed_regions is None
+            else trip.crossed_regions
         )
-    ]
+        if wanted.intersection(ids):
+            crossing.append(trip.pk)
+    return crossing
 
 
 def accounts_to_evaluate(since: datetime.datetime, now: datetime.datetime) -> set[int]:
@@ -1333,6 +1343,19 @@ def accounts_to_evaluate(since: datetime.datetime, now: datetime.datetime) -> se
                 | Q(
                     outcome=BulletinAlert.Outcome.PENDING,
                     updated_at__lt=now - STALE_PENDING,
+                )
+            )
+            # A failure a later row has superseded is not undelivered:
+            # evaluate_account reads that later row and has nothing to
+            # retry (Codex, PR #1567).
+            .exclude(
+                Exists(
+                    BulletinAlert.objects.filter(
+                        account_id=OuterRef("account_id"),
+                        region_id=OuterRef("region_id"),
+                        target_date=OuterRef("target_date"),
+                        updated_at__gt=OuterRef("updated_at"),
+                    ).exclude(outcome=BulletinAlert.Outcome.FAILED)
                 )
             )
             .values("account_id")
