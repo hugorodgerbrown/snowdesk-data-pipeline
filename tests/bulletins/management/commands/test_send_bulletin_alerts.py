@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.core import mail
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
@@ -72,9 +73,8 @@ def test_dry_run_writes_nothing(follower: Account) -> None:
 
 def test_commit_sends_and_logs(follower: Account) -> None:
     """--commit delivers and writes the send log."""
-    with patch("apps.bulletins.services.alerts.send_alert_email") as email:
-        run("--commit")
-    email.assert_called_once()
+    run("--commit")
+    assert len(mail.outbox) == 1
     assert BulletinAlert.objects.filter(account=follower).exists()
     assert CommandRun.objects.latest("id").counts["emails"] == 1
 
@@ -83,8 +83,7 @@ def test_night_hold(follower: Account) -> None:
     """Overnight nothing is evaluated, unless the hold is overridden."""
     assert "Night hold" in run("--commit", now=NIGHT)
     assert not BulletinAlert.objects.exists()
-    with patch("apps.bulletins.services.alerts.send_alert_email"):
-        run("--commit", "--ignore-night-hold", now=NIGHT)
+    run("--commit", "--ignore-night-hold", now=NIGHT)
     assert BulletinAlert.objects.exists()
 
 
