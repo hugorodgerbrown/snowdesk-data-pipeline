@@ -531,6 +531,50 @@ class TestClaimAndSettle:
         row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
         assert row.outcome == BulletinAlert.Outcome.SENT and row.sent_push
 
+    def test_a_run_overtaken_by_a_settled_one_sends_nothing(
+        self, follower: tuple
+    ) -> None:
+        """The first run delivers and settles SENT; the second sends nothing."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        first = evaluate_account(account, NOW)
+        second = evaluate_account(account, NOW)
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            # The immediate backend runs the worker inline: SENT at once.
+            deliver(first)
+            row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+            assert row.outcome == BulletinAlert.Outcome.SENT
+            worker = MagicMock()
+            with patch.object(alerts, "_worker_deliver_alert", worker):
+                deliver(second)
+        push.assert_called_once()
+        worker.enqueue.assert_not_called()
+        assert second.message is None
+        row.refresh_from_db()
+        assert row.outcome == BulletinAlert.Outcome.SENT
+
+    def test_a_recurring_state_written_before_the_run_is_claimed(
+        self, follower: tuple
+    ) -> None:
+        """A SENT row last written before evaluation is still rewritten."""
+        account, region = follower
+        PushSubscriptionFactory.create(account=account)
+        publish(region, TOMORROW, render())
+        run = evaluate_account(account, NOW)
+        held = hold(
+            account,
+            region,
+            run.rows[0].fingerprint,
+            BulletinAlert.Outcome.SENT,
+            datetime.timedelta(hours=1),
+        )
+        worker = MagicMock()
+        with patch.object(alerts, "_worker_deliver_alert", worker):
+            deliver(run)
+        _, alert_ids, *_ = worker.enqueue.call_args.args
+        assert alert_ids == [held.pk]
+
     def test_a_create_collision_loses_only_that_row(self, follower: tuple) -> None:
         """Another run creating the row first loses it; the others still go."""
         account, region = follower
@@ -591,7 +635,7 @@ class TestClaimAndSettle:
     @pytest.mark.parametrize(
         ("outcome", "age", "claims"),
         [
-            (BulletinAlert.Outcome.FAILED, None, True),
+            (BulletinAlert.Outcome.FAILED, datetime.timedelta(hours=1), True),
             (BulletinAlert.Outcome.PENDING, datetime.timedelta(hours=1), True),
             (BulletinAlert.Outcome.PENDING, None, False),
         ],

@@ -489,6 +489,9 @@ class AccountRun:
     # The local send date the message was worded for; deliver re-words a
     # partly claimed bundle on the same day (SNOW-1362).
     today: datetime.date | None = None
+    # When the run read the send log, by the wall clock updated_at is
+    # stamped with: a row written after it is another run's (SNOW-1362).
+    evaluated_at: datetime.datetime | None = None
     push_count: int = 0
     emailed: bool = False
 
@@ -566,6 +569,8 @@ def evaluate_account(account: Account, now: datetime.datetime) -> AccountRun:
     local = local_now(now)
     today = local.date()
     run.today = today
+    # timezone.now(), not ``now``: it is compared with rows' updated_at.
+    run.evaluated_at = timezone.now()
     stale_before = now - STALE_PENDING
     day_start = datetime.datetime.combine(today, datetime.time(0), tzinfo=ALERT_TZ)
     pins = account_places(account.user)
@@ -772,7 +777,12 @@ def deliver(run: AccountRun) -> AccountRun:
             }
             if sends:
                 alert = _claim_row(
-                    account, row, fingerprint, defaults, claimed_at - STALE_PENDING
+                    account,
+                    row,
+                    fingerprint,
+                    defaults,
+                    claimed_at - STALE_PENDING,
+                    run.evaluated_at,
                 )
                 if alert is None:
                     lost = True
@@ -887,14 +897,18 @@ def _claim_row(
     fingerprint: str,
     defaults: dict[str, object],
     stale_before: datetime.datetime,
+    evaluated_at: datetime.datetime | None,
 ) -> BulletinAlert | None:
     """
     Claim one sending row of the send log for this run, or lose it.
 
     Locks the row by its unique key (``bulletin_alert_unique_state``). A
-    row another run holds fresh ``PENDING`` is lost: that run sends it. Any
-    other existing row (FAILED, a stale PENDING, or a state that recurs on
-    the same day) is rewritten ``PENDING``, which bumps ``updated_at`` and
+    row another run holds fresh ``PENDING`` is lost: that run sends it. So
+    is a row written since this run was evaluated, whatever its outcome:
+    an overlapping run claimed it and may already have sent it. Any other
+    existing row (FAILED, a stale PENDING, or a state that recurs on the
+    same day, all last written before this run looked) is rewritten
+    ``PENDING``, which bumps ``updated_at`` and
     so makes it the latest again (BulletinAlertQuerySet.for_day). A missing
     row is created in a savepoint, and a concurrent create winning the
     unique key means this run lost it. Must run inside a transaction.
@@ -905,6 +919,7 @@ def _claim_row(
         fingerprint: The send-log key's fingerprint.
         defaults: The row's fields, bar ``outcome``.
         stale_before: A PENDING row last written before this is stale.
+        evaluated_at: When the run read the send log; None skips the check.
 
     Returns:
         The claimed row, or None when another run holds it.
@@ -922,7 +937,7 @@ def _claim_row(
         if (
             existing.outcome == BulletinAlert.Outcome.PENDING
             and existing.updated_at >= stale_before
-        ):
+        ) or (evaluated_at is not None and existing.updated_at > evaluated_at):
             return None
         for name, value in fields.items():
             setattr(existing, name, value)
