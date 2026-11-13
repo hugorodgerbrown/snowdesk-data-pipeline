@@ -46,7 +46,11 @@ from typing import Any
 from django.core.management.base import CommandError
 
 from apps.accounts.models import Account
-from apps.accounts.push_service import dispatch_push
+from apps.accounts.push_service import (
+    ALERT_TTL_SECONDS,
+    ALERT_URGENCY,
+    dispatch_push,
+)
 from apps.accounts.services.alert_email import send_alert_email
 from apps.bulletins.models import BulletinAlert
 from apps.core.command_register import RegisteredCommand
@@ -244,7 +248,9 @@ class Command(RegisteredCommand):
         accepted = 0
         for sub in devices:
             try:
-                result = dispatch_push(sub, payload)
+                result = dispatch_push(
+                    sub, payload, ttl=ALERT_TTL_SECONDS, urgency=ALERT_URGENCY
+                )
             except Exception:
                 logger.exception("Resend push to subscription %s raised", sub.pk)
                 result = {"ok": False, "status": "raised"}

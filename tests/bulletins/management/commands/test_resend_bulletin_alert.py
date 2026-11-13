@@ -21,6 +21,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from apps.accounts.models import Account
+from apps.accounts.push_service import ALERT_TTL_SECONDS, ALERT_URGENCY
 from apps.bulletins.models import BulletinAlert
 from apps.core import remote_commands
 from apps.core.models import CommandRun
@@ -135,6 +136,7 @@ def test_commit_always_sends_both_exactly_as_stored() -> None:
     for call in push.call_args_list:
         assert call.args[0].inactive_at is None
         assert call.args[1] == {"title": TITLE, "body": BODY, "url": URL}
+        assert call.kwargs == {"ttl": ALERT_TTL_SECONDS, "urgency": ALERT_URGENCY}
     (message,) = mail.outbox
     assert isinstance(message, EmailMultiAlternatives)
     assert message.subject == TITLE

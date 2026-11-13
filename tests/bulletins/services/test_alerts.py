@@ -18,6 +18,7 @@ from django.core import mail
 from freezegun import freeze_time
 
 from apps.accounts.models import Account
+from apps.accounts.push_service import ALERT_TTL_SECONDS, ALERT_URGENCY
 from apps.bulletins.models import BulletinAlert, RegionDayRating
 from apps.bulletins.services import alerts
 from apps.bulletins.services.alerts import (
@@ -269,6 +270,11 @@ class TestEvaluateAndDeliver:
         assert run.message.title == "New avalanche bulletin"
         assert run.message.url == "/alerts/2026-01-17/"
         push.assert_called_once()
+        # A sleeping phone must still get it: long TTL, wake the device.
+        assert push.call_args.kwargs == {
+            "ttl": ALERT_TTL_SECONDS,
+            "urgency": ALERT_URGENCY,
+        }
         # Today fired too (no row, alerts predate it) but one place is named
         # once: today is logged skipped, tomorrow is the message.
         today_row = BulletinAlert.objects.get(account=account, target_date=TODAY)

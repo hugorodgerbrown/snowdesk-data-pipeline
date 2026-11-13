@@ -60,6 +60,19 @@ logger = logging.getLogger(__name__)
 # not expected to change independently of a full payload-shape revision.
 _DECLARATIVE_WEB_PUSH_VERSION = 8030
 
+# How long a push service holds a message for a device it cannot reach. A
+# test or demo push is only worth seeing at once, so the default is a
+# minute. A bulletin alert must survive a phone that is asleep (Android
+# Doze, iOS low power) or offline: with a minute's TTL the push service
+# accepted Thursday 12 Nov's alert (201) and then dropped it unseen. Twelve
+# hours carries an evening bulletin to the next morning, when it is
+# superseded anyway.
+DEFAULT_TTL_SECONDS = 60
+ALERT_TTL_SECONDS = 12 * 60 * 60
+# RFC 8030 §5.3: "high" asks the push service to wake the device now
+# rather than wait for its next maintenance window.
+ALERT_URGENCY = "high"
+
 
 def _build_wire_payload(
     sub: PushSubscription, payload: dict[str, Any]
@@ -87,7 +100,12 @@ def _build_wire_payload(
 
 
 def dispatch_push(
-    sub: PushSubscription, payload: dict[str, Any], client_version: str = ""
+    sub: PushSubscription,
+    payload: dict[str, Any],
+    client_version: str = "",
+    *,
+    ttl: int = DEFAULT_TTL_SECONDS,
+    urgency: str | None = None,
 ) -> dict[str, Any]:
     """Send one Web Push and return a per-row outcome dict.
 
@@ -99,6 +117,11 @@ def dispatch_push(
             task (``_worker_dispatch_push``) with no request in scope.
             Defaults to ``""`` when the caller has no value to pass (e.g.
             a future non-request-triggered push send).
+        ttl: Seconds the push service keeps the message for an unreachable
+            device. Alerts pass ``ALERT_TTL_SECONDS``.
+        urgency: RFC 8030 ``Urgency`` header (``very-low``, ``low``,
+            ``normal``, ``high``), or ``None`` to send none. Alerts pass
+            ``ALERT_URGENCY``.
 
     """
     wire_payload = _build_wire_payload(sub, payload)
@@ -108,7 +131,8 @@ def dispatch_push(
             data=json.dumps(wire_payload),
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims={"sub": VAPID_CLAIM_EMAIL},
-            ttl=60,
+            ttl=ttl,
+            headers={"Urgency": urgency} if urgency else None,
         )
     except WebPushException as exc:
         status = exc.response.status_code if exc.response is not None else None
