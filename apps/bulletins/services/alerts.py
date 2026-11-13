@@ -85,7 +85,11 @@ from django.utils import timezone
 from django_tasks import task
 
 from apps.accounts.models import Account
-from apps.accounts.push_service import dispatch_push
+from apps.accounts.push_service import (
+    ALERT_TTL_SECONDS,
+    ALERT_URGENCY,
+    dispatch_push,
+)
 from apps.accounts.services.alert_email import send_alert_email
 from apps.bulletins.models import (
     SEASON_GAP_DAYS,
@@ -1087,7 +1091,12 @@ def _worker_deliver_alert(
             return
         for sub in account.push_subscriptions.active():
             try:
-                pushed = dispatch_push(sub, push)["ok"] or pushed
+                pushed = (
+                    dispatch_push(
+                        sub, push, ttl=ALERT_TTL_SECONDS, urgency=ALERT_URGENCY
+                    )["ok"]
+                    or pushed
+                )
             except Exception:
                 logger.exception(
                     "Bulletin alert push to subscription %s raised", sub.pk

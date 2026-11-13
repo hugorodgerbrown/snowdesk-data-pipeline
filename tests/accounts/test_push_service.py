@@ -28,7 +28,12 @@ from django.utils import timezone
 from pywebpush import WebPushException
 
 from apps.accounts.models import PushSubscription
-from apps.accounts.push_service import _worker_dispatch_push, dispatch_push
+from apps.accounts.push_service import (
+    ALERT_TTL_SECONDS,
+    DEFAULT_TTL_SECONDS,
+    _worker_dispatch_push,
+    dispatch_push,
+)
 from tests.factories import AccountFactory, PushSubscriptionFactory
 
 
@@ -150,6 +155,37 @@ class TestDispatchPush:
             dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
         _, call_kwargs = mock_webpush.call_args
         assert call_kwargs["subscription_info"] == sub.to_dict()
+
+    def test_a_plain_push_lives_a_minute_with_no_urgency(self) -> None:
+        """A test or demo push keeps the one-minute TTL and sends no Urgency."""
+        sub = PushSubscriptionFactory.create()
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        with patch(
+            "apps.accounts.push_service.webpush", return_value=mock_response
+        ) as mock_webpush:
+            dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
+        _, call_kwargs = mock_webpush.call_args
+        assert call_kwargs["ttl"] == DEFAULT_TTL_SECONDS == 60
+        assert call_kwargs["headers"] is None
+
+    def test_ttl_and_urgency_reach_the_push_service(self) -> None:
+        """An alert's TTL and Urgency go out on the request to the push service."""
+        sub = PushSubscriptionFactory.create()
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        with patch(
+            "apps.accounts.push_service.webpush", return_value=mock_response
+        ) as mock_webpush:
+            dispatch_push(
+                sub,
+                {"title": "Hi", "body": "Test", "url": "/"},
+                ttl=ALERT_TTL_SECONDS,
+                urgency="high",
+            )
+        _, call_kwargs = mock_webpush.call_args
+        assert call_kwargs["ttl"] == ALERT_TTL_SECONDS == 12 * 60 * 60
+        assert call_kwargs["headers"] == {"Urgency": "high"}
 
     def test_dispatch_push_sw_payload_unchanged(self) -> None:
         """A 'sw' subscription still gets the plain {title, body, url} shape."""

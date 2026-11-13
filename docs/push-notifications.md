@@ -2,7 +2,7 @@
 name: push-notifications
 description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/, Declarative Web Push, mechanism/inactive_at, icon vs badge-96.png
 status: current
-last-reviewed: 2026-10-30
+last-reviewed: 2026-11-13
 ---
 
 # Web Push notifications
@@ -120,6 +120,23 @@ parses.
 - `PushSubscription.objects.active()` filters to `inactive_at__isnull=True`
   — use this instead of `.all()` wherever a caller only cares about
   deliverable subscriptions (e.g. a future bulk-dispatch command).
+
+---
+
+## TTL and urgency
+
+`dispatch_push` sends a one-minute TTL and no `Urgency` header by default,
+which suits a test or demo push that is only worth seeing at once. A
+bulletin alert (`deliver` in `apps/bulletins/services/alerts.py` and
+`resend_bulletin_alert`) passes `ttl=ALERT_TTL_SECONDS` (12 hours) and
+`urgency="high"`.
+
+A 201 from the push service means only that it took the message. With a
+one-minute TTL a phone asleep in Android Doze, or offline, never got the
+alert: the service held it past its TTL and dropped it unseen. That is how
+Thursday 12 Nov's first alert was accepted on every device and shown on
+none. `Urgency: high` (RFC 8030 §5.3) asks the service to wake the device
+rather than wait for its next maintenance window.
 
 ---
 
