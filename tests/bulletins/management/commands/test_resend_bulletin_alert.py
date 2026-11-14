@@ -5,6 +5,9 @@ SNOW-1493: the bare run does nothing; a dry run shows the last alert
 and sends nothing; a commit resends the stored message by the account's own
 channels, or by ``--channel`` overriding them; the send log is never
 written; and the failures exit non-zero.
+
+SNOW-1496: a resend is written afresh in today's cold wording from the
+message's bulletins, whatever was stored; only the url is kept.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from apps.core.models import CommandRun
 from tests.factories import (
     AccountFactory,
     BulletinAlertFactory,
+    BulletinFactory,
     PushSubscriptionFactory,
 )
 
@@ -36,6 +40,9 @@ SENT_AT = datetime.datetime(2026, 11, 12, 16, 10, tzinfo=datetime.UTC)
 TITLE = "Bulletins for your 4 places"
 BODY = "Andermatt, Engelberg, Montana, Anzère and Verbier. Valid from Thursday."
 URL = "/map/?d=2026-11-13"
+ISSUED = datetime.datetime(2026, 11, 12, 16, 0, tzinfo=datetime.UTC)
+NEW_TITLE = "New avalanche bulletin"
+NEW_BODY = "Bulletin released at 17:00 by SLF."
 
 pytestmark = pytest.mark.django_db
 
@@ -47,11 +54,18 @@ def make_message(
     at: datetime.datetime = SENT_AT,
     rows: int = 2,
     outcome: str = BulletinAlert.Outcome.SENT,
+    issued: datetime.datetime = ISSUED,
 ) -> list[BulletinAlert]:
     """Write one delivered message: ``rows`` send-log rows sharing a time."""
+    bulletin = BulletinFactory.create(source="SLF", issued_at=issued)
     made = [
         BulletinAlertFactory.create(
-            account=account, title=title, body=BODY, url=URL, outcome=outcome
+            account=account,
+            title=title,
+            body=BODY,
+            url=URL,
+            outcome=outcome,
+            bulletin=bulletin,
         )
         for _ in range(rows)
     ]
@@ -111,13 +125,14 @@ def test_commit_needs_email() -> None:
 
 
 def test_dry_run_shows_and_sends_nothing() -> None:
-    """Without --commit: the stored message and plan, no send, no log write."""
+    """Without --commit: today's wording and the plan, no send, no log write."""
     account = make_account()
     before = list(BulletinAlert.objects.values_list("pk", "updated_at"))
     out, push = run("--email", account.user.email)
     assert "[READ-ONLY]" in out
-    assert TITLE in out
-    assert BODY in out
+    assert NEW_TITLE in out
+    assert NEW_BODY in out
+    assert TITLE not in out
     assert "push and email" in out
     push.assert_not_called()
     assert mail.outbox == []
@@ -126,8 +141,8 @@ def test_dry_run_shows_and_sends_nothing() -> None:
     assert counts()["would_email"] == 1
 
 
-def test_commit_always_sends_both_exactly_as_stored() -> None:
-    """ALWAYS: every active device gets the stored payload; one email goes."""
+def test_commit_always_sends_both_in_todays_wording() -> None:
+    """ALWAYS: every active device gets today's wording; one email goes."""
     account = make_account(devices=2)
     PushSubscriptionFactory.create(account=account, inactive_at=SENT_AT)
     before = list(BulletinAlert.objects.values_list("pk", "updated_at", "outcome"))
@@ -135,12 +150,13 @@ def test_commit_always_sends_both_exactly_as_stored() -> None:
     assert push.call_count == 2
     for call in push.call_args_list:
         assert call.args[0].inactive_at is None
-        assert call.args[1] == {"title": TITLE, "body": BODY, "url": URL}
+        assert call.args[1] == {"title": NEW_TITLE, "body": NEW_BODY, "url": URL}
         assert call.kwargs == {"ttl": ALERT_TTL_SECONDS, "urgency": ALERT_URGENCY}
     (message,) = mail.outbox
     assert isinstance(message, EmailMultiAlternatives)
-    assert message.subject == TITLE
-    assert BODY in message.body
+    assert message.subject == NEW_TITLE
+    assert NEW_BODY in message.body
+    assert "Andermatt" not in message.body
     assert URL in message.body
     assert counts()["pushed"] == 2
     assert counts()["emailed"] == 1
@@ -224,16 +240,21 @@ def test_push_raising_counts_as_failed() -> None:
 def test_newest_message_is_resent() -> None:
     """With two delivered messages, the newer is the one resent."""
     account = make_account(Account.AlertEmail.NEVER)
-    make_message(account, title="Newer", at=SENT_AT + datetime.timedelta(hours=1))
+    make_message(
+        account,
+        title="Newer",
+        at=SENT_AT + datetime.timedelta(hours=1),
+        issued=ISSUED + datetime.timedelta(hours=1),
+    )
     _, push = run("--email", account.user.email, "--commit")
-    assert push.call_args.args[1]["title"] == "Newer"
+    assert push.call_args.args[1]["body"] == "Bulletin released at 18:00 by SLF."
 
 
 def test_email_is_case_insensitive() -> None:
     """Mixed-case input finds the account (invariant 2)."""
     account = make_account()
     out, _ = run("--email", account.user.email.upper())
-    assert TITLE in out
+    assert NEW_BODY in out
 
 
 def test_unknown_email_fails() -> None:
@@ -254,3 +275,21 @@ def test_no_delivered_alert_fails() -> None:
 def test_is_offered_to_the_ops_tools() -> None:
     """The command can be run from the ops MCP server."""
     assert "resend_bulletin_alert" in remote_commands.runnable_commands()
+
+
+def test_old_wording_never_resends() -> None:
+    """The 12 Nov message, stored with place names, resends cold (SNOW-1496)."""
+    account = make_account()
+    _, push = run("--email", account.user.email, "--commit")
+    sent = push.call_args.args[1]
+    assert sent["title"] == NEW_TITLE
+    assert "places" not in sent["title"]
+    assert "Andermatt" not in sent["body"]
+
+
+def test_rows_with_no_bulletin_still_say_a_bulletin_is_out() -> None:
+    """A message whose bulletins are gone resends as "New bulletin."."""
+    account = make_account()
+    BulletinAlert.objects.filter(account=account).update(bulletin=None)
+    _, push = run("--email", account.user.email, "--commit")
+    assert push.call_args.args[1]["body"] == "New bulletin."

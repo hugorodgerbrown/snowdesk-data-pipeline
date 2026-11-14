@@ -20,6 +20,7 @@ from apps.bulletins.services.alert_wording import (
     headline,
     new_snow,
     provider_name,
+    cold_copy,
     release_line,
     trend,
 )
@@ -203,6 +204,17 @@ class TestColdMessage:
         """No provider known: the body still says a bulletin is out."""
         assert release_line([Release("", at(17))]) == "New bulletin."
         assert release_line([]) == "New bulletin."
+
+    def test_cold_copy_is_the_title_and_release_line(self) -> None:
+        """cold_copy gives the fixed title and who released it (SNOW-1496)."""
+        assert cold_copy([SLF_17]) == (
+            "New avalanche bulletin",
+            "Bulletin released at 17:00 by SLF.",
+        )
+        assert cold_copy([SLF_17, Release("ALBINA", at(17, 5))]) == (
+            "New avalanche bulletin",
+            "Bulletins released by SLF and ALBINA.",
+        )
 
     def test_every_alert_opens_the_landing_page(self) -> None:
         """A single place, too, opens /alerts/<latest day>/."""

@@ -3,11 +3,13 @@ apps/bulletins/management/commands/resend_bulletin_alert.py.
 
 Management command (SNOW-1493).
 
-Resends one account's most recent bulletin alert, exactly as it went, so an
-operator can test delivery or make up for a message that never arrived. The
-stored ``title``, ``body`` and ``url`` of the newest delivered message are
-sent again; nothing is recomposed. The send log is never written, so the
-hourly ``send_bulletin_alerts`` run behaves as if the resend never happened.
+Resends one account's most recent bulletin alert, so an operator can test
+delivery or make up for a message that never arrived. The title and body are
+written afresh by ``alert_wording.cold_copy`` from the message's bulletins, so
+a resend reads as a new alert does today, not in whatever wording was stored
+when it first went (SNOW-1496); the stored ``url`` is kept. The send log is
+never written, so the hourly ``send_bulletin_alerts`` run behaves as if the
+resend never happened.
 
 By default the channels follow the account's own settings, the same rule the
 delivery worker uses: push to every active device, then email when
@@ -53,6 +55,7 @@ from apps.accounts.push_service import (
 )
 from apps.accounts.services.alert_email import send_alert_email
 from apps.bulletins.models import BulletinAlert
+from apps.bulletins.services.alert_wording import Release, cold_copy
 from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
@@ -67,6 +70,34 @@ CHANNELS: dict[str, tuple[bool, bool]] = {
 def _delivered() -> Any:
     """Return delivered rows carrying a message, newest message first."""
     return BulletinAlert.objects.sent().exclude(title="").order_by("-updated_at", "-id")
+
+
+def _copy(last: BulletinAlert) -> tuple[str, str]:
+    """Write today's title and body for the message ``last`` belongs to.
+
+    The message's rows are the account's rows stored with the same title,
+    body and url as ``last``: one per place in a bundle.
+
+    Args:
+        last: The newest delivered row of the message.
+
+    Returns:
+        ``(title, body)`` from ``cold_copy``.
+
+    """
+    rows = (
+        _delivered()
+        .filter(
+            account_id=last.account_id, title=last.title, body=last.body, url=last.url
+        )
+        .select_related("bulletin")
+    )
+    releases = [
+        Release(source=r.bulletin.source, issued_at=r.bulletin.issued_at)
+        for r in rows
+        if r.bulletin is not None
+    ]
+    return cold_copy(releases)
 
 
 def _can_email(account: Account) -> bool:
@@ -164,8 +195,9 @@ class Command(RegisteredCommand):
         """
         devices = list(account.push_subscriptions.active())
         use_push, use_email = CHANNELS[channel] if channel else (True, None)
+        title, body = _copy(last)
         if verbosity >= 1:
-            self._report(account, last, channel, commit, len(devices))
+            self._report(account, last, (title, body), channel, commit, len(devices))
         if not commit:
             if use_email is None:
                 use_email = account.alert_email == Account.AlertEmail.ALWAYS or (
@@ -174,7 +206,7 @@ class Command(RegisteredCommand):
             self.tally("would_push", len(devices) if use_push else 0)
             self.tally("would_email", int(use_email and _can_email(account)))
             return
-        payload = {"title": last.title, "body": last.body, "url": last.url}
+        payload = {"title": title, "body": body, "url": last.url}
         pushed, push_failed = (
             self._push(devices, payload, verbosity) if use_push else (0, 0)
         )
@@ -183,7 +215,7 @@ class Command(RegisteredCommand):
                 account.alert_email == Account.AlertEmail.FALLBACK and not pushed
             )
         emailed, email_failed = (
-            self._email(account, last, channel is not None, verbosity)
+            self._email(account, payload, channel is not None, verbosity)
             if use_email
             else (0, 0)
         )
@@ -201,6 +233,7 @@ class Command(RegisteredCommand):
         self,
         account: Account,
         last: BulletinAlert,
+        copy: tuple[str, str],
         channel: str | None,
         commit: bool,
         devices: int,
@@ -210,6 +243,7 @@ class Command(RegisteredCommand):
         Args:
             account: The recipient.
             last: The newest delivered row of the message.
+            copy: The ``(title, body)`` a resend sends.
             channel: A ``CHANNELS`` key, or None to follow the account.
             commit: Whether this run sends.
             devices: The account's active push devices.
@@ -223,8 +257,8 @@ class Command(RegisteredCommand):
             else "not possible (unverified or no address)"
         )
         self.stdout.write(f"{mode}Last alert to account {account.pk}, sent {sent}")
-        self.stdout.write(f"  {last.title}")
-        self.stdout.write(f"  {last.body}")
+        self.stdout.write(f"  {copy[0]}")
+        self.stdout.write(f"  {copy[1]}")
         self.stdout.write(
             f"  went by push={last.sent_push} email={last.sent_email}; "
             f"{devices} active device(s); email {email}"
@@ -238,7 +272,7 @@ class Command(RegisteredCommand):
 
         Args:
             devices: The account's active push subscriptions.
-            payload: The stored ``{title, body, url}``.
+            payload: The ``{title, body, url}`` to send.
             verbosity: The run's ``--verbosity``.
 
         Returns:
@@ -264,13 +298,13 @@ class Command(RegisteredCommand):
         return accepted, len(devices) - accepted
 
     def _email(
-        self, account: Account, last: BulletinAlert, force: bool, verbosity: int
+        self, account: Account, payload: dict[str, str], force: bool, verbosity: int
     ) -> tuple[int, int]:
-        """Email the stored message; return (sent, failed) as 0 or 1 each.
+        """Email the message; return (sent, failed) as 0 or 1 each.
 
         Args:
             account: The recipient, with ``user`` loaded.
-            last: The newest delivered row of the message.
+            payload: The ``{title, body, url}`` to send.
             force: Override the account's ``alert_email`` (``--channel``).
             verbosity: The run's ``--verbosity``.
 
@@ -279,7 +313,9 @@ class Command(RegisteredCommand):
 
         """
         try:
-            ok = send_alert_email(account, last.title, last.body, last.url, force=force)
+            ok = send_alert_email(
+                account, payload["title"], payload["body"], payload["url"], force=force
+            )
         except Exception:
             logger.exception("Resend email to account %s raised", account.pk)
             ok = False
