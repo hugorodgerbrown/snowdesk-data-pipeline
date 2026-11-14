@@ -259,6 +259,7 @@ class TestNavAccountMenuEntries:
         html = _render_nav_for(rf, regular_user)
 
         for url_name, label in (
+            ("public:today", "Today"),
             ("trips:list", "Trips"),
             ("accounts:settings", "Settings"),
             ("accounts:sign_out", "Sign out"),
@@ -285,6 +286,24 @@ class TestNavAccountMenuEntries:
         )
         assert html.index(f'href="{reverse("accounts:settings")}"') < html.index(
             f'action="{reverse("accounts:sign_out")}"'
+        )
+
+    def test_today_comes_first_and_shows_in_the_app(
+        self, rf: RequestFactory, regular_user: User
+    ) -> None:
+        """Today heads the menu, in the installed app too (SNOW-1497).
+
+        It is the page every alert opens; the phone app has no tab for it.
+        """
+        html = _render_nav_for(rf, regular_user)
+        today = re.search(
+            r'<a[^>]*href="' + re.escape(reverse("public:today")) + r'"[^>]*>',
+            html,
+            re.S,
+        )
+        assert today and "app-hidden" not in today.group(0)
+        assert html.index(f'href="{reverse("public:today")}"') < html.index(
+            f'href="{reverse("trips:list")}"'
         )
 
     def test_trips_is_hidden_in_the_installed_app(

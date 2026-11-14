@@ -1,20 +1,34 @@
 """
-apps/public/alert_views.py — The bulletin alert landing page (SNOW-1328).
+apps/public/alert_views.py — The Today page, where every alert lands.
 
-``/alerts/<date>/`` is where every alert lands (Hugo, 2026-11-12): the alert
-itself only says a bulletin is out, and this page holds the detail. One
-card per place the signed-in person follows, A–Z, each with that day's
-danger tile, level and how it moved since the day before, the avalanche
-problems with their aspects and heights, the forecast new snow, the
-provider and when it released the bulletin, and links to the map and the
-provider's own bulletin.
+SNOW-1328 built it as the alert landing page; SNOW-1497 made it a page of
+its own.
+
+``/today/`` lists the bulletin for every place the signed-in person follows:
+one card each, A–Z, with that day's danger tile, level and how it moved
+since the day before, the avalanche problems with their aspects and heights,
+the forecast new snow, the provider and when it released the bulletin, and
+links to the map and the provider's own bulletin. Every alert opens it
+(Hugo, 2026-11-12): the alert itself only says a bulletin is out.
+
+Which day: today, until any followed place has tomorrow's bulletin (the
+evening release), then tomorrow, with a Today · Tomorrow switch either way
+(``?day=today`` / ``?day=next``). A place still waiting keeps its card and
+says so.
+
+``/today/<date>/`` takes that date as today, to check what the page showed
+on a past day (Hugo, 2026-11-14). It opens on the date itself, since every
+past day already has the next day's bulletin, and the switch offers the day
+after. ``/alerts/<date>/`` redirects there, so an alert sent before SNOW-1497
+still opens the day it named.
 
 Nothing is merged or summarised: two favourites in one region are two cards,
 and a trip crossing several regions is a card per region. A saved trip on
-that day is a card too (SNOW-947), and its link opens the trip.
+that day is a card too (SNOW-947), and its link opens the trip. Every region
+pin and saved resort is listed, alert switch on or off; dropped pins are not.
 
-Sign-in required, not flag-gated: an account that opted in keeps its alerts
-if the rollout flag narrows, so the page they open must keep working too.
+Not flag-gated, and open to a visitor, who sees what the page is for and a
+way to sign in.
 """
 
 from __future__ import annotations
@@ -22,9 +36,8 @@ from __future__ import annotations
 import datetime
 import logging
 
-from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.formats import date_format
@@ -48,14 +61,52 @@ from apps.regions.models import MicroRegion
 logger = logging.getLogger(__name__)
 
 
-@login_required
+def _parse_day(day: str) -> datetime.date:
+    """
+    Return a ``YYYY-MM-DD`` path segment as a date.
+
+    Args:
+        day: The segment.
+
+    Returns:
+        The date.
+
+    Raises:
+        Http404: For a malformed date.
+
+    """
+    try:
+        return datetime.date.fromisoformat(day)
+    except ValueError as exc:
+        raise Http404 from exc
+
+
 def alerts_day(request: HttpRequest, day: str) -> HttpResponse:
     """
-    Render every followed place's bulletin for one day.
+    Send an alert link from before SNOW-1497 to the Today page on its day.
 
     Args:
         request: The incoming request.
         day: ``YYYY-MM-DD``.
+
+    Returns:
+        A permanent redirect to ``/today/<day>/``.
+
+    Raises:
+        Http404: For a malformed date.
+
+    """
+    target = _parse_day(day)
+    return redirect("public:today_as_of", day=target.isoformat(), permanent=True)
+
+
+def today(request: HttpRequest, day: str | None = None) -> HttpResponse:
+    """
+    Render the Today page: every followed place's bulletin for one day.
+
+    Args:
+        request: The incoming request.
+        day: ``YYYY-MM-DD`` to take as today, or None for the real today.
 
     Returns:
         The page.
@@ -64,44 +115,87 @@ def alerts_day(request: HttpRequest, day: str) -> HttpResponse:
         Http404: For a malformed date.
 
     """
-    try:
-        target = datetime.date.fromisoformat(day)
-    except ValueError as exc:
-        raise Http404 from exc
-    user = request.user
-    today = timezone.localdate()
-    places = alerts_service.places_on(
-        alerts_service.account_places(user),  # type: ignore[arg-type]  # login_required guarantees a User
-        alerts_service.trip_places(user, target),  # type: ignore[arg-type]  # as above
+    real_today = timezone.localdate()
+    as_of = real_today if day is None else _parse_day(day)
+    base_url = (
+        reverse("public:today")
+        if day is None
+        else reverse("public:today_as_of", kwargs={"day": as_of.isoformat()})
     )
-    rows = [row for place in places for row in _rows(place, target, today)]
-    # An alert links to the latest day it names, so a trip on the day
-    # before (today, under tomorrow's link) would vanish from the page it
-    # was announced on. Its cards keep their own day, while that day is not
-    # yet past.
-    previous_date = target - datetime.timedelta(days=1)
-    if previous_date >= today:
+    context: dict = {
+        "another_day": as_of != real_today,
+        "as_of": as_of,
+        "today_url": reverse("public:today"),
+    }
+    if not request.user.is_authenticated:
+        context["heading"] = _("Today")
+        return render(request, "public/today.html", context)
+
+    user = request.user
+    next_day = as_of + datetime.timedelta(days=1)
+    pins = alerts_service.account_places(user, alerts_only=False)
+    next_places = alerts_service.places_on(
+        pins,
+        alerts_service.trip_places(user, next_day),
+    )
+    has_next = alerts_service.today_target(next_places, as_of) == next_day
+    choice = request.GET.get("day")
+    if choice == "next":
+        shown = next_day
+    elif choice == "today" or day is not None:
+        shown = as_of
+    else:
+        shown = next_day if has_next else as_of
+
+    places = (
+        next_places
+        if shown == next_day
+        else alerts_service.places_on(
+            pins,
+            alerts_service.trip_places(user, shown),
+        )
+    )
+    rows = [row for place in places for row in _rows(place, shown, real_today, as_of)]
+    # An alert opens the day it was about, so a trip on the day before (as_of,
+    # under the next day) would vanish from the page it was announced on.
+    # Its cards keep their own day, while that day is not before as_of.
+    previous_date = shown - datetime.timedelta(days=1)
+    if previous_date >= as_of:
         rows += [
             row
-            for place in alerts_service.trip_places(user, previous_date)  # type: ignore[arg-type]  # as above
-            for row in _rows(place, previous_date, today, day_label=True)
+            for place in alerts_service.trip_places(user, previous_date)
+            for row in _rows(place, previous_date, real_today, as_of, day_label=True)
         ]
     rows.sort(key=lambda r: r["label"].casefold())
-    return render(
-        request,
-        "public/alerts_day.html",
-        {
-            "rows": rows,
-            "target_date": target,
-            "heading": date_format(target, "l j F"),
-        },
+    switch = []
+    if has_next or shown == next_day:
+        switch = [
+            {
+                "label": _("Today · %(day)s") % {"day": date_format(as_of, "D j")},
+                "href": f"{base_url}?day=today",
+                "selected": shown == as_of,
+            },
+            {
+                "label": _("Tomorrow · %(day)s")
+                % {"day": date_format(next_day, "D j")},
+                "href": f"{base_url}?day=next",
+                "selected": shown == next_day,
+            },
+        ]
+    context.update(
+        rows=rows,
+        switch=switch,
+        target_date=shown,
+        heading=date_format(shown, "l j F"),
     )
+    return render(request, "public/today.html", context)
 
 
 def _rows(
     place: alerts_service.AlertPlace,
     day: datetime.date,
     today: datetime.date,
+    as_of: datetime.date,
     *,
     day_label: bool = False,
 ) -> list[dict]:
@@ -112,6 +206,8 @@ def _rows(
         place: The place.
         day: The day its bulletin is read for.
         today: The local date, for the new snow forecast.
+        as_of: The day the page takes as today: a card for a later day
+            with no bulletin is waiting for it, not missing one.
         day_label: Name the day after the label, for a card not on the
             page's own day.
 
@@ -129,7 +225,7 @@ def _rows(
             # A name's own trip page, never another name's: two trips in
             # one region are one place, and a pin beside a trip opens the map.
             url = place.label_urls.get(name, "")
-            out.append(_card(label, region, day, today, url))
+            out.append(_card(label, region, day, today, url, waiting=day > as_of))
     return out
 
 
@@ -139,6 +235,8 @@ def _card(
     day: datetime.date,
     today: datetime.date,
     trip_url: str,
+    *,
+    waiting: bool = False,
 ) -> dict:
     """
     Return one card's context: a region's bulletin on a day.
@@ -149,6 +247,8 @@ def _card(
         day: The day.
         today: The local date.
         trip_url: The trip page when the card is a trip's, else "".
+        waiting: The day is after the page's today, so a missing bulletin
+            is not out yet rather than absent.
 
     Returns:
         The card.
@@ -161,6 +261,12 @@ def _card(
         "url": f"{reverse('public:map')}?d={day.isoformat()}#{region.region_id}",
         "trip_url": trip_url,
         "rating": None,
+        "missing": (
+            _("%(weekday)s's bulletin isn't out yet.")
+            % {"weekday": date_format(day, "l")}
+            if waiting
+            else _("No bulletin for this day.")
+        ),
     }
     if bulletin is None or current is None:
         return card

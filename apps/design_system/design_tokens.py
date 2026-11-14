@@ -2304,7 +2304,10 @@ COMPONENT_CATEGORIES: tuple[FoundationCategory, ...] = (
             "SNOW-1109 replaced it with two option tiles.) SNOW-1479 adds an "
             "optional icon_template: the glyph first, and the label shown "
             "only beside the checked option — in every radio's accessible "
-            "name all the same. The Saved tabs draw their four that way."
+            "name all the same. The Saved tabs draw their four that way. "
+            "SNOW-1497 adds an optional href: the option is a link in the "
+            "same pill, aria-current when selected, for a switch whose "
+            "options are pages — the Today page's Today · Tomorrow."
         ),
         kind="components",
         partial="includes/_segmented_option.html",

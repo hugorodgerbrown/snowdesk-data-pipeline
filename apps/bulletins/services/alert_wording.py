@@ -17,7 +17,7 @@ The rules:
   to ignore.
 - **One message per person per run.** :func:`alert_message` takes every
   place that fired for an account and makes one message of them.
-- **Every alert opens the landing page.** ``/alerts/<day>/`` lists every
+- **Every alert opens the landing page.** ``/today/`` (SNOW-1497) lists every
   place the person follows with its level, problems and provider, which is
   where the detail lives.
 - **The full sentences live on the pages.** :func:`change_sentences` writes
@@ -580,19 +580,20 @@ def cold_copy(releases: list[Release]) -> tuple[str, str]:
     return _("New avalanche bulletin"), release_line(releases)
 
 
-def landing_url(places: list[PlaceAlert]) -> str:
+def landing_url() -> str:
     """
-    Return the page every alert opens.
+    Return the page every alert opens: the Today page (SNOW-1497).
 
-    Args:
-        places: Every place that fired.
+    Undated, because the page applies the alert's own rule: it opens on the
+    next day once any place the person follows has that day's bulletin, so
+    an alert opened that evening shows the day it was about, and one opened
+    later shows the day it is opened on.
 
     Returns:
-        ``/alerts/<date>/`` for the latest day named.
+        ``/today/``.
 
     """
-    day = max(p.target_date for p in places)
-    return reverse("public:alerts_day", kwargs={"day": day.isoformat()})
+    return reverse("public:today")
 
 
 def alert_message(places: list[PlaceAlert], today: datetime.date) -> AlertMessage:
@@ -621,6 +622,6 @@ def alert_message(places: list[PlaceAlert], today: datetime.date) -> AlertMessag
     return AlertMessage(
         title=title,
         body=body,
-        url=landing_url(places),
+        url=landing_url(),
         places=tuple(places),
     )
