@@ -88,8 +88,11 @@ def _delivered() -> Any:
 def _message_rows(last: BulletinAlert) -> list[BulletinAlert]:
     """Return every row of the message ``last`` belongs to.
 
-    The message's rows are the account's rows stored with the same title,
-    body and url as ``last``: one per place in a bundle.
+    The message's rows are the account's rows settled together with
+    ``last``: the delivery worker stamps every row of one send with one
+    ``updated_at``. Matching on the copy as well is not enough on its own,
+    because two sends for the same day can carry the same title, body and
+    url (``release_line`` drops the time when a bundle's issue times differ).
 
     Args:
         last: The newest delivered row of the message.
@@ -101,7 +104,11 @@ def _message_rows(last: BulletinAlert) -> list[BulletinAlert]:
     return list(
         _delivered()
         .filter(
-            account_id=last.account_id, title=last.title, body=last.body, url=last.url
+            account_id=last.account_id,
+            title=last.title,
+            body=last.body,
+            url=last.url,
+            updated_at=last.updated_at,
         )
         .select_related("bulletin")
     )

@@ -411,3 +411,44 @@ def test_legacy_row_resends_normal_to_its_bulletin_valid_to() -> None:
     delivery = push.call_args.kwargs["delivery"]
     assert (delivery.urgency, delivery.expires_at) == ("normal", ends)
     assert "urgency normal" in out
+
+
+def test_an_older_send_with_the_same_copy_is_left_out() -> None:
+    """Only the latest send's rows decide the delivery, not earlier lookalikes."""
+    account = make_account()
+    BulletinAlert.objects.filter(account=account).update(
+        push_urgency="high",
+        push_expires_at=timezone.now() + datetime.timedelta(hours=9),
+    )
+    ends = timezone.now() + datetime.timedelta(hours=2)
+    newer = make_message(account, at=SENT_AT + datetime.timedelta(hours=1))
+    BulletinAlert.objects.filter(pk__in=[r.pk for r in newer]).update(
+        push_urgency="normal", push_expires_at=ends
+    )
+    _, push = run("--email", account.user.email, "--commit")
+    delivery = push.call_args.kwargs["delivery"]
+    assert (delivery.urgency, delivery.expires_at) == ("normal", ends)
+
+
+def test_ended_latest_send_is_refused_whatever_came_before() -> None:
+    """An older lookalike still running does not revive an ended latest send."""
+    account = make_account()
+    BulletinAlert.objects.filter(account=account).update(
+        push_expires_at=timezone.now() + datetime.timedelta(hours=9)
+    )
+    newer = make_message(account, at=SENT_AT + datetime.timedelta(hours=1))
+    BulletinAlert.objects.filter(pk__in=[r.pk for r in newer]).update(
+        push_expires_at=timezone.now() - datetime.timedelta(minutes=1)
+    )
+    with (
+        patch(f"{COMMAND}.dispatch_push") as push,
+        pytest.raises(CommandError, match="ended"),
+    ):
+        call_command(
+            "resend_bulletin_alert",
+            "--email",
+            account.user.email,
+            "--commit",
+            stdout=StringIO(),
+        )
+    push.assert_not_called()
