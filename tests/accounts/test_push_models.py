@@ -10,6 +10,8 @@ Covers:
   - mechanism default and choices validation (SNOW-380).
   - inactive_at default and PushSubscription.objects.active() (SNOW-380).
   - It inherits BaseModel and states its own ordering (SNOW-530).
+  - The receipt and retirement fields, and retired_notice_outstanding()
+    (SNOW-1494).
 """
 
 from __future__ import annotations
@@ -134,3 +136,54 @@ class TestPushSubscriptionInactiveAtField:
         active_pks = set(PushSubscription.objects.active().values_list("pk", flat=True))
         assert live.pk in active_pks
         assert dead.pk not in active_pks
+
+
+@pytest.mark.django_db
+class TestPushSubscriptionRetirementFields:
+    """SNOW-1494: the receipt and retirement fields and their queryset."""
+
+    def test_a_new_row_is_unconfirmed_and_unretired(self) -> None:
+        """A fresh row has no receipt, no count and no retirement."""
+        sub = PushSubscriptionFactory.create()
+        assert sub.confirmed_at is None
+        assert sub.unconfirmed_pushes == 0
+        assert sub.unconfirmed_since is None
+        assert sub.retired_reason == ""
+        assert sub.retired_notice_sent_at is None
+
+    def test_retired_reason_rejects_arbitrary_string(self) -> None:
+        """retired_reason takes only a RetiredReason member, or blank."""
+        sub = PushSubscriptionFactory.create(retired_reason="bogus")
+        with pytest.raises(ValidationError):
+            sub.full_clean()
+
+    def test_outstanding_notice_is_an_unconfirmed_retirement_not_yet_emailed(
+        self,
+    ) -> None:
+        """Only rows retired as UNCONFIRMED, not yet emailed, on a mailable account."""
+        now = timezone.now()
+        unconfirmed = PushSubscription.RetiredReason.UNCONFIRMED
+        owed = PushSubscriptionFactory.create(
+            account=AccountFactory.create(),
+            inactive_at=now,
+            retired_reason=unconfirmed,
+        )
+        PushSubscriptionFactory.create(
+            account=AccountFactory.create(),
+            inactive_at=now,
+            retired_reason=unconfirmed,
+            retired_notice_sent_at=now,
+        )
+        PushSubscriptionFactory.create(
+            account=AccountFactory.create(),
+            inactive_at=now,
+            retired_reason=PushSubscription.RetiredReason.REPLACED,
+        )
+        PushSubscriptionFactory.create(
+            account=AccountFactory.create(is_verified=False),
+            inactive_at=now,
+            retired_reason=unconfirmed,
+        )
+        PushSubscriptionFactory.create(inactive_at=now, retired_reason=unconfirmed)
+        outstanding = PushSubscription.objects.retired_notice_outstanding()
+        assert list(outstanding.values_list("pk", flat=True)) == [owed.pk]
