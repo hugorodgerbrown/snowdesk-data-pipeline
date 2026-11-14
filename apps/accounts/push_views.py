@@ -164,6 +164,10 @@ def push_unregister(request: HttpRequest) -> HttpResponse:
     return JsonResponse({"ok": True, "deleted": deleted})
 
 
+# A service worker POSTs with no session and no CSRF token: the signed,
+# short-lived receipt token is the authority, and its only effect is marking
+# its own subscription reachable (SNOW-1494).
+# nosemgrep: python.django.security.audit.csrf-exempt.no-csrf-exempt
 @csrf_exempt
 @require_POST
 def push_receipt(request: HttpRequest) -> HttpResponse:
