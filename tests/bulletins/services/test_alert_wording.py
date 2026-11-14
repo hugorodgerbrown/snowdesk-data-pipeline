@@ -16,11 +16,11 @@ from apps.bulletins.services.alert_wording import (
     Release,
     alert_message,
     aspect_ranges,
+    cold_copy,
     elevation_phrase,
     headline,
     new_snow,
     provider_name,
-    cold_copy,
     release_line,
     trend,
 )
