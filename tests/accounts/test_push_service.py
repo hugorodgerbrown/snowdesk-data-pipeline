@@ -11,6 +11,9 @@ Patches pywebpush.webpush to test several branches:
   - Declarative vs sw payload shape (SNOW-380).
   - A Delivery's TTL, Urgency and Topic reach webpush; none sends neither
     header (SNOW-1495).
+  - SNOW-1494: an SW push carries a receipt over the TTL actually sent; a
+    counted push is counted, uncounted on failure, reports trusted, and
+    retires a dead device; a declarative or uncounted push is not counted.
   - SNOW-311 caplog regression: log records contain pk=, never the account email.
 
 Also tests _worker_dispatch_push (SNOW-319):
@@ -24,10 +27,13 @@ import binascii
 import datetime
 import json
 import logging
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.core import mail
 from django.utils import timezone
+from freezegun import freeze_time
 from pywebpush import WebPushException
 
 from apps.accounts.models import PushSubscription
@@ -35,6 +41,12 @@ from apps.accounts.push_service import (
     DEFAULT_TTL_SECONDS,
     _worker_dispatch_push,
     dispatch_push,
+)
+from apps.accounts.services.push_health import (
+    RECEIPT_GRACE_SECONDS,
+    RETIRE_AFTER,
+    RETIRE_AFTER_PUSHES,
+    confirm,
 )
 from apps.bulletins.services.push_delivery import Delivery
 from tests.factories import AccountFactory, PushSubscriptionFactory
@@ -59,7 +71,7 @@ class TestDispatchPush:
         mock_response.status_code = 201
         with patch("apps.accounts.push_service.webpush", return_value=mock_response):
             result = dispatch_push(sub, {"title": "Hi", "body": "Test", "url": "/"})
-        assert result == {"ok": True, "status": 201}
+        assert result == {"ok": True, "status": 201, "trusted": True, "retired": False}
         # Row must still exist.
         assert PushSubscription.objects.filter(pk=sub.pk).exists()
 
@@ -90,6 +102,7 @@ class TestDispatchPush:
         sub.refresh_from_db()
         assert sub.inactive_at is not None
         assert sub.inactive_at >= before
+        assert sub.retired_reason == PushSubscription.RetiredReason.GONE_410
         mock_emit.assert_any_call(
             "pwa.push.gone_410",
             {"subscription_pk": sub.pk, "client_version": ""},
@@ -143,6 +156,8 @@ class TestDispatchPush:
         assert result == {
             "ok": False,
             "status": None,
+            "trusted": False,
+            "retired": False,
             "error": "Invalid base64-encoded string",
         }
         assert PushSubscription.objects.filter(pk=sub.pk).exists()
@@ -214,7 +229,7 @@ class TestDispatchPush:
         assert call_kwargs["ttl"] == 60 * 60
 
     def test_dispatch_push_sw_payload_unchanged(self) -> None:
-        """A 'sw' subscription still gets the plain {title, body, url} shape."""
+        """A 'sw' subscription gets {title, body, url} plus its receipt token."""
         sub = PushSubscriptionFactory.create(mechanism=PushSubscription.Mechanism.SW)
         payload = {"title": "Hi", "body": "Test", "url": "/somewhere"}
         mock_response = MagicMock()
@@ -224,7 +239,10 @@ class TestDispatchPush:
         ) as mock_webpush:
             dispatch_push(sub, payload)
         _, call_kwargs = mock_webpush.call_args
-        assert json.loads(call_kwargs["data"]) == payload
+        sent = json.loads(call_kwargs["data"])
+        receipt = sent.pop("receipt")
+        assert sent == payload
+        assert confirm(receipt, timezone.now()) is True
 
     def test_dispatch_push_declarative_payload_shape(self) -> None:
         """A 'declarative' subscription gets Apple's Declarative Web Push shape,
@@ -250,6 +268,153 @@ class TestDispatchPush:
                 "navigate": "/somewhere",
             },
         }
+
+
+# ---------------------------------------------------------------------------
+# SNOW-1494 — receipts, counting and retirement
+# ---------------------------------------------------------------------------
+
+
+def _accepted() -> MagicMock:
+    """Return a mock 201 push-service response."""
+    response = MagicMock()
+    response.status_code = 201
+    return response
+
+
+_PAYLOAD = {"title": "Hi", "body": "Test", "url": "/"}
+
+
+@pytest.mark.django_db
+class TestDispatchPushReceipts:
+    """SNOW-1494: the receipt token and the unconfirmed count."""
+
+    @pytest.mark.parametrize("hours", [None, 12])
+    def test_the_receipt_lasts_the_ttl_actually_sent(self, hours: int | None) -> None:
+        """The token is good to the TTL sent plus the grace, and no longer.
+
+        ``None`` is the 60 s default (the test button); 12 h is an alert's.
+        """
+        sub = PushSubscriptionFactory.create()
+        now = datetime.datetime(2026, 11, 14, 8, 0, tzinfo=datetime.UTC)
+        delivery = (
+            None
+            if hours is None
+            else Delivery(
+                urgency="normal",
+                expires_at=now + datetime.timedelta(hours=hours),
+                topic="",
+            )
+        )
+        ttl = DEFAULT_TTL_SECONDS if hours is None else hours * 3600
+        with (
+            freeze_time(now),
+            patch(
+                "apps.accounts.push_service.webpush", return_value=_accepted()
+            ) as mock_webpush,
+        ):
+            dispatch_push(sub, _PAYLOAD, delivery=delivery)
+        _, call_kwargs = mock_webpush.call_args
+        assert call_kwargs["ttl"] == ttl
+        receipt = json.loads(call_kwargs["data"])["receipt"]
+        edge = now + datetime.timedelta(seconds=ttl + RECEIPT_GRACE_SECONDS)
+        assert confirm(receipt, edge + datetime.timedelta(seconds=1)) is False
+        assert confirm(receipt, edge) is True
+
+    def test_an_uncounted_push_counts_nothing(self) -> None:
+        """The test button's push leaves the count alone and is trusted."""
+        sub = PushSubscriptionFactory.create(
+            unconfirmed_pushes=2, unconfirmed_since=timezone.now()
+        )
+        with patch("apps.accounts.push_service.webpush", return_value=_accepted()):
+            result = dispatch_push(sub, _PAYLOAD)
+        assert result["trusted"] is True
+        sub.refresh_from_db()
+        assert sub.unconfirmed_pushes == 2
+
+    def test_a_counted_push_to_a_confirmed_device_is_trusted(self) -> None:
+        """The first counted push is trusted, and leaves one owed."""
+        sub = PushSubscriptionFactory.create()
+        with patch("apps.accounts.push_service.webpush", return_value=_accepted()):
+            result = dispatch_push(sub, _PAYLOAD, count_unconfirmed=True)
+        assert result["ok"] is True
+        assert result["trusted"] is True
+        assert result["retired"] is False
+        sub.refresh_from_db()
+        assert sub.unconfirmed_pushes == 1
+        assert sub.unconfirmed_since is not None
+
+    def test_a_counted_push_to_a_device_owing_a_receipt_is_untrusted(self) -> None:
+        """Accepted, but the device never confirmed the last one."""
+        sub = PushSubscriptionFactory.create(
+            unconfirmed_pushes=1, unconfirmed_since=timezone.now()
+        )
+        with patch("apps.accounts.push_service.webpush", return_value=_accepted()):
+            result = dispatch_push(sub, _PAYLOAD, count_unconfirmed=True)
+        assert result["ok"] is True
+        assert result["trusted"] is False
+
+    @pytest.mark.parametrize("status", [500, 410])
+    def test_a_refused_push_is_uncounted(self, status: int) -> None:
+        """A push the push service did not take is not owed a receipt."""
+        sub = PushSubscriptionFactory.create()
+        exc = _make_webpush_exception(status)
+        with patch("apps.accounts.push_service.webpush", side_effect=exc):
+            result = dispatch_push(sub, _PAYLOAD, count_unconfirmed=True)
+        assert result["ok"] is False
+        assert result["trusted"] is False
+        sub.refresh_from_db()
+        assert sub.unconfirmed_pushes == 0
+        assert sub.unconfirmed_since is None
+
+    def test_a_push_that_cannot_be_attempted_is_uncounted(self) -> None:
+        """A raise before any request is made takes the count back too."""
+        sub = PushSubscriptionFactory.create()
+        with patch(
+            "apps.accounts.push_service.webpush",
+            side_effect=binascii.Error("bad key"),
+        ):
+            result = dispatch_push(sub, _PAYLOAD, count_unconfirmed=True)
+        assert result["ok"] is False
+        sub.refresh_from_db()
+        assert sub.unconfirmed_pushes == 0
+
+    def test_a_declarative_push_is_never_counted(self) -> None:
+        """No service worker runs, so no receipt can come and none is counted."""
+        sub = PushSubscriptionFactory.create(
+            mechanism=PushSubscription.Mechanism.DECLARATIVE
+        )
+        with patch(
+            "apps.accounts.push_service.webpush", return_value=_accepted()
+        ) as mock_webpush:
+            result = dispatch_push(sub, _PAYLOAD, count_unconfirmed=True)
+        assert result["trusted"] is True
+        assert "receipt" not in json.dumps(
+            json.loads(mock_webpush.call_args[1]["data"])
+        )
+        sub.refresh_from_db()
+        assert sub.unconfirmed_pushes == 0
+
+    def test_the_push_that_crosses_the_threshold_retires_the_device(
+        self, django_capture_on_commit_callbacks: Any
+    ) -> None:
+        """Accepted, untrusted, and the device is retired with an email."""
+        now = timezone.now()
+        sub = PushSubscriptionFactory.create(
+            account=AccountFactory.create(),
+            unconfirmed_pushes=RETIRE_AFTER_PUSHES - 1,
+            unconfirmed_since=now - RETIRE_AFTER,
+        )
+        with (
+            patch("apps.accounts.push_service.webpush", return_value=_accepted()),
+            django_capture_on_commit_callbacks(execute=True),
+        ):
+            result = dispatch_push(sub, _PAYLOAD, count_unconfirmed=True)
+        assert result == {"ok": True, "status": 201, "trusted": False, "retired": True}
+        sub.refresh_from_db()
+        assert sub.inactive_at is not None
+        assert sub.retired_reason == PushSubscription.RetiredReason.UNCONFIRMED
+        assert len(mail.outbox) == 1
 
 
 # ---------------------------------------------------------------------------
