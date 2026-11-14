@@ -5555,10 +5555,18 @@ msgstr ""
 msgid "Version"
 msgstr ""
 
-msgid "Your alerts — Snowdesk"
+msgid "Today — Snowdesk"
 msgstr ""
 
-msgid "The bulletin for each place you follow on Snowdesk."
+msgid "The avalanche bulletin for each place you follow on Snowdesk."
+msgstr ""
+
+msgid "Your places, on one page"
+msgstr ""
+
+msgid ""
+"Sign in to see the avalanche bulletin for every resort and region you "
+"follow. After the evening release it moves on to tomorrow."
 msgstr ""
 
 msgid "No bulletin for this day."
@@ -5570,9 +5578,27 @@ msgstr ""
 msgid "Open on the map"
 msgstr ""
 
+msgid "Nothing to show yet"
+msgstr ""
+
 msgid ""
-"You do not follow any places yet. Pin a region or save a resort on the map "
-"to get alerts for it."
+"Today shows the avalanche bulletin for every place you follow. Pin a region "
+"or save a resort on the map and it appears here."
+msgstr ""
+
+msgid "Find a place on the map"
+msgstr ""
+
+#, python-format
+msgid "Today · %(day)s"
+msgstr ""
+
+#, python-format
+msgid "Tomorrow · %(day)s"
+msgstr ""
+
+#, python-format
+msgid "%(weekday)s's bulletin isn't out yet."
 msgstr ""
 
 msgid "Alert settings"

@@ -155,7 +155,7 @@ def today(request: HttpRequest, day: str | None = None) -> HttpResponse:
             alerts_service.trip_places(user, shown),
         )
     )
-    rows = [row for place in places for row in _rows(place, shown, real_today, as_of)]
+    rows = [row for place in places for row in _rows(place, shown, real_today)]
     # An alert opens the day it was about, so a trip on the day before (as_of,
     # under the next day) would vanish from the page it was announced on.
     # Its cards keep their own day, while that day is not before as_of.
@@ -164,7 +164,7 @@ def today(request: HttpRequest, day: str | None = None) -> HttpResponse:
         rows += [
             row
             for place in alerts_service.trip_places(user, previous_date)
-            for row in _rows(place, previous_date, real_today, as_of, day_label=True)
+            for row in _rows(place, previous_date, real_today, day_label=True)
         ]
     rows.sort(key=lambda r: r["label"].casefold())
     switch = []
@@ -195,7 +195,6 @@ def _rows(
     place: alerts_service.AlertPlace,
     day: datetime.date,
     today: datetime.date,
-    as_of: datetime.date,
     *,
     day_label: bool = False,
 ) -> list[dict]:
@@ -206,8 +205,6 @@ def _rows(
         place: The place.
         day: The day its bulletin is read for.
         today: The local date, for the new snow forecast.
-        as_of: The day the page takes as today: a card for a later day
-            with no bulletin is waiting for it, not missing one.
         day_label: Name the day after the label, for a card not on the
             page's own day.
 
@@ -225,7 +222,7 @@ def _rows(
             # A name's own trip page, never another name's: two trips in
             # one region are one place, and a pin beside a trip opens the map.
             url = place.label_urls.get(name, "")
-            out.append(_card(label, region, day, today, url, waiting=day > as_of))
+            out.append(_card(label, region, day, today, url, waiting=day > today))
     return out
 
 
@@ -247,7 +244,7 @@ def _card(
         day: The day.
         today: The local date.
         trip_url: The trip page when the card is a trip's, else "".
-        waiting: The day is after the page's today, so a missing bulletin
+        waiting: The day is after the real today, so a missing bulletin
             is not out yet rather than absent.
 
     Returns:
