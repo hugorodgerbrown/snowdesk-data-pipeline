@@ -62,6 +62,16 @@ def test_manifest_start_url_is_the_absolute_map_url() -> None:
     assert manifest.get("start_url") == f"{base}/map/"
 
 
+def test_manifest_offers_a_today_shortcut() -> None:
+    """Long-pressing the installed icon offers the Today page (SNOW-1497)."""
+    manifest = _load_manifest()
+    base = settings.SITE_BASE_URL.rstrip("/")
+    (shortcut,) = manifest["shortcuts"]
+    assert shortcut["name"] == "Today"
+    assert shortcut["url"] == f"{base}/today/"
+    assert shortcut["icons"][0]["sizes"] == "192x192"
+
+
 def test_manifest_scope_is_absolute_site_root() -> None:
     """``scope`` is the absolute canonical site URL so every public path stays
     inside the standalone window (SNOW-87 / SNOW-118).

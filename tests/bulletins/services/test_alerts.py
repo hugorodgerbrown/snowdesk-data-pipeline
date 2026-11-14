@@ -34,6 +34,7 @@ from apps.bulletins.services.alerts import (
     places_on,
     recent_alerts,
     since_previous_day,
+    today_target,
     trip_places,
 )
 from apps.bulletins.services.bulletin_change import (
@@ -248,6 +249,46 @@ class TestAccountPlaces:
         )
         assert account_places(account.user) == []
 
+    def test_every_followed_place_on_request(self) -> None:
+        """alerts_only=False lists a switched-off place, never a dropped pin."""
+        account = AccountFactory.create()
+        region = MicroRegionFactory.create(name="Arolla")
+        FavouriteFactory.create(
+            user=account.user, region=region, region_pin=True, alerts=False
+        )
+        FavouriteFactory.create(user=account.user, region=MicroRegionFactory.create())
+        (place,) = account_places(account.user, alerts_only=False)
+        assert place.region == region
+
+
+@pytest.mark.django_db
+class TestTodayTarget:
+    """today_target: the day the Today page opens on (SNOW-1497)."""
+
+    def test_as_of_before_the_release(self) -> None:
+        """No bulletin for the next day: the day itself."""
+        region = MicroRegionFactory.create()
+        publish(region, TODAY, render())
+        assert today_target([alerts.AlertPlace(region=region)], TODAY) == TODAY
+
+    def test_next_day_once_one_place_has_it(self) -> None:
+        """One region with the next day's bulletin is enough."""
+        waiting, out = MicroRegionFactory.create(), MicroRegionFactory.create()
+        publish(out, TOMORROW, render())
+        places = [alerts.AlertPlace(region=waiting), alerts.AlertPlace(region=out)]
+        assert today_target(places, TODAY) == TOMORROW
+
+    def test_a_trip_region_counts(self) -> None:
+        """Any region a place covers counts, not only its first."""
+        first, second = MicroRegionFactory.create(), MicroRegionFactory.create()
+        publish(second, TOMORROW, render())
+        trip = alerts.AlertPlace(region=first, regions=[first, second])
+        assert today_target([trip], TODAY) == TOMORROW
+
+    def test_no_places(self) -> None:
+        """Following nothing: the day itself."""
+        assert today_target([], TODAY) == TODAY
+
 
 @pytest.fixture()
 def follower(db: Any) -> tuple[Account, Any]:
@@ -276,7 +317,7 @@ class TestEvaluateAndDeliver:
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
         assert run.message.title == "New avalanche bulletin"
-        assert run.message.url == "/alerts/2026-01-17/"
+        assert run.message.url == "/today/"
         push.assert_called_once()
         # Tomorrow's bulletin goes at normal urgency, topic its day (SNOW-1495).
         delivery = push.call_args.kwargs["delivery"]
@@ -600,7 +641,7 @@ class TestEvaluateAndDeliver:
         run = evaluate_account(account, NOW)
         assert run.message is not None
         assert sorted(p.label for p in run.message.places) == ["Davos", "Verbier"]
-        assert run.message.url == "/alerts/2026-01-17/"
+        assert run.message.url == "/today/"
 
     def test_bulletin_without_render_model_is_ignored(self, follower: tuple) -> None:
         """A row with no render model is not compared."""
@@ -980,7 +1021,7 @@ class TestTripDay:
             run = deliver(evaluate_account(account, NOW))
         assert run.message is not None
         assert run.message.places[0].label == "Mont Fort loop"
-        assert run.message.url == "/alerts/2026-01-17/"
+        assert run.message.url == "/today/"
         row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
         assert row.outcome == BulletinAlert.Outcome.SENT
 
@@ -1134,7 +1175,7 @@ class TestTripAcrossRegions:
         (place,) = run.message.places
         assert place.label == "Haute Route"
         assert len(place.releases) == 2
-        assert run.message.url == "/alerts/2026-01-17/"
+        assert run.message.url == "/today/"
         logged = BulletinAlert.objects.filter(account=account, target_date=TOMORROW)
         assert {row.region_id for row in logged} == {first.pk, second.pk}
 

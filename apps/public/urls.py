@@ -9,9 +9,16 @@ URL structure:
   /map/                                        Interactive map (the app).
   /terms/                                      Permanent 301 redirect to
                                                /terms-of-service/ (SNOW-770).
-  /alerts/<date>/                              Where a bundled bulletin alert
-                                               lands: the day for each place
-                                               the person follows (SNOW-1328).
+  /today/                                      The Today page, where every
+                                               alert lands: the day for each
+                                               place the person follows;
+                                               tomorrow once it is out
+                                               (SNOW-1497).
+  /today/<date>/                               The Today page taking that date
+                                               as today (SNOW-1497).
+  /alerts/<date>/                              Permanent redirect to
+                                               /today/<date>/ (SNOW-1328's
+                                               old landing page).
   /help/                                        Plain-language "how it works"
                                                help page (SNOW-456).
   /compare/                                     Public comparison of the
@@ -97,8 +104,11 @@ urlpatterns = [
         ),
         name="terms",
     ),
-    # Where a bundled bulletin alert lands (SNOW-1328). Ahead of the generic
-    # <region_id>/ patterns so "alerts" never resolves as a region id.
+    # The Today page, where every alert lands (SNOW-1497; SNOW-1328 before
+    # it at /alerts/<date>/, which now redirects). Ahead of the generic
+    # <region_id>/ patterns so "today" and "alerts" never resolve as region ids.
+    path("today/", alert_views.today, name="today"),
+    path("today/<str:day>/", alert_views.today, name="today_as_of"),
     path("alerts/<str:day>/", alert_views.alerts_day, name="alerts_day"),
     # Technology credits and attribution page (SNOW-122).
     path("colophon/", views.colophon, name="colophon"),

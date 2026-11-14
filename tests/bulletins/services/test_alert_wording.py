@@ -217,14 +217,14 @@ class TestColdMessage:
         )
 
     def test_every_alert_opens_the_landing_page(self) -> None:
-        """A single place, too, opens /alerts/<latest day>/."""
+        """Every alert, one place or several days, opens /today/ (SNOW-1497)."""
         one = alert_message([place(None, state(), releases=(SLF_17,))], TODAY)
-        assert one.url == f"/alerts/{TOMORROW.isoformat()}/"
+        assert one.url == "/today/"
         mixed = alert_message(
             [place(None, state(), day=TODAY), place(None, state(), day=TOMORROW)],
             TODAY,
         )
-        assert mixed.url == f"/alerts/{TOMORROW.isoformat()}/"
+        assert mixed.url == "/today/"
 
     def test_as_push(self) -> None:
         """The push payload is the title, body and link."""
@@ -232,7 +232,7 @@ class TestColdMessage:
         assert msg.as_push() == {
             "title": "New avalanche bulletin",
             "body": "Bulletin released at 17:00 by SLF.",
-            "url": f"/alerts/{TOMORROW.isoformat()}/",
+            "url": "/today/",
         }
 
     def test_empty_raises(self) -> None:

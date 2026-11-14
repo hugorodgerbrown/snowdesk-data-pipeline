@@ -1,6 +1,10 @@
 {% comment %}
 templates/includes/_account_menu_items.html — the account menu's entries:
-Trips, Downloads, Settings, then Sign out below a rule (SNOW-1476).
+Today, Trips, Downloads, Settings, then Sign out below a rule (SNOW-1476).
+
+Today (SNOW-1497) comes first: the page every alert opens, the bulletin for
+each place the person follows. It shows in the installed app too, which has
+no tab for it (SNOW-1479).
 
 Extracted from includes/nav.html when the installed phone app had a You
 panel that listed them too. That panel is gone (Hugo, 8 Nov 2026): the
@@ -23,6 +27,13 @@ areas row was the only way in. On the map the click opens the sheet in place
 page the link goes to the map with `?downloads=open`, which opens it there.
 {% endcomment %}
 {% load i18n %}
+<a
+    role="menuitem"
+    href="{% url 'public:today' %}"
+    class="block px-3 py-1.5 text-sm text-text-2 hover:bg-tag hover:text-text-1"
+>
+    {% trans "Today" %}
+</a>
 <a
     role="menuitem"
     href="{% url 'trips:list' %}"

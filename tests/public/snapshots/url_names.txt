@@ -36,6 +36,8 @@ public:home    apps.public.views.home
 public:map  map/  apps.map.views.map_page
 public:map_3d  map/3d/  apps.map.map_3d.map_3d_redirect
 public:terms  terms/  django.views.generic.base.RedirectView
+public:today  today/  apps.public.alert_views.today
+public:today_as_of  today/<str:day>/  apps.public.alert_views.today
 public:alerts_day  alerts/<str:day>/  apps.public.alert_views.alerts_day
 public:colophon  colophon/  apps.public.views.colophon
 public:compare  compare/  apps.public.views.compare

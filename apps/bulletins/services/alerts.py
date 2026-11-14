@@ -208,7 +208,7 @@ class AlertPlace:
         return f"region:{self.region.pk}"
 
 
-def account_places(user: User) -> list[AlertPlace]:
+def account_places(user: User, *, alerts_only: bool = True) -> list[AlertPlace]:
     """
     Return the regions a user's alert places cover, one entry per region.
 
@@ -218,16 +218,18 @@ def account_places(user: User) -> list[AlertPlace]:
 
     Args:
         user: The account's user.
+        alerts_only: Only the places whose alert switch is on, which is who
+            gets alerted. The Today page (SNOW-1497) passes False: it lists
+            every place the person follows, switch on or off.
 
     Returns:
         The places, ordered by label.
 
     """
-    favourites = (
-        Favourite.objects.for_user(user)
-        .alert_places()
-        .select_related("region", "resort", "resort__region")
-        .order_by("created_at")
+    followed = Favourite.objects.for_user(user)
+    followed = followed.alert_places() if alerts_only else followed.alertable()
+    favourites = followed.select_related("region", "resort", "resort__region").order_by(
+        "created_at"
     )
     by_region: dict[int, AlertPlace] = {}
     for fav in favourites:
@@ -313,6 +315,30 @@ def places_on(pins: list[AlertPlace], trips: list[AlertPlace]) -> list[AlertPlac
         place.label_urls.update(trip.label_urls)
         place.trip_url = trip.trip_url
     return sorted(by_key.values(), key=lambda p: p.label)
+
+
+def today_target(places: list[AlertPlace], as_of: datetime.date) -> datetime.date:
+    """
+    Return the day the Today page opens on (SNOW-1497).
+
+    The next day once any place covers a region with a bulletin for it,
+    which is after its evening release, and ``as_of`` until then. One
+    region is enough: the places still waiting keep their cards and say so.
+
+    Args:
+        places: The places for the next day (pins and that day's trips).
+        as_of: The day taken as today.
+
+    Returns:
+        ``as_of`` or the day after it.
+
+    """
+    next_day = as_of + datetime.timedelta(days=1)
+    for place in places:
+        for region in place.covered:
+            if authoritative_bulletin(region, next_day) is not None:
+                return next_day
+    return as_of
 
 
 # ---------------------------------------------------------------------------

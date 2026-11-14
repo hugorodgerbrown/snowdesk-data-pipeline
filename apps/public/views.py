@@ -1257,6 +1257,22 @@ def serve_manifest(request: HttpRequest) -> HttpResponse:
             }
             for name, form_factor, sizes, label in PWA_SCREENSHOTS
         ],
+        # SNOW-1497: long-press the installed icon for the Today page, the
+        # bulletin for each place the person follows. The phone app has no
+        # tab for it (SNOW-1479).
+        "shortcuts": [
+            {
+                "name": "Today",
+                "url": f"{base}/today/",
+                "icons": [
+                    {
+                        "src": identity.icon_url("icon-192.png"),
+                        "sizes": "192x192",
+                        "type": "image/png",
+                    }
+                ],
+            }
+        ],
     }
     response = HttpResponse(
         json.dumps(manifest, indent=2),

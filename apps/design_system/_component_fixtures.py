@@ -1750,6 +1750,16 @@ SEGMENTED_OPTION_VARIANTS: tuple[dict[str, Any], ...] = (
             "checked": True,
         },
     },
+    # SNOW-1497: a link option, as the Today page's Today · Tomorrow switch
+    # draws them — a page per option, the selected one aria-current.
+    {
+        "caption": "Link, unselected",
+        "context": {"href": "#", "label": "Today · Sat 14"},
+    },
+    {
+        "caption": "Link, selected",
+        "context": {"href": "#", "label": "Tomorrow · Sun 15", "checked": True},
+    },
 )
 
 

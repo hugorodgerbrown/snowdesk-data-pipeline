@@ -1,6 +1,6 @@
 ---
 name: alerts
-description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places, /alerts/<day>/, the Today sun's dot, bulletin_alerts flag
+description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places, the Today page /today/, today_target, bulletin_alerts flag
 status: current
 last-reviewed: 2026-11-14
 ---
@@ -26,7 +26,7 @@ admin rather than in code. The scheduled sender is behind the
 | Run | Per account: evaluate every place, one message, deliver, log | `alerts.evaluate_account`, `alerts.deliver`; `send_bulletin_alerts` |
 | Log | One `BulletinAlert` row per (account, region, day, state). The previous row is the "last told" state, so the log *is* the change memory | `apps/bulletins/models.py::BulletinAlert` |
 | Email | Sent from `ALERTS_FROM_EMAIL` via a django-tasks worker, with one-click `List-Unsubscribe` | `apps/accounts/services/alert_email.py` |
-| Landing | Every alert lands on `/alerts/<day>/`: a card per place, A–Z, with the detail | `apps/public/alert_views.py`, `public/alerts_day.html` |
+| Landing | Every alert lands on the Today page, `/today/`: a card per place, A–Z, with the detail; tomorrow once any followed place has it (SNOW-1497). `/today/<day>/` takes that day as today; `/alerts/<day>/` redirects there | `apps/public/alert_views.py` (`today`, `alerts_day`), `alerts.today_target`, `public/today.html` |
 | Since strip | "Since Friday" sentences at the top of the region body, same words as the alert | `templates/includes/_since_strip.html`, `public.bulletin_panels._since_strip` |
 | Settings | Mode, email, this device, and a switch per place | `apps/accounts/alert_views.py`, `_alert_settings.html`, `alerts_optin.js` |
 | Dot | The Today sun in the map's date row shows a red dot (per device) while the newest message of the past week is one this device has not opened Today since; drawn only for an account with alerts on. The bell that listed the messages was retired by SNOW-1366 | `alerts.recent_alerts`, `accounts:alert_recent` (`/account/alerts/recent/`), `alert_views.alert_list_url`, `static/js/today_panel.js` |
@@ -40,8 +40,9 @@ admin rather than in code. The scheduled sender is behind the
   then is recorded as `BASELINE` rather than announced.
 - **Which places.** Region pins and saved resorts, each with
   `Favourite.alerts` (default on). A dropped pin never alerts. Places in
-  one region are one place and one send-log row; on `/alerts/<day>/` each
-  name is its own card.
+  one region are one place and one send-log row; on the Today page each
+  name is its own card. The Today page lists every region pin and saved
+  resort, switch on or off (`account_places(alerts_only=False)`).
 - **Saved trips (SNOW-947, SNOW-945).** A trip the account has saved
   (organiser or not, `Trip.objects.for_user`) is a place on its own day
   only, covering every region its route crosses — `track_regions`, the
@@ -51,7 +52,7 @@ admin rather than in code. The scheduled sender is behind the
   region, and in a pinned region it is one place and one row, with both
   names. A trip crossing several regions is one place of its own
   (`AlertPlace.regions`, keyed by the trip page): it writes one send-log
-  row per region and fires when any of them does. On `/alerts/<day>/` it
+  row per region and fires when any of them does. On the Today page it
   is a card per region, each opening the trip page. A track outside every region
   adds nothing. Trips follow the account's alert setting; there is no
   per-trip switch
@@ -79,7 +80,9 @@ admin rather than in code. The scheduled sender is behind the
   (SNOW-1332's open door, SNOW-1356's level and move, the "Bulletins for
   your N places" bundle) said too little to act on and too much to
   ignore; the bundle also miscounted a region followed under two names.
-- **The landing page.** Every alert opens `/alerts/<latest day>/`, which
+- **The landing page.** Every alert opens the Today page, `/today/`
+  (SNOW-1497; `/alerts/<latest day>/` before it), which applies the alert's
+  own rule — the next day once any followed place has its bulletin — and
   holds the detail and is not clever: one card per name the person
   follows a place by, A–Z, nothing merged or summarised. A card shows the
   danger tile, the level and its move since the day before
