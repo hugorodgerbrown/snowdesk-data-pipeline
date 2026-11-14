@@ -42,9 +42,10 @@ issue landing overnight is picked up by the first run of the morning.
 **Delivery.** :func:`deliver` writes the rows ``PENDING`` and queues one
 worker per account (:func:`_worker_deliver_alert`), which pushes to every
 active subscription and then decides email from what actually happened:
-ALWAYS emails anyway, FALLBACK emails when no push was accepted (none
-active, or every one failed — a 410 from an expired device included),
-NEVER never does, and only ever to a verified address. The rows then
+ALWAYS emails anyway, FALLBACK emails when no push was trusted (none
+active, every one failed — a 410 from an expired device included — or
+every device that took one still owes a receipt for its last alert,
+SNOW-1494), NEVER never does, and only ever to a verified address. The rows then
 become ``SENT``, or ``FAILED`` when nothing reached the person. A FAILED
 row is not "told": the next run compares against the last row that was,
 and sends again. A message with no possible channel at all is logged
@@ -1061,7 +1062,9 @@ def _worker_deliver_alert(
 
     Push is tried on every active device first, synchronously, so email can
     follow what actually happened rather than what was queued: FALLBACK
-    emails when no push was accepted. The rows become ``SENT`` when either
+    emails when no push was trusted, that is accepted for a device that
+    confirmed its last alert (SNOW-1494). ``sent_push`` and the settle still
+    follow any accepted push. The rows become ``SENT`` when either
     channel reached the person and ``FAILED`` when neither did, which the
     next run retries.
 
@@ -1100,6 +1103,7 @@ def _worker_deliver_alert(
     if not _claim_still_whole(claimed, alert_ids, account_id):
         return
     pushed = False
+    reached_by_push = False
     emailed = False
     try:
         account = Account.objects.select_related("user").filter(pk=account_id).first()
@@ -1108,13 +1112,21 @@ def _worker_deliver_alert(
             return
         for sub in account.push_subscriptions.active():
             try:
-                pushed = dispatch_push(sub, push, delivery=delivery)["ok"] or pushed
+                result = dispatch_push(
+                    sub, push, delivery=delivery, count_unconfirmed=True
+                )
             except Exception:
                 logger.exception(
                     "Bulletin alert push to subscription %s raised", sub.pk
                 )
+                continue
+            pushed = result["ok"] or pushed
+            reached_by_push = result["trusted"] or reached_by_push
+        # SNOW-1494: FALLBACK keys off a trusted push, one to a device that
+        # confirmed its last alert. A push service accepting a push for a
+        # device that never shows it is not the person reached.
         wants_email = account.alert_email == Account.AlertEmail.ALWAYS or (
-            account.alert_email == Account.AlertEmail.FALLBACK and not pushed
+            account.alert_email == Account.AlertEmail.FALLBACK and not reached_by_push
         )
         if wants_email and _can_email(account):
             try:
