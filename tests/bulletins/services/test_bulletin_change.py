@@ -187,6 +187,28 @@ class TestSummariseChange:
         b = bulletin_state(render("considerable", "-"))
         assert not summarise_change(a, b).subdivision_moved
 
+    def test_subdivision_direction_up(self) -> None:
+        """3− to 3 and 3 to 3+ are both rises within the level (SNOW-1495)."""
+        minus = bulletin_state(render("considerable", "-"))
+        flat = bulletin_state(render("considerable", None))
+        plus = bulletin_state(render("considerable", "+"))
+        assert summarise_change(minus, flat).subdivision_direction == 1
+        assert summarise_change(flat, plus).subdivision_direction == 1
+
+    def test_subdivision_direction_down(self) -> None:
+        """3+ to 3− is a fall within the level."""
+        plus = bulletin_state(render("considerable", "+"))
+        minus = bulletin_state(render("considerable", "-"))
+        assert summarise_change(plus, minus).subdivision_direction == -1
+
+    def test_subdivision_direction_unchanged(self) -> None:
+        """A held sub-rating, a level move, or no previous state reads 0."""
+        a = bulletin_state(render("considerable", "+"))
+        b = bulletin_state(render("moderate", "-"))
+        assert summarise_change(a, a).subdivision_direction == 0
+        assert summarise_change(b, a).subdivision_direction == 0
+        assert summarise_change(None, a).subdivision_direction == 0
+
     def test_problem_added_and_removed(self) -> None:
         """A named problem arriving or leaving is listed."""
         none = bulletin_state(render())

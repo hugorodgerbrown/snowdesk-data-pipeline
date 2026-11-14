@@ -104,6 +104,21 @@ class BulletinChange:
         return self.previous.subdivision != self.current.subdivision
 
     @property
+    def subdivision_direction(self) -> int:
+        """
+        Return 1 when the sub-rating rose within a held level, -1 when it fell.
+
+        Reads the sub-rating order ``BulletinState.rank`` uses (``-`` below
+        none below ``+``), so 3− to 3 and 3 to 3+ are both rises (SNOW-1495).
+        0 when the level itself moved, nothing moved, or there is nothing to
+        compare against.
+        """
+        if self.previous is None or self.rating_direction:
+            return 0
+        before, after = self.previous.rank[1], self.current.rank[1]
+        return (after > before) - (after < before)
+
+    @property
     def is_notable(self) -> bool:
         """
         Return True when the level moved or a problem came or went (SNOW-1356).
