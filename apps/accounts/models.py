@@ -473,6 +473,23 @@ class PushSubscriptionQuerySet(models.QuerySet["PushSubscription"]):
         """
         return self.filter(inactive_at__isnull=True)
 
+    def retired_notice_outstanding(self) -> PushSubscriptionQuerySet:
+        """Return rows retired as unconfirmed whose account is still owed the email.
+
+        The retirement email goes at least once (SNOW-1494): a row stays here
+        until ``retired_notice_sent_at`` is set, which happens only once the
+        mail backend accepted the message. Rows with no account, or an
+        account that cannot be emailed (unverified, no address), are left
+        out, since no sweep could ever send them.
+        """
+        return self.filter(
+            retired_reason=PushSubscription.RetiredReason.UNCONFIRMED,
+            retired_notice_sent_at__isnull=True,
+            inactive_at__isnull=False,
+            account__isnull=False,
+            account__is_verified=True,
+        ).exclude(account__user__email="")
+
 
 class PushSubscription(BaseModel):
     """
@@ -499,6 +516,15 @@ class PushSubscription(BaseModel):
     is gone (410) rather than deleting the row outright — see
     ``apps/accounts/push_service.py::dispatch_push``. A 404 (rarer, usually
     a transport-layer error) still hard-deletes the row.
+
+    Delivery receipts (SNOW-1494): an ``SW`` device's service worker posts a
+    signed receipt for every push it shows, which sets ``confirmed_at`` and
+    clears ``unconfirmed_pushes`` and ``unconfirmed_since``. An alert push
+    the push service accepted but no receipt followed counts up instead;
+    after enough of them over long enough the row is retired
+    (``inactive_at`` set, ``retired_reason`` UNCONFIRMED) and the account is
+    emailed once, ``retired_notice_sent_at`` recording that it went. See
+    ``apps/accounts/services/push_health.py``.
     """
 
     class Mechanism(models.TextChoices):
@@ -506,6 +532,13 @@ class PushSubscription(BaseModel):
 
         SW = "SW", "Service worker"
         DECLARATIVE = "DECLARATIVE", "Declarative Web Push"
+
+    class RetiredReason(models.TextChoices):
+        """Why a subscription stopped being pushed to (SNOW-1494)."""
+
+        GONE_410 = "GONE_410", "Push service reported 410 Gone"
+        UNCONFIRMED = "UNCONFIRMED", "Pushes accepted but never confirmed"
+        REPLACED = "REPLACED", "Replaced by a new subscription on the device"
 
     account = models.ForeignKey(
         Account,
@@ -528,7 +561,36 @@ class PushSubscription(BaseModel):
     inactive_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Set when the push service reports 410 Gone. Null while live.",
+        help_text=(
+            "Set when the subscription is retired (410 Gone, unconfirmed or "
+            "replaced). Null while live."
+        ),
+    )
+    confirmed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the device last sent a delivery receipt for a push.",
+    )
+    unconfirmed_pushes = models.PositiveIntegerField(
+        default=0,
+        help_text="Alert pushes accepted since the last delivery receipt.",
+    )
+    unconfirmed_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the first push still unconfirmed was sent.",
+    )
+    retired_reason = models.CharField(
+        max_length=16,
+        choices=RetiredReason.choices,
+        blank=True,
+        default="",
+        help_text="Why the subscription was retired. Blank while live.",
+    )
+    retired_notice_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the account was emailed that this device was retired.",
     )
 
     objects: PushSubscriptionQuerySet = PushSubscriptionQuerySet.as_manager()  # type: ignore[assignment]

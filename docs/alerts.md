@@ -116,8 +116,11 @@ admin rather than in code. The scheduled sender is behind the
 - **Reach.** `deliver` writes the rows `PENDING` and queues one worker
   (`_worker_deliver_alert`). It pushes to every active `PushSubscription`
   first, then emails from what actually happened: `ALWAYS` emails anyway,
-  `FALLBACK` emails when no push was accepted (no device, or every one
-  refused — an expired device's 410 included), `NEVER` never does, and
+  `FALLBACK` emails when no push was trusted (no device, every one
+  refused — an expired device's 410 included — or every device that took
+  one still owes a receipt for its last alert, SNOW-1494: see
+  [`push-notifications.md`](push-notifications.md#delivery-receipts-and-retirement)),
+  `NEVER` never does, and
   never to an unverified account. The rows become `SENT`, or `FAILED` when
   nothing reached the person. A `FAILED` row is not counted as told, so the
   next run sends again. With no possible channel at all the rows are

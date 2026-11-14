@@ -853,6 +853,11 @@ class PushSubscriptionFactory(factory.django.DjangoModelFactory[PushSubscription
     last_used_at = None
     mechanism = PushSubscription.Mechanism.SW
     inactive_at = None
+    confirmed_at = None
+    unconfirmed_pushes = 0
+    unconfirmed_since = None
+    retired_reason = ""
+    retired_notice_sent_at = None
 
 
 class BulletinAlertFactory(factory.django.DjangoModelFactory[BulletinAlert]):

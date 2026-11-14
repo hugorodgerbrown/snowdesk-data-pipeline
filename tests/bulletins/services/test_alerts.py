@@ -70,8 +70,10 @@ NOW = datetime.datetime(2026, 1, 16, 18, 0, tzinfo=ALERT_TZ)
 WIND = ProblemState("wind_slab", ("N",), lower=2400)
 
 # dispatch_push's result for an accepted push, and for a refused one.
-OK = {"ok": True, "status": 201}
-GONE = {"ok": False, "status": 410, "error": "Gone"}
+OK = {"ok": True, "status": 201, "trusted": True, "retired": False}
+GONE = {"ok": False, "status": 410, "trusted": False, "retired": False, "error": "Gone"}
+# Accepted for a device that still owes a receipt for its last alert (SNOW-1494).
+UNTRUSTED = {"ok": True, "status": 201, "trusted": False, "retired": False}
 
 
 def render(key: str = "moderate", problems: list[dict[str, Any]] | None = None) -> dict:
@@ -348,6 +350,52 @@ class TestEvaluateAndDeliver:
         row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
         assert row.outcome == BulletinAlert.Outcome.SENT
         assert row.sent_email and not row.sent_push
+
+    def test_alert_pushes_are_counted(self, follower: tuple) -> None:
+        """The worker asks dispatch_push to count the push (SNOW-1494)."""
+        account, region = follower
+        publish(region, TOMORROW, render())
+        PushSubscriptionFactory.create(account=account)
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            deliver(evaluate_account(account, NOW))
+        assert push.call_args.kwargs["count_unconfirmed"] is True
+        assert mail.outbox == []
+
+    def test_an_untrusted_push_falls_back_to_email(self, follower: tuple) -> None:
+        """Accepted but unconfirmed: FALLBACK emails, and the push still counts."""
+        account, region = follower
+        publish(region, TOMORROW, render())
+        PushSubscriptionFactory.create(account=account)
+        with patch.object(alerts, "dispatch_push", return_value=UNTRUSTED):
+            deliver(evaluate_account(account, NOW))
+        assert len(mail.outbox) == 1
+        row = BulletinAlert.objects.get(account=account, target_date=TOMORROW)
+        assert row.outcome == BulletinAlert.Outcome.SENT
+        assert row.sent_push and row.sent_email
+
+    def test_one_trusted_device_is_enough(self, follower: tuple) -> None:
+        """One device confirmed, another not: no FALLBACK email."""
+        account, region = follower
+        publish(region, TOMORROW, render())
+        PushSubscriptionFactory.create(account=account)
+        PushSubscriptionFactory.create(account=account)
+        with patch.object(alerts, "dispatch_push", side_effect=[UNTRUSTED, OK]):
+            deliver(evaluate_account(account, NOW))
+        assert mail.outbox == []
+
+    def test_a_device_owing_a_receipt_gets_the_email_too(self, follower: tuple) -> None:
+        """End to end through dispatch_push: an unconfirmed device means email."""
+        account, region = follower
+        publish(region, TOMORROW, render())
+        sub = PushSubscriptionFactory.create(
+            account=account, unconfirmed_pushes=1, unconfirmed_since=NOW
+        )
+        accepted = MagicMock(status_code=201)
+        with patch("apps.accounts.push_service.webpush", return_value=accepted):
+            deliver(evaluate_account(account, NOW))
+        assert len(mail.outbox) == 1
+        sub.refresh_from_db()
+        assert sub.unconfirmed_pushes == 2
 
     def test_unreached_alert_is_retried(self, follower: tuple) -> None:
         """Push refused and email off: FAILED, and the next run sends again."""

@@ -28,6 +28,15 @@ that the service worker's ``push`` event handler parses in JS. The
 fixed JSON shape the OS renders without running any JS — see
 ``_build_wire_payload`` and ``docs/push-notifications.md``.
 
+Delivery receipts (SNOW-1494): every ``SW`` push carries ``receipt``, a
+signed token the service worker posts back to ``accounts:push_receipt``
+when it shows the notification. An alert push passes
+``count_unconfirmed=True``, which counts it as unconfirmed until that
+receipt comes (``apps/accounts/services/push_health.py``), and the result
+says whether the push was *trusted* (the device had confirmed every
+earlier one) and whether this push retired the device. FALLBACK email keys
+off ``trusted``, not ``ok``.
+
 ``enqueue_push(sub, payload, client_version="")`` is the async entry
 point: it enqueues a ``_worker_dispatch_push`` task via django-tasks so
 the actual pywebpush HTTP round-trip runs off the request cycle
@@ -38,6 +47,7 @@ value regardless of when the task actually runs.
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -51,6 +61,7 @@ from apps.accounts.push_config import (
     VAPID_CLAIM_EMAIL,
     VAPID_PRIVATE_KEY,
 )
+from apps.accounts.services import push_health
 from apps.analytics.signals import emit_server_signal
 
 if TYPE_CHECKING:
@@ -71,12 +82,14 @@ DEFAULT_TTL_SECONDS = 60
 
 
 def _build_wire_payload(
-    sub: PushSubscription, payload: dict[str, Any]
+    sub: PushSubscription, payload: dict[str, Any], ttl: int
 ) -> dict[str, Any]:
     """Return the JSON payload to encrypt, shaped for ``sub.mechanism``.
 
     ``SW`` subscriptions keep the existing ``{title, body, url}`` shape
-    that the service worker's ``push`` event handler expects.
+    that the service worker's ``push`` event handler expects, plus
+    ``receipt``: the signed token, over the ``ttl`` actually sent, that the
+    worker posts back once it has shown the notification (SNOW-1494).
 
     ``DECLARATIVE`` subscriptions get Apple's Declarative Web Push shape —
     the OS renders the notification directly from this JSON without
@@ -92,7 +105,68 @@ def _build_wire_payload(
                 "navigate": payload.get("url", "/map/"),
             },
         }
-    return payload
+    return {**payload, "receipt": push_health.receipt_token(sub, ttl)}
+
+
+def _push_options(
+    delivery: Delivery | None, now: datetime.datetime
+) -> tuple[int, dict[str, str]]:
+    """Return the TTL and the RFC 8030 headers a push goes with.
+
+    Args:
+        delivery: The alert's delivery, or None for a plain push.
+        now: The time of the send.
+
+    Returns:
+        ``(ttl, headers)``: ``DEFAULT_TTL_SECONDS`` and no headers without
+        a delivery.
+
+    """
+    if delivery is None:
+        return DEFAULT_TTL_SECONDS, {}
+    headers = {"Urgency": delivery.urgency}
+    if delivery.topic:
+        headers["Topic"] = delivery.topic
+    return delivery.ttl(now), headers
+
+
+def _handle_refusal(
+    sub: PushSubscription, status: int | None, client_version: str
+) -> None:
+    """Retire a subscription on 410 Gone, or drop it on 404.
+
+    Args:
+        sub: The subscription the push service refused.
+        status: The push service's HTTP status, if any.
+        client_version: Threaded onto the ``pwa.push.gone_410`` signal.
+
+    """
+    if status == 410:
+        # SNOW-380: soft-delete — the client-side re-verification loop
+        # reconciles against this row on next launch.
+        # SNOW-381 (spec §16.2): 410 Gone is the "subscription lost"
+        # signal the observability dashboard reconciles against
+        # client-side pwa.push.subscription_lost. Emit before the save
+        # so sub.pk is unambiguous in the event payload.
+        emit_server_signal(
+            "pwa.push.gone_410",
+            {"subscription_pk": sub.pk, "client_version": client_version},
+        )
+        logger.info(
+            "marking push subscription pk=%s endpoint=%.30s… inactive (410)",
+            sub.pk,
+            sub.endpoint,
+        )
+        sub.inactive_at = timezone.now()
+        sub.retired_reason = PushSubscription.RetiredReason.GONE_410
+        sub.save(update_fields=["inactive_at", "retired_reason"])
+    elif status == 404:
+        logger.info(
+            "dropping dead push subscription pk=%s endpoint=%.30s… (404)",
+            sub.pk,
+            sub.endpoint,
+        )
+        sub.delete()
 
 
 def dispatch_push(
@@ -101,6 +175,7 @@ def dispatch_push(
     client_version: str = "",
     *,
     delivery: Delivery | None = None,
+    count_unconfirmed: bool = False,
 ) -> dict[str, Any]:
     """Send one Web Push and return a per-row outcome dict.
 
@@ -116,16 +191,27 @@ def dispatch_push(
             deliver it: its TTL and the RFC 8030 ``Urgency`` and ``Topic``
             headers (SNOW-1495). ``None`` sends ``DEFAULT_TTL_SECONDS`` and
             neither header, as the push demo does.
+        count_unconfirmed: Count the push as unconfirmed until the device
+            sends its receipt, and retire the device once too many went
+            unconfirmed (SNOW-1494). The alert worker and the resend
+            command set it; the test buttons do not. Only ``SW`` rows are
+            counted: a declarative push never runs the service worker.
+
+    Returns:
+        ``ok`` (the push service accepted it), ``status``, ``trusted``
+        (accepted, and the device had confirmed every earlier counted
+        push; for a push not counted, the same as ``ok``) and ``retired``
+        (this push retired the device). A failure adds ``error``.
 
     """
-    wire_payload = _build_wire_payload(sub, payload)
-    ttl = DEFAULT_TTL_SECONDS
-    headers: dict[str, str] = {}
-    if delivery is not None:
-        ttl = delivery.ttl(timezone.now())
-        headers["Urgency"] = delivery.urgency
-        if delivery.topic:
-            headers["Topic"] = delivery.topic
+    now = timezone.now()
+    ttl, headers = _push_options(delivery, now)
+    wire_payload = _build_wire_payload(sub, payload, ttl)
+    counted = count_unconfirmed and sub.mechanism == PushSubscription.Mechanism.SW
+    sub_pk = sub.pk  # a 404 deletes the row, and clears sub.pk with it
+    trusted_before: bool | None = True
+    if counted:
+        trusted_before = push_health.count_send(sub.pk, now)
     try:
         response = webpush(
             subscription_info=sub.to_dict(),
@@ -137,38 +223,22 @@ def dispatch_push(
         )
     except WebPushException as exc:
         status = exc.response.status_code if exc.response is not None else None
-        if status == 410:
-            # SNOW-380: soft-delete — the client-side re-verification loop
-            # reconciles against this row on next launch.
-            # SNOW-381 (spec §16.2): 410 Gone is the "subscription lost"
-            # signal the observability dashboard reconciles against
-            # client-side pwa.push.subscription_lost. Emit before the save
-            # so sub.pk is unambiguous in the event payload.
-            emit_server_signal(
-                "pwa.push.gone_410",
-                {"subscription_pk": sub.pk, "client_version": client_version},
-            )
-            logger.info(
-                "marking push subscription pk=%s endpoint=%.30s… inactive (410)",
-                sub.pk,
-                sub.endpoint,
-            )
-            sub.inactive_at = timezone.now()
-            sub.save(update_fields=["inactive_at"])
-        elif status == 404:
-            logger.info(
-                "dropping dead push subscription pk=%s endpoint=%.30s… (404)",
-                sub.pk,
-                sub.endpoint,
-            )
-            sub.delete()
+        _handle_refusal(sub, status, client_version)
         logger.warning(
             "webpush failed for push subscription pk=%s endpoint=%.30s…: %s",
             sub.pk,
             sub.endpoint,
             exc,
         )
-        return {"ok": False, "status": status, "error": str(exc)}
+        if counted:
+            push_health.uncount_send(sub_pk)
+        return {
+            "ok": False,
+            "status": status,
+            "trusted": False,
+            "retired": False,
+            "error": str(exc),
+        }
     except Exception as exc:  # noqa: BLE001 — a bad VAPID key or a malformed
         # subscription raises from inside pywebpush before any request is made
         # (staging's misread secret file raised binascii.Error on every send).
@@ -178,7 +248,15 @@ def dispatch_push(
             "webpush could not be attempted for push subscription pk=%s",
             sub.pk,
         )
-        return {"ok": False, "status": None, "error": str(exc)}
+        if counted:
+            push_health.uncount_send(sub_pk)
+        return {
+            "ok": False,
+            "status": None,
+            "trusted": False,
+            "retired": False,
+            "error": str(exc),
+        }
     # SNOW-874: say so on the way out. ``webpush`` raises for any status
     # above 202, so reaching this line already means the push service
     # accepted the message — but "no warning was logged" is a much harder
@@ -202,7 +280,13 @@ def dispatch_push(
             "client_version": client_version,
         },
     )
-    return {"ok": True, "status": response.status_code}
+    retired = counted and push_health.retire_if_dead(sub.pk, now)
+    return {
+        "ok": True,
+        "status": response.status_code,
+        "trusted": bool(trusted_before),
+        "retired": retired,
+    }
 
 
 # ---------------------------------------------------------------------------

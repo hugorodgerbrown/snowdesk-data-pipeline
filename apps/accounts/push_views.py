@@ -1,7 +1,7 @@
 """
 apps/accounts/push_views.py — Web Push JSON endpoints.
 
-Four views, all JSON in / JSON out:
+Five views, all JSON in / JSON out but the receipt:
 
 - ``push_register``   POST  — body: ``{endpoint, keys: {p256dh, auth}, mechanism?}``.
                               Upserts a PushSubscription keyed by endpoint.
@@ -11,11 +11,20 @@ Four views, all JSON in / JSON out:
                               wire value keeps working), and must be one of
                               ``PushSubscription.Mechanism`` (SNOW-380); an
                               unknown value is rejected with 400.
+                              ``replaces?`` (SNOW-1494) names the endpoint the
+                              browser held before; that row, if live and on
+                              the same account, is retired as REPLACED.
 - ``push_unregister`` POST  — body: ``{endpoint}``. Hard-deletes the row.
 - ``push_test``       POST  — body: ``{endpoint?, title?, body?, url?}``.
                               Enqueues one ``_worker_dispatch_push`` task per
                               matching subscription (or all rows if no endpoint
                               is passed) and returns a count of rows enqueued.
+- ``push_receipt``    POST  — body: ``{receipt}`` (JSON or form). The
+                              service worker's delivery receipt (SNOW-1494):
+                              204 for a good token, 400 for a bad one. No
+                              session and no CSRF token: the worker posts it
+                              with ``keepalive`` from the push event, and the
+                              signed token is the whole of its authority.
 - ``push_subscriptions`` GET — every stored row, for the demo page's list
                               (SNOW-874). Read-only, so no CSRF token and no
                               POST; the three writes above still take both.
@@ -29,8 +38,8 @@ keep the spike's reach over every row. ``push_test`` and
 ``push_subscriptions`` stay staff-only — they act on every row — and the
 account's own test is ``accounts:alert_test``.
 
-The POSTs rely on Django's default CSRF middleware; the JS clients send the
-``X-CSRFToken`` header read from the ``csrftoken`` cookie.
+The POSTs but the receipt rely on Django's default CSRF middleware; the JS
+clients send the ``X-CSRFToken`` header read from the ``csrftoken`` cookie.
 """
 
 from __future__ import annotations
@@ -43,10 +52,13 @@ from typing import Any
 
 from django.contrib.admin.views.decorators import staff_member_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.accounts.models import Account, PushSubscription
 from apps.accounts.push_service import enqueue_push
+from apps.accounts.services import push_health
 
 logger = logging.getLogger(__name__)
 
@@ -113,8 +125,17 @@ def push_register(request: HttpRequest) -> HttpResponse:
             "user_agent": request.headers.get("User-Agent", "")[:512],
             "mechanism": mechanism,
             "inactive_at": None,
+            # A re-registered row starts afresh: the device just proved it
+            # is there, so an old count must not retire it on the next push.
+            "retired_reason": "",
+            "unconfirmed_pushes": 0,
+            "unconfirmed_since": None,
+            "retired_notice_sent_at": None,
         },
     )
+    replaces = data.get("replaces")
+    if isinstance(replaces, str):
+        push_health.retire_replaced(account, replaces, endpoint)
     logger.info(
         "push subscription %s pk=%s endpoint=%.30s…",
         "created" if created else "updated",
@@ -141,6 +162,28 @@ def push_unregister(request: HttpRequest) -> HttpResponse:
         rows = rows.filter(account__user_id=request.user.pk or 0)
     deleted, _ = rows.delete()
     return JsonResponse({"ok": True, "deleted": deleted})
+
+
+# A service worker POSTs with no session and no CSRF token: the signed,
+# short-lived receipt token is the authority, and its only effect is marking
+# its own subscription reachable (SNOW-1494).
+# nosemgrep: python.django.security.audit.csrf-exempt.no-csrf-exempt
+@csrf_exempt
+@require_POST
+def push_receipt(request: HttpRequest) -> HttpResponse:
+    """Record a service worker's delivery receipt for one push (SNOW-1494).
+
+    CSRF-exempt and sessionless on purpose: the signed, short-lived token is
+    the only authority, and all it can do is mark its own subscription as
+    reachable. Takes ``{"receipt": token}`` as JSON, or ``receipt`` as a
+    form field.
+    """
+    data = _parse_json(request)
+    token = data.get("receipt") if isinstance(data, dict) else None
+    token = token or request.POST.get("receipt")
+    if not isinstance(token, str) or not push_health.confirm(token, timezone.now()):
+        return JsonResponse({"ok": False, "error": "bad receipt"}, status=400)
+    return HttpResponse(status=204)
 
 
 @staff_member_required

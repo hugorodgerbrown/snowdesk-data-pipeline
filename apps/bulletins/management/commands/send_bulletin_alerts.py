@@ -25,6 +25,13 @@ With no such run yet, or ``--full``, every alerting account is evaluated.
 Read-only by default: it reports what each account would be sent. Pass
 ``--commit`` to send and write the send log.
 
+**Retirement emails** (SNOW-1494). Outside the night hold, ``--commit``
+also enqueues the "alerts stopped reaching one of your devices" email for
+every retired device still owed one
+(``push_health.enqueue_outstanding_retired_notices``), so a send that
+failed goes again within the hour. Tallied ``retired_notices_enqueued``,
+zero on a dry run or in the hold.
+
 Typical use::
 
     python manage.py send_bulletin_alerts            # what would be sent now
@@ -51,6 +58,7 @@ from django.core.management.base import CommandError
 from django.utils import timezone
 
 from apps.accounts.models import Account, AccountQuerySet
+from apps.accounts.services.push_health import enqueue_outstanding_retired_notices
 from apps.bulletins.services.alerts import (
     accounts_to_evaluate,
     deliver,
@@ -116,7 +124,21 @@ class Command(RegisteredCommand):
             self.stdout.write("Night hold (22:00–06:30 Europe/Zurich): nothing sent.")
         self.tally("held", 1)
         self.tally("gated", 0)
+        self.tally("retired_notices_enqueued", 0)
         self._tally_zeros()
+
+    def _retired_notices(self, commit: bool, verbosity: int) -> None:
+        """Enqueue every retirement email still owed, with ``commit`` only.
+
+        Args:
+            commit: Enqueue when True; a dry run enqueues nothing.
+            verbosity: The command's verbosity.
+
+        """
+        enqueued = enqueue_outstanding_retired_notices() if commit else 0
+        if enqueued and verbosity:
+            self.stdout.write(f"Enqueued {enqueued} retired-device email(s).")
+        self.tally("retired_notices_enqueued", enqueued)
 
     def _accounts(
         self, now: datetime.datetime, full: bool, verbosity: int
@@ -198,6 +220,7 @@ class Command(RegisteredCommand):
                 )
             )
 
+        self._retired_notices(commit, verbosity)
         queryset = self._accounts(now, options["full"], verbosity)
         if queryset is None:
             return

@@ -241,7 +241,7 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
     """
 
     list_display = ["endpoint", "account", "mechanism", "created_at", "last_used_at"]
-    list_filter = ["created_at", "inactive_at"]
+    list_filter = ["created_at", "inactive_at", "retired_reason"]
     list_select_related = ["account", "account__user"]
     ordering = ["-created_at"]
     readonly_fields = [
@@ -254,6 +254,11 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
         "last_used_at",
         "mechanism",
         "inactive_at",
+        "retired_reason",
+        "confirmed_at",
+        "unconfirmed_pushes",
+        "unconfirmed_since",
+        "retired_notice_sent_at",
         "created_at",
         "updated_at",
     ]

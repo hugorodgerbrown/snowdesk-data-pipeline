@@ -2,7 +2,8 @@
 tests/bulletins/management/commands/test_send_bulletin_alerts.py — The send command.
 
 Read-only without --commit, the night hold, the register tally, a
-failed account making the run exit non-zero, and the gate (SNOW-1491).
+failed account making the run exit non-zero, the gate (SNOW-1491), and the
+hourly re-enqueue of retirement emails still owed (SNOW-1494).
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from freezegun import freeze_time
 
-from apps.accounts.models import Account
+from apps.accounts.models import Account, PushSubscription
 from apps.bulletins.models import BulletinAlert, RegionDayRating
 from apps.bulletins.services.alerts import ALERT_TZ, evaluate_account
 from apps.core.models import CommandRun
@@ -27,6 +28,7 @@ from tests.factories import (
     BulletinFactory,
     FavouriteFactory,
     MicroRegionFactory,
+    PushSubscriptionFactory,
     RegionBulletinFactory,
     RegionDayRatingFactory,
 )
@@ -105,6 +107,48 @@ def test_failed_account_exits_non_zero(follower: Account) -> None:
         run("--commit")
 
 
+def _owed_notice() -> PushSubscription:
+    """Return a device retired as unconfirmed whose email never went."""
+    return PushSubscriptionFactory.create(
+        account=AccountFactory.create(),
+        inactive_at=EVENING,
+        retired_reason=PushSubscription.RetiredReason.UNCONFIRMED,
+    )
+
+
+def test_commit_enqueues_outstanding_retired_notices(db: Any) -> None:
+    """--commit sends the retirement email a failed send left owed."""
+    sub = _owed_notice()
+    run("--commit")
+    assert CommandRun.objects.latest("id").counts["retired_notices_enqueued"] == 1
+    assert [m.subject for m in mail.outbox] == [
+        "Alerts stopped reaching one of your devices"
+    ]
+    sub.refresh_from_db()
+    assert sub.retired_notice_sent_at is not None
+    run("--commit")
+    assert CommandRun.objects.latest("id").counts["retired_notices_enqueued"] == 0
+    assert len(mail.outbox) == 1
+
+
+def test_dry_run_enqueues_no_retired_notice(db: Any) -> None:
+    """Without --commit nothing is enqueued, and the tally says zero."""
+    sub = _owed_notice()
+    run()
+    assert CommandRun.objects.latest("id").counts["retired_notices_enqueued"] == 0
+    assert mail.outbox == []
+    sub.refresh_from_db()
+    assert sub.retired_notice_sent_at is None
+
+
+def test_night_hold_enqueues_no_retired_notice(db: Any) -> None:
+    """The hold sends nothing overnight, retirement emails included."""
+    _owed_notice()
+    run("--commit", now=NIGHT)
+    assert CommandRun.objects.latest("id").counts["retired_notices_enqueued"] == 0
+    assert mail.outbox == []
+
+
 # ---------------------------------------------------------------------------
 # The gate (SNOW-1491)
 # ---------------------------------------------------------------------------
@@ -158,6 +202,7 @@ def test_nothing_changed_is_skipped(followers: list[Account]) -> None:
     assert "Nothing changed since 2026-01-16 18:00: skipped." in out.getvalue()
     tally = CommandRun.objects.latest("id").counts
     assert tally == {
+        "retired_notices_enqueued": 0,
         "held": 0,
         "gated": 1,
         "accounts": 0,

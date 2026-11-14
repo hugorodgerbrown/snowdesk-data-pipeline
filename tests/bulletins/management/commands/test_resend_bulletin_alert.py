@@ -97,12 +97,21 @@ def make_account(
     return account
 
 
-def run(*args: str, ok: bool = True) -> tuple[str, MagicMock]:
-    """Call the command with dispatch_push mocked; return stdout and the mock."""
+def run(
+    *args: str, ok: bool = True, trusted: bool | None = None, retired: bool = False
+) -> tuple[str, MagicMock]:
+    """Call the command with dispatch_push mocked; return stdout and the mock.
+
+    ``trusted`` defaults to ``ok``: an accepted push to a confirmed device.
+    """
     out = StringIO()
-    with patch(
-        f"{COMMAND}.dispatch_push", return_value={"ok": ok, "status": 201}
-    ) as push:
+    result = {
+        "ok": ok,
+        "status": 201,
+        "trusted": ok if trusted is None else trusted,
+        "retired": retired,
+    }
+    with patch(f"{COMMAND}.dispatch_push", return_value=result) as push:
         call_command("resend_bulletin_alert", *args, stdout=out)
     return out.getvalue(), push
 
@@ -192,6 +201,30 @@ def test_fallback_emails_only_when_no_push_accepted() -> None:
     assert mail.outbox == []
     run("--email", account.user.email, "--commit", ok=False)
     assert len(mail.outbox) == 1
+
+
+def test_resend_pushes_are_counted() -> None:
+    """A resend push is counted as unconfirmed, as an alert's is (SNOW-1494)."""
+    account = make_account(Account.AlertEmail.NEVER)
+    out, push = run("--email", account.user.email, "--commit")
+    assert push.call_args.kwargs["count_unconfirmed"] is True
+    assert "accepted (201)" in out
+
+
+def test_fallback_emails_when_the_device_is_unconfirmed() -> None:
+    """FALLBACK: accepted for a device owing a receipt still means email."""
+    account = make_account(Account.AlertEmail.FALLBACK)
+    out, _ = run("--email", account.user.email, "--commit", trusted=False)
+    assert "accepted (unconfirmed device)" in out
+    assert len(mail.outbox) == 1
+    assert counts()["pushed"] == 1
+
+
+def test_a_resend_that_retires_the_device_says_so() -> None:
+    """The push that retires a dead device is reported as such."""
+    account = make_account(Account.AlertEmail.NEVER)
+    out, _ = run("--email", account.user.email, "--commit", trusted=False, retired=True)
+    assert "accepted, device retired" in out
 
 
 def test_channel_email_overrides_never() -> None:
