@@ -1240,6 +1240,24 @@ class BulletinAlert(BaseModel):
     title = models.CharField(max_length=255, blank=True)
     body = models.TextField(blank=True)
     url = models.CharField(max_length=255, blank=True)
+    push_urgency = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text=(
+            "RFC 8030 Urgency the message was pushed with (low, normal, "
+            "high); blank on rows from before SNOW-1495 and rows that never "
+            "sent. Every row of one message carries the same value."
+        ),
+    )
+    push_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When the message's bulletins stop being valid, which its push "
+            "TTL runs to (SNOW-1495). A resend after it is refused."
+        ),
+    )
 
     objects = BulletinAlertQuerySet.as_manager()
 

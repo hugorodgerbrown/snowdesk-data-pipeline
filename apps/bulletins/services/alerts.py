@@ -85,11 +85,7 @@ from django.utils import timezone
 from django_tasks import task
 
 from apps.accounts.models import Account
-from apps.accounts.push_service import (
-    ALERT_TTL_SECONDS,
-    ALERT_URGENCY,
-    dispatch_push,
-)
+from apps.accounts.push_service import dispatch_push
 from apps.accounts.services.alert_email import send_alert_email
 from apps.bulletins.models import (
     SEASON_GAP_DAYS,
@@ -111,6 +107,7 @@ from apps.bulletins.services.bulletin_change import (
     BulletinState,
     summarise_change,
 )
+from apps.bulletins.services.push_delivery import Delivery, delivery_for
 from apps.core.models import CommandRun
 from apps.favourites.models import Favourite
 from apps.ingest.public import state_of
@@ -720,6 +717,8 @@ def _place_alerts(sending: list[PendingRow]) -> list[PlaceAlert]:
                     Release(source=r.bulletin.source, issued_at=r.bulletin.issued_at)
                     for r in rows
                 ),
+                valid_to=max(r.bulletin.valid_to for r in rows),
+                on_trip=bool(first.place.trip_url),
             )
         )
     return alerts
@@ -845,12 +844,20 @@ def _queue_claimed(
         return
     if lost:
         message = run.message = _winners_message(run, won, claimed_at)
+    # How urgently and for how long the message goes (SNOW-1495), from the
+    # places it actually names; stored on every row so a resend goes the
+    # same way.
+    delivery = delivery_for(
+        message.places, run.today or local_now(claimed_at).date(), claimed_at
+    )
     # A queryset update, which auto_now does not touch: every claimed row
     # carries exactly the claim time the worker checks.
     BulletinAlert.objects.filter(pk__in=pending).update(
         title=message.title,
         body=message.body,
         url=message.url,
+        push_urgency=delivery.urgency,
+        push_expires_at=delivery.expires_at,
         updated_at=claimed_at,
     )
     # Inside the transaction: the DatabaseBackend writes its task row on
@@ -865,6 +872,7 @@ def _queue_claimed(
         message.title,
         message.body,
         message.url,
+        **delivery.to_task(),
     )
 
 
@@ -1044,6 +1052,9 @@ def _worker_deliver_alert(
     title: str,
     body: str,
     url: str,
+    urgency: str = "",
+    expires_at: str = "",
+    topic: str = "",
 ) -> None:
     """
     Background worker: push, fall back to email, and settle the rows.
@@ -1073,8 +1084,14 @@ def _worker_deliver_alert(
         title: The email subject.
         body: The email body.
         url: Where the alert lands.
+        urgency: The push's RFC 8030 urgency (``Delivery.to_task``).
+        expires_at: When the message's bulletins end, ISO 8601.
+        topic: The push's RFC 8030 topic. All three default to "" so a
+            task queued before SNOW-1495 still runs, as ``Delivery.from_task``
+            describes.
 
     """
+    delivery = Delivery.from_task(urgency, expires_at, topic, timezone.now())
     claimed = BulletinAlert.objects.filter(
         pk__in=alert_ids,
         outcome=BulletinAlert.Outcome.PENDING,
@@ -1091,12 +1108,7 @@ def _worker_deliver_alert(
             return
         for sub in account.push_subscriptions.active():
             try:
-                pushed = (
-                    dispatch_push(
-                        sub, push, ttl=ALERT_TTL_SECONDS, urgency=ALERT_URGENCY
-                    )["ok"]
-                    or pushed
-                )
+                pushed = dispatch_push(sub, push, delivery=delivery)["ok"] or pushed
             except Exception:
                 logger.exception(
                     "Bulletin alert push to subscription %s raised", sub.pk

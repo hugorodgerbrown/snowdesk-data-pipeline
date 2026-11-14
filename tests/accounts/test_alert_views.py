@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.test import Client, RequestFactory
+from django.utils import timezone
 from waffle.testutils import override_flag
 
 from apps.accounts.alert_views import alert_list_url
@@ -171,6 +172,23 @@ def test_alert_test_pushes_every_device(client_for: Client, account: Account) ->
         response = client_for.post("/account/alerts/test/")
     assert response.json() == {"ok": True, "devices": 2, "delivered": 1}
     assert push.call_count == 2
+
+
+@pytest.mark.usefixtures("alerts_flag")
+def test_alert_test_wakes_the_device_for_a_minute(
+    client_for: Client, account: Account
+) -> None:
+    """The test alert goes at high urgency, held 60 s, topic ``test`` (SNOW-1495)."""
+    PushSubscriptionFactory.create(account=account)
+    with patch(
+        "apps.accounts.alert_views.dispatch_push",
+        return_value={"ok": True, "status": 201},
+    ) as push:
+        client_for.post("/account/alerts/test/")
+    delivery = push.call_args.kwargs["delivery"]
+    assert delivery.urgency == "high"
+    assert delivery.topic == "test"
+    assert delivery.ttl(timezone.now()) == 60
 
 
 @pytest.mark.usefixtures("alerts_flag")

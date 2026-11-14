@@ -83,6 +83,11 @@ class PlaceAlert:
     # The bulletins behind it: one, or one per region for a trip crossing
     # several regions (SNOW-945).
     releases: tuple[Release, ...] = ()
+    # When the place's bulletins stop being valid (the latest ``valid_to``
+    # of them), and whether the day is a saved trip's: what the push's TTL
+    # and urgency are set by (SNOW-1495, ``push_delivery.py``).
+    valid_to: datetime.datetime | None = None
+    on_trip: bool = False
 
 
 @dataclass(frozen=True)

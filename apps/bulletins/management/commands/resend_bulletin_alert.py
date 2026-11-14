@@ -11,6 +11,14 @@ when it first went (SNOW-1496); the stored ``url`` is kept. The send log is
 never written, so the hourly ``send_bulletin_alerts`` run behaves as if the
 resend never happened.
 
+A resend is pushed as the message first was (SNOW-1495): the most urgent
+``push_urgency`` and the latest ``push_expires_at`` stored on its rows, the
+TTL running to that expiry, and the topic of the latest day it is for. Once
+that expiry has passed the bulletin has ended and the resend is refused,
+nothing sent. Rows from before SNOW-1495 store neither: they go at
+``normal``, to the latest ``valid_to`` of their bulletins. Trips are not
+re-read.
+
 By default the channels follow the account's own settings, the same rule the
 delivery worker uses: push to every active device, then email when
 ``alert_email`` is ALWAYS, or FALLBACK with no push accepted. ``--channel``
@@ -36,26 +44,31 @@ Typical use::
 
 Exit codes: ``0`` on success; non-zero (``CommandError``) for an unknown
 email, an account with no delivered alert, ``--commit`` without
-``--email``, or a commit that reached no channel.
+``--email``, a commit of a message whose bulletin has ended, or a commit
+that reached no channel.
 """
 
 from __future__ import annotations
 
+import datetime
 import logging
 from argparse import ArgumentParser
 from typing import Any
 
 from django.core.management.base import CommandError
+from django.utils import timezone
 
 from apps.accounts.models import Account
-from apps.accounts.push_service import (
-    ALERT_TTL_SECONDS,
-    ALERT_URGENCY,
-    dispatch_push,
-)
+from apps.accounts.push_service import dispatch_push
 from apps.accounts.services.alert_email import send_alert_email
 from apps.bulletins.models import BulletinAlert
 from apps.bulletins.services.alert_wording import Release, cold_copy
+from apps.bulletins.services.push_delivery import (
+    FALLBACK_HOLD,
+    Delivery,
+    alert_topic,
+    highest_urgency,
+)
 from apps.core.command_register import RegisteredCommand
 
 logger = logging.getLogger(__name__)
@@ -72,32 +85,79 @@ def _delivered() -> Any:
     return BulletinAlert.objects.sent().exclude(title="").order_by("-updated_at", "-id")
 
 
-def _copy(last: BulletinAlert) -> tuple[str, str]:
-    """Write today's title and body for the message ``last`` belongs to.
+def _message_rows(last: BulletinAlert) -> list[BulletinAlert]:
+    """Return every row of the message ``last`` belongs to.
 
-    The message's rows are the account's rows stored with the same title,
-    body and url as ``last``: one per place in a bundle.
+    The message's rows are the account's rows settled together with
+    ``last``: the delivery worker stamps every row of one send with one
+    ``updated_at``. Matching on the copy as well is not enough on its own,
+    because two sends for the same day can carry the same title, body and
+    url (``release_line`` drops the time when a bundle's issue times differ).
 
     Args:
         last: The newest delivered row of the message.
 
     Returns:
-        ``(title, body)`` from ``cold_copy``.
+        The rows, with ``bulletin`` loaded.
 
     """
-    rows = (
+    return list(
         _delivered()
         .filter(
-            account_id=last.account_id, title=last.title, body=last.body, url=last.url
+            account_id=last.account_id,
+            title=last.title,
+            body=last.body,
+            url=last.url,
+            updated_at=last.updated_at,
         )
         .select_related("bulletin")
     )
+
+
+def _copy(rows: list[BulletinAlert]) -> tuple[str, str]:
+    """Write today's title and body for a message.
+
+    Args:
+        rows: The message's rows (``_message_rows``).
+
+    Returns:
+        ``(title, body)`` from ``cold_copy``.
+
+    """
     releases = [
         Release(source=r.bulletin.source, issued_at=r.bulletin.issued_at)
         for r in rows
         if r.bulletin is not None
     ]
     return cold_copy(releases)
+
+
+def _delivery(rows: list[BulletinAlert], now: datetime.datetime) -> Delivery:
+    """Return the push delivery a message first went with (SNOW-1495).
+
+    The most urgent stored urgency and the latest stored expiry across the
+    rows. A row from before SNOW-1495 stores neither: it counts as
+    ``normal``, and the expiry is the latest ``valid_to`` of the rows'
+    bulletins (twelve hours from now when none is left to read).
+
+    Args:
+        rows: The message's rows, at least one.
+        now: The time of the resend.
+
+    Returns:
+        The delivery.
+
+    """
+    stored = [r.push_expires_at for r in rows if r.push_expires_at is not None]
+    ends = stored or [r.bulletin.valid_to for r in rows if r.bulletin is not None]
+    return Delivery(
+        urgency=highest_urgency(r.push_urgency for r in rows if r.push_urgency),
+        expires_at=max(ends) if ends else now + FALLBACK_HOLD,
+        topic=alert_topic(
+            (r.target_date for r in rows),
+            season=all(r.kind == BulletinAlert.Kind.SEASON_START for r in rows),
+        ),
+    )
 
 
 def _can_email(account: Account) -> bool:
@@ -190,14 +250,28 @@ class Command(RegisteredCommand):
             verbosity: The run's ``--verbosity``.
 
         Raises:
-            CommandError: A commit reached no channel.
+            CommandError: A commit of a message whose bulletin has ended, or
+                a commit that reached no channel.
 
         """
         devices = list(account.push_subscriptions.active())
         use_push, use_email = CHANNELS[channel] if channel else (True, None)
-        title, body = _copy(last)
+        rows = _message_rows(last)
+        title, body = _copy(rows)
+        now = timezone.now()
+        delivery = _delivery(rows, now)
         if verbosity >= 1:
             self._report(account, last, (title, body), channel, commit, len(devices))
+            self._report_delivery(delivery, now)
+        ended = delivery.expired(now)
+        self.tally("refused_ended", int(ended))
+        if ended:
+            if commit:
+                raise CommandError(
+                    f"Not resent to account {account.pk}: its bulletin ended "
+                    f"{delivery.expires_at.isoformat(timespec='minutes')}."
+                )
+            return
         if not commit:
             if use_email is None:
                 use_email = account.alert_email == Account.AlertEmail.ALWAYS or (
@@ -208,7 +282,7 @@ class Command(RegisteredCommand):
             return
         payload = {"title": title, "body": body, "url": last.url}
         pushed, push_failed = (
-            self._push(devices, payload, verbosity) if use_push else (0, 0)
+            self._push(devices, payload, delivery, verbosity) if use_push else (0, 0)
         )
         if use_email is None:
             use_email = account.alert_email == Account.AlertEmail.ALWAYS or (
@@ -265,14 +339,36 @@ class Command(RegisteredCommand):
         )
         self.stdout.write(f"  channels: {self._plan(account, channel)}")
 
+    def _report_delivery(self, delivery: Delivery, now: datetime.datetime) -> None:
+        """Print how the push would go, or that the bulletin has ended.
+
+        Args:
+            delivery: The message's push delivery.
+            now: The time of the resend.
+
+        """
+        ends = delivery.expires_at.isoformat(timespec="minutes")
+        if delivery.expired(now):
+            self.stdout.write(f"  bulletin ended {ends}: a resend is refused")
+            return
+        self.stdout.write(
+            f"  push: urgency {delivery.urgency}, TTL {delivery.ttl(now)}s "
+            f"(bulletin ends {ends}), topic {delivery.topic}"
+        )
+
     def _push(
-        self, devices: list[Any], payload: dict[str, str], verbosity: int
+        self,
+        devices: list[Any],
+        payload: dict[str, str],
+        delivery: Delivery,
+        verbosity: int,
     ) -> tuple[int, int]:
         """Push ``payload`` to each device; return (accepted, failed).
 
         Args:
             devices: The account's active push subscriptions.
             payload: The ``{title, body, url}`` to send.
+            delivery: The urgency, TTL and topic it goes with.
             verbosity: The run's ``--verbosity``.
 
         Returns:
@@ -282,9 +378,7 @@ class Command(RegisteredCommand):
         accepted = 0
         for sub in devices:
             try:
-                result = dispatch_push(
-                    sub, payload, ttl=ALERT_TTL_SECONDS, urgency=ALERT_URGENCY
-                )
+                result = dispatch_push(sub, payload, delivery=delivery)
             except Exception:
                 logger.exception("Resend push to subscription %s raised", sub.pk)
                 result = {"ok": False, "status": "raised"}
