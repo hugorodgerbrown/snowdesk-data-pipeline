@@ -1,6 +1,6 @@
 ---
 name: push-notifications
-description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/, Declarative Web Push, mechanism/inactive_at, icon vs badge-96.png
+description: Web Push — VAPID keypair and Render secret, /_push-demo/, Declarative Web Push, inactive_at, delivery receipts and retired devices
 status: current
 last-reviewed: 2026-11-14
 ---
@@ -102,7 +102,7 @@ parses.
 
 - `null` on every freshly created or freshly resubscribed row.
 - Set to `timezone.now()` by `dispatch_push` when the push service returns
-  **410 Gone** — the confirmed-dead signal (permission revoked, PWA
+  **410 Gone** (`retired_reason` `GONE_410`) — the confirmed-dead signal (permission revoked, PWA
   uninstalled, site data cleared). The row is **not** deleted; it stays
   around as the record `reverifyPushSubscription` reconciles against on the
   device's next launch (via the `meta:app` / `push.subscribed_before` flag
@@ -110,9 +110,13 @@ parses.
 - A **404** (rare transport-layer error, not a confirmed-gone signal) still
   hard-deletes the row — there's nothing useful to reconcile against a
   wrong URL.
+- Also set when a device is retired for never confirming its alerts
+  (`UNCONFIRMED`) or replaced by a new subscription (`REPLACED`): see
+  [Delivery receipts and retirement](#delivery-receipts-and-retirement).
 - Cleared back to `null` automatically the next time the same endpoint
   registers — `push_register`'s `update_or_create` always writes
-  `inactive_at=None` into `defaults`. In practice a resubscribe after 410
+  `inactive_at=None` into `defaults`, and with it clears `retired_reason`,
+  the unconfirmed count and `retired_notice_sent_at`. In practice a resubscribe after 410
   usually produces a **new** endpoint (the push service issues a fresh
   token), so this typically manifests as a brand-new row rather than the
   old one flipping back to active — but the reset guards the same-endpoint
@@ -167,6 +171,68 @@ Thursday 12 Nov's first alert was accepted on every device and shown on
 none. `Urgency: high` (RFC 8030 §5.3) asks the service to wake the device
 rather than wait for its next maintenance window, which is why it is kept
 for the alerts worth waking someone for.
+
+---
+
+## Delivery receipts and retirement
+
+A 201 says the push service took a push, not that a device showed it. A
+phone that was wiped, sold or had its browser data cleared can leave a
+subscription the service still accepts for, and alerts then go nowhere
+while the send log says `SENT` (SNOW-1494). Every `SW` device now answers
+each push, and one that stops answering is retired.
+`apps/accounts/services/push_health.py` holds the logic.
+
+- **Receipt.** `dispatch_push` adds `receipt` to every `SW` payload: a
+  `TimestampSigner` token (salt `push-receipt`) over `{"s": <uuid>,
+  "ttl": <the TTL sent>}`. The service worker's `push` handler posts it to
+  `accounts:push_receipt` (`/account/push/receipt/`) with `keepalive` and
+  no cookies, beside `showNotification`, and swallows any failure. The view
+  is CSRF-exempt and needs no session: the token is its only authority. It
+  answers 204, or 400 for a bad token. A token is good for its TTL plus
+  `RECEIPT_GRACE_SECONDS` (300): sixty seconds and five minutes for a test
+  push, up to 28 hours and five minutes for an alert.
+- **Confirm.** `push_health.confirm` sets `confirmed_at` and clears
+  `unconfirmed_pushes` and `unconfirmed_since` in one UPDATE. It never
+  touches `inactive_at`, so a late receipt does not bring a retired row
+  back.
+- **Counting.** Only alert pushes are counted: `_worker_deliver_alert` and
+  `resend_bulletin_alert` pass `count_unconfirmed=True`, the test buttons
+  do not. `count_send` increments the count under `select_for_update`
+  before the send and stamps `unconfirmed_since` if it was empty;
+  `uncount_send` takes it back if the push service refused the push.
+  `DECLARATIVE` devices are never counted: the OS renders their
+  notification without running the service worker, so no receipt can come.
+- **Trusted push.** A push is *trusted* when it was accepted and the device
+  had confirmed every counted push before it (`unconfirmed_pushes` was 0).
+  `dispatch_push` returns `trusted` beside `ok`. `FALLBACK` email keys off
+  a trusted push; `sent_push` and the `SENT` / `FAILED` settle still
+  follow any accepted push.
+- **Retirement.** After an accepted counted push, `retire_if_dead` retires
+  a live `SW` device with at least `RETIRE_AFTER_PUSHES` (3) unconfirmed
+  pushes, the first at least `RETIRE_AFTER` (2 days) ago. One conditional
+  UPDATE sets `inactive_at` and `retired_reason` `UNCONFIRMED`; only the
+  call that hit the row enqueues the email, in `on_commit`.
+  `resend_bulletin_alert` reports each device as "accepted", "accepted
+  (unconfirmed device)" or "accepted, device retired".
+- **Replaced.** `alerts_optin.js` keeps the endpoint it registered in pwaDb
+  `meta:app` (`push.endpoint`). When the browser hands out a different one
+  it sends the old one as `replaces`, and `push_register` calls
+  `retire_replaced`: the old row, if live and on the same account, is
+  retired as `REPLACED`. No email goes.
+- **The email** (`accounts/emails/device_retired.{txt,html}`, subject
+  "Alerts stopped reaching one of your devices") gives the date the device
+  was set up and a link to the settings page's alerts section. It goes
+  **at least once**: `_worker_send_device_retired_email` claims the row
+  under `select_for_update`, skips it if `retired_notice_sent_at` is set
+  or it is no longer `UNCONFIRMED`, and sets `retired_notice_sent_at` only
+  once `send_mail` has returned. A send that raises leaves the field null
+  and the task fails. `send_bulletin_alerts --commit` calls
+  `enqueue_outstanding_retired_notices` every hour outside the night hold
+  (tallied `retired_notices_enqueued`), so the email goes again on the
+  next run. A worker that dies between the send and the write sends it
+  twice; that is the trade for never losing it. An unverified account or a
+  row with no account is never emailed.
 
 ---
 

@@ -809,9 +809,11 @@ each account, decides every pinned region and saved resort against its own
 `--ignore-night-hold` runs inside 22:00–06:30 (for testing). Gated since
 SNOW-1491: only the accounts something changed for since the last
 committed run that evaluated are walked, and with none the run is skipped;
-`--full` walks every alerting account. Tallies `held` (1 inside the night
-hold), `gated` (1 when skipped), `accounts`, `messages`, `pushes`,
-`emails`, `failed`; any failure exits non-zero. Rules:
+`--full` walks every alerting account. Outside the night hold, `--commit`
+also enqueues every retired-device email still owed (SNOW-1494, tallied
+`retired_notices_enqueued`, zero on a dry run). Tallies `held` (1 inside
+the night hold), `gated` (1 when skipped), `accounts`, `messages`,
+`pushes`, `emails`, `failed`; any failure exits non-zero. Rules:
 [`alerts.md`](alerts.md).
 
 ```bash
@@ -830,7 +832,9 @@ in the command register (the rule 1 exemption). `--email` alone
 shows the last alert and the channels a resend would use (`would_push`,
 `would_email`). `--commit` sends: by the account's own settings, or by
 `--channel push|email|both`, which overrides `alert_email` but never emails
-an unverified address. Tallies `pushed`, `push_failed`, `emailed` and
+an unverified address. FALLBACK emails unless a confirmed device took the
+push, and each push is counted towards retiring a device that never
+confirms (SNOW-1494). Tallies `pushed`, `push_failed`, `emailed` and
 `email_failed`, and exits non-zero when a commit reached no channel.
 `mcp_runnable`.
 

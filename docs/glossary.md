@@ -2,7 +2,7 @@
 name: glossary
 description: Domain term → code symbol map — CAAML, DPBRA, massif, Bulletin/RegionBulletin, render model, day rating, sentinels, Location, Weather
 status: current
-last-reviewed: 2026-11-12
+last-reviewed: 2026-11-14
 ---
 
 # Glossary — domain terms to code symbols
@@ -262,6 +262,9 @@ Which coordinate on which model is exact, approximate or derived:
 | Docs corpus | The documentation an MCP server can search and read (SNOW-1393): the public corpus is the help topics, bulletin guide and explainers; the ops corpus adds every living doc, decision, runbook and AGENTS.md | `public_corpus` / `ops_corpus` in `apps/mcp_server/docs_corpus.py`; `search_docs`, `read_doc`, `list_docs` in `apps/mcp_server/docs_tools.py`; `docs/decisions/docs-are-served-from-the-build.md` |
 | Resort tools | The ops MCP server's tools for reading and correcting the resort estate from a chat (SNOW-1401): look a resort up, list a worklist, and preview-then-commit an edit, a new resort, a retirement or a restore, each commit audited with its source in the admin History | `get_resort`, `find_resorts`, `update_resort`, `create_resort`, `retire_resort`, `restore_resort` in `apps/mcp_server/resort_tools.py`; `RESORT_EDIT_FIELDS` / `ResortEditForm` in `apps/regions/forms.py`; `canton_for_region`, `nearby_resorts` in `apps/regions/services/resort_edit.py` |
 | PushSubscription | Web Push endpoint (spike) | `apps/accounts/models.py` |
+| Delivery receipt | The signed token every push to a service-worker device carries, posted back by the worker when it shows the notification; it marks the device as reached (SNOW-1494) | `push_health.receipt_token` / `confirm`, `accounts:push_receipt`, `PushSubscription.confirmed_at`; `_postPushReceipt` in `static/js/sw.js` |
+| Trusted push | An alert push the push service accepted for a device that had confirmed every counted push before it; FALLBACK email keys off it, not off acceptance alone | `dispatch_push(count_unconfirmed=True)["trusted"]`, `push_health.count_send` |
+| Retired device | A push subscription no longer sent to: 410 Gone, pushes accepted but never confirmed, or replaced by the device's new subscription; an unconfirmed retirement emails the account at least once | `PushSubscription.inactive_at`, `retired_reason` (`RetiredReason`), `retired_notice_sent_at`; `push_health.retire_if_dead`, `retire_replaced` |
 | Data feed | Production's read-only HTTPS feed of what it ingests — bulletins (CAAML), weather, curated locations and resorts — for other services, staging first (SNOW-1197). Natural keys only, allowlisted columns, keyset-paged on `updated_at` | `GET /api/data/v1/<feed>/` (`api:data_feed:<feed>`); `apps/data_feed/feeds.py`, `contract.py`; clients `pull_reference_data` (v2, SNOW-1272) and `pull_production_data` (v1); [data-feed.md](data-feed.md) |
 | Service client | An OAuth application that reads the data feed as no one: confidential, client-credentials grant, created by hand in the admin. The only kind of client the token endpoint issues a client-credentials token to | `apps.oauth.validators.is_service_client`; `apps/data_feed/auth.py::require_feed_token`; [data-feed.md](data-feed.md) |
 | BulletinShare / BulletinShareClick | Tokenised short share URL and its per-follow click log | `apps/bulletins/models.py` |
