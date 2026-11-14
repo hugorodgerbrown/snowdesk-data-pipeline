@@ -800,5 +800,13 @@ class BulletinAlertAdmin(admin.ModelAdmin):
     date_hierarchy = "target_date"
     search_fields = ("account__user__email", "region__region_id", "title")
     raw_id_fields = ("account", "region", "bulletin")
-    readonly_fields = ("uuid", "created_at", "updated_at", "fingerprint", "state")
+    readonly_fields = (
+        "uuid",
+        "created_at",
+        "updated_at",
+        "fingerprint",
+        "state",
+        "push_urgency",
+        "push_expires_at",
+    )
     ordering = ("-created_at",)

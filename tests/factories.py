@@ -877,6 +877,9 @@ class BulletinAlertFactory(factory.django.DjangoModelFactory[BulletinAlert]):
     outcome = BulletinAlert.Outcome.SENT
     sent_push = True
     sent_email = False
+    # No stored push delivery, as on a row from before SNOW-1495.
+    push_urgency = ""
+    push_expires_at = None
 
 
 class BulletinGroupingFactory(factory.django.DjangoModelFactory[BulletinGrouping]):
