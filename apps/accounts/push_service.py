@@ -47,6 +47,7 @@ value regardless of when the task actually runs.
 
 from __future__ import annotations
 
+import datetime
 import json
 import logging
 from typing import TYPE_CHECKING, Any
@@ -107,6 +108,67 @@ def _build_wire_payload(
     return {**payload, "receipt": push_health.receipt_token(sub, ttl)}
 
 
+def _push_options(
+    delivery: Delivery | None, now: datetime.datetime
+) -> tuple[int, dict[str, str]]:
+    """Return the TTL and the RFC 8030 headers a push goes with.
+
+    Args:
+        delivery: The alert's delivery, or None for a plain push.
+        now: The time of the send.
+
+    Returns:
+        ``(ttl, headers)``: ``DEFAULT_TTL_SECONDS`` and no headers without
+        a delivery.
+
+    """
+    if delivery is None:
+        return DEFAULT_TTL_SECONDS, {}
+    headers = {"Urgency": delivery.urgency}
+    if delivery.topic:
+        headers["Topic"] = delivery.topic
+    return delivery.ttl(now), headers
+
+
+def _handle_refusal(
+    sub: PushSubscription, status: int | None, client_version: str
+) -> None:
+    """Retire a subscription on 410 Gone, or drop it on 404.
+
+    Args:
+        sub: The subscription the push service refused.
+        status: The push service's HTTP status, if any.
+        client_version: Threaded onto the ``pwa.push.gone_410`` signal.
+
+    """
+    if status == 410:
+        # SNOW-380: soft-delete — the client-side re-verification loop
+        # reconciles against this row on next launch.
+        # SNOW-381 (spec §16.2): 410 Gone is the "subscription lost"
+        # signal the observability dashboard reconciles against
+        # client-side pwa.push.subscription_lost. Emit before the save
+        # so sub.pk is unambiguous in the event payload.
+        emit_server_signal(
+            "pwa.push.gone_410",
+            {"subscription_pk": sub.pk, "client_version": client_version},
+        )
+        logger.info(
+            "marking push subscription pk=%s endpoint=%.30s… inactive (410)",
+            sub.pk,
+            sub.endpoint,
+        )
+        sub.inactive_at = timezone.now()
+        sub.retired_reason = PushSubscription.RetiredReason.GONE_410
+        sub.save(update_fields=["inactive_at", "retired_reason"])
+    elif status == 404:
+        logger.info(
+            "dropping dead push subscription pk=%s endpoint=%.30s… (404)",
+            sub.pk,
+            sub.endpoint,
+        )
+        sub.delete()
+
+
 def dispatch_push(
     sub: PushSubscription,
     payload: dict[str, Any],
@@ -143,15 +205,10 @@ def dispatch_push(
 
     """
     now = timezone.now()
-    ttl = DEFAULT_TTL_SECONDS
-    headers: dict[str, str] = {}
-    if delivery is not None:
-        ttl = delivery.ttl(now)
-        headers["Urgency"] = delivery.urgency
-        if delivery.topic:
-            headers["Topic"] = delivery.topic
+    ttl, headers = _push_options(delivery, now)
     wire_payload = _build_wire_payload(sub, payload, ttl)
     counted = count_unconfirmed and sub.mechanism == PushSubscription.Mechanism.SW
+    sub_pk = sub.pk  # a 404 deletes the row, and clears sub.pk with it
     trusted_before: bool | None = True
     if counted:
         trusted_before = push_health.count_send(sub.pk, now)
@@ -166,32 +223,7 @@ def dispatch_push(
         )
     except WebPushException as exc:
         status = exc.response.status_code if exc.response is not None else None
-        if status == 410:
-            # SNOW-380: soft-delete — the client-side re-verification loop
-            # reconciles against this row on next launch.
-            # SNOW-381 (spec §16.2): 410 Gone is the "subscription lost"
-            # signal the observability dashboard reconciles against
-            # client-side pwa.push.subscription_lost. Emit before the save
-            # so sub.pk is unambiguous in the event payload.
-            emit_server_signal(
-                "pwa.push.gone_410",
-                {"subscription_pk": sub.pk, "client_version": client_version},
-            )
-            logger.info(
-                "marking push subscription pk=%s endpoint=%.30s… inactive (410)",
-                sub.pk,
-                sub.endpoint,
-            )
-            sub.inactive_at = timezone.now()
-            sub.retired_reason = PushSubscription.RetiredReason.GONE_410
-            sub.save(update_fields=["inactive_at", "retired_reason"])
-        elif status == 404:
-            logger.info(
-                "dropping dead push subscription pk=%s endpoint=%.30s… (404)",
-                sub.pk,
-                sub.endpoint,
-            )
-            sub.delete()
+        _handle_refusal(sub, status, client_version)
         logger.warning(
             "webpush failed for push subscription pk=%s endpoint=%.30s…: %s",
             sub.pk,
@@ -199,7 +231,7 @@ def dispatch_push(
             exc,
         )
         if counted:
-            push_health.uncount_send(sub.pk)
+            push_health.uncount_send(sub_pk)
         return {
             "ok": False,
             "status": status,
@@ -217,7 +249,7 @@ def dispatch_push(
             sub.pk,
         )
         if counted:
-            push_health.uncount_send(sub.pk)
+            push_health.uncount_send(sub_pk)
         return {
             "ok": False,
             "status": None,
