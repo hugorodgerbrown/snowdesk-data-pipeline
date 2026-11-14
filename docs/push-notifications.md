@@ -139,6 +139,8 @@ A bulletin alert's delivery is set by what it says (SNOW-1495),
 | Tomorrow's bulletin, or today's with the danger held or lower | `normal` |
 | Every place a season start (bulletins started or resumed) | `low` |
 
+- **Rows are read top down.** A `high` row wins over `low`, so a season
+  start on a trip day, or today with the danger up, still wakes the phone.
 - **A bundle** takes the most urgent of its places.
 - **TTL** runs to the latest `valid_to` of the message's bulletins, never
   under an hour nor over 28 hours (`Delivery.ttl`). `Delivery.expired` is
