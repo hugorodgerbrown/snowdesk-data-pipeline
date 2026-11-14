@@ -21,7 +21,10 @@ re-read.
 
 By default the channels follow the account's own settings, the same rule the
 delivery worker uses: push to every active device, then email when
-``alert_email`` is ALWAYS, or FALLBACK with no push accepted. ``--channel``
+``alert_email`` is ALWAYS, or FALLBACK with no push trusted: accepted for a
+device that confirmed its last alert (SNOW-1494). A resend push is counted
+as unconfirmed as an alert's is, and each device's line says "accepted",
+"accepted (unconfirmed device)" or "accepted, device retired". ``--channel``
 names the channels outright and overrides ``alert_email``; an unverified or
 empty address is still never emailed.
 
@@ -165,6 +168,26 @@ def _can_email(account: Account) -> bool:
     return account.is_verified and bool(account.user.email)
 
 
+def _push_word(result: dict[str, Any]) -> str:
+    """Say how one device took a resend push (SNOW-1494).
+
+    Args:
+        result: ``dispatch_push``'s outcome for the device.
+
+    Returns:
+        "failed", "accepted", "accepted (unconfirmed device)" or
+        "accepted, device retired".
+
+    """
+    if not result.get("ok"):
+        return "failed"
+    if result.get("retired"):
+        return "accepted, device retired"
+    if not result.get("trusted"):
+        return "accepted (unconfirmed device)"
+    return "accepted"
+
+
 class Command(RegisteredCommand):
     """Resend one account's most recent bulletin alert."""
 
@@ -281,12 +304,12 @@ class Command(RegisteredCommand):
             self.tally("would_email", int(use_email and _can_email(account)))
             return
         payload = {"title": title, "body": body, "url": last.url}
-        pushed, push_failed = (
-            self._push(devices, payload, delivery, verbosity) if use_push else (0, 0)
+        pushed, trusted, push_failed = (
+            self._push(devices, payload, delivery, verbosity) if use_push else (0, 0, 0)
         )
         if use_email is None:
             use_email = account.alert_email == Account.AlertEmail.ALWAYS or (
-                account.alert_email == Account.AlertEmail.FALLBACK and not pushed
+                account.alert_email == Account.AlertEmail.FALLBACK and not trusted
             )
         emailed, email_failed = (
             self._email(account, payload, channel is not None, verbosity)
@@ -362,8 +385,12 @@ class Command(RegisteredCommand):
         payload: dict[str, str],
         delivery: Delivery,
         verbosity: int,
-    ) -> tuple[int, int]:
-        """Push ``payload`` to each device; return (accepted, failed).
+    ) -> tuple[int, int, int]:
+        """Push ``payload`` to each device; return (accepted, trusted, failed).
+
+        Each push is counted as unconfirmed until the device's receipt
+        comes, as an alert's is (SNOW-1494), so a resend to a dead device
+        can retire it.
 
         Args:
             devices: The account's active push subscriptions.
@@ -372,24 +399,28 @@ class Command(RegisteredCommand):
             verbosity: The run's ``--verbosity``.
 
         Returns:
-            How many devices accepted the push, and how many did not.
+            How many devices accepted the push, how many of those had
+            confirmed their last alert, and how many did not accept it.
 
         """
-        accepted = 0
+        accepted = trusted = 0
         for sub in devices:
             try:
-                result = dispatch_push(sub, payload, delivery=delivery)
+                result = dispatch_push(
+                    sub, payload, delivery=delivery, count_unconfirmed=True
+                )
             except Exception:
                 logger.exception("Resend push to subscription %s raised", sub.pk)
                 result = {"ok": False, "status": "raised"}
             ok = bool(result.get("ok"))
             accepted += ok
+            trusted += bool(result.get("trusted"))
             if verbosity >= 1:
-                word = "accepted" if ok else "failed"
                 self.stdout.write(
-                    f"  push to device {sub.pk}: {word} ({result.get('status')})"
+                    f"  push to device {sub.pk}: {_push_word(result)} "
+                    f"({result.get('status')})"
                 )
-        return accepted, len(devices) - accepted
+        return accepted, trusted, len(devices) - accepted
 
     def _email(
         self, account: Account, payload: dict[str, str], force: bool, verbosity: int
@@ -434,5 +465,8 @@ class Command(RegisteredCommand):
         if setting == Account.AlertEmail.ALWAYS:
             return "push and email (account setting: always email)"
         if setting == Account.AlertEmail.FALLBACK:
-            return "push; email if no push is accepted (account setting: fallback)"
+            return (
+                "push; email if no confirmed device accepts it "
+                "(account setting: fallback)"
+            )
         return "push only (account setting: never email)"
