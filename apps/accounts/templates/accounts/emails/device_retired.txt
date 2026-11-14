@@ -1,0 +1,10 @@
+{% load i18n %}{% trans "Alerts stopped reaching one of your devices" %}
+
+{% blocktrans trimmed with set_up=set_up|date:"j F Y" %}
+    The device you set up for Snowdesk alerts on {{ set_up }} has not shown any of the last few alerts we sent it, so we have stopped sending alerts there.
+{% endblocktrans %}
+
+{% trans "If you still use that device, open Snowdesk on it and turn notifications on again:" %} {{ settings_url }}
+
+---
+{% trans "You get this because bulletin alerts are on for your Snowdesk places." %}
