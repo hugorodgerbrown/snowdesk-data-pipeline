@@ -2,7 +2,7 @@
 name: alerts
 description: Bulletin alerts — send_bulletin_alerts, BulletinAlert, notify_when, trip_places, /alerts/<day>/, the Today sun's dot, bulletin_alerts flag
 status: current
-last-reviewed: 2026-11-12
+last-reviewed: 2026-11-14
 ---
 
 # Bulletin alerts
@@ -122,6 +122,9 @@ admin rather than in code. The scheduled sender is behind the
   nothing reached the person. A `FAILED` row is not counted as told, so the
   next run sends again. With no possible channel at all the rows are
   logged `SKIPPED`, so the state still advances.
+- **Urgency and lifetime** (SNOW-1495). Each push's `Urgency`, TTL and
+  `Topic` follow what the alert says: see
+  [`push-notifications.md`](push-notifications.md#urgency-ttl-and-topic).
 - **Retry and overlap** (SNOW-1362). A device or the mail server raising
   counts as that channel failing, and a crashed worker still settles its
   rows from what had gone. A `PENDING` row older than `STALE_PENDING`

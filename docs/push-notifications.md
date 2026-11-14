@@ -2,7 +2,7 @@
 name: push-notifications
 description: Web Push — mint_vapid_keypair, VAPID secret on Render, /_push-demo/, Declarative Web Push, mechanism/inactive_at, icon vs badge-96.png
 status: current
-last-reviewed: 2026-11-13
+last-reviewed: 2026-11-14
 ---
 
 # Web Push notifications
@@ -123,20 +123,48 @@ parses.
 
 ---
 
-## TTL and urgency
+## Urgency, TTL and topic
 
-`dispatch_push` sends a one-minute TTL and no `Urgency` header by default,
-which suits a test or demo push that is only worth seeing at once. A
-bulletin alert (`deliver` in `apps/bulletins/services/alerts.py` and
-`resend_bulletin_alert`) passes `ttl=ALERT_TTL_SECONDS` (12 hours) and
-`urgency="high"`.
+`dispatch_push` takes a `Delivery` (`apps/bulletins/services/push_delivery.py`)
+and sends its TTL and the RFC 8030 `Urgency` and `Topic` headers. With none,
+as the push demo sends, it is a one-minute TTL and neither header.
+
+A bulletin alert's delivery is set by what it says (SNOW-1495),
+`delivery_for` over the message's places:
+
+| The alert | Urgency |
+|---|---|
+| A place for today whose danger went up: the level rose, the sub-rating rose within it (3− to 3, 3 to 3+), or a problem was added | `high` |
+| Any place for a day with a saved trip | `high` |
+| Tomorrow's bulletin, or today's with the danger held or lower | `normal` |
+| Every place a season start (bulletins started or resumed) | `low` |
+
+- **A bundle** takes the most urgent of its places.
+- **TTL** runs to the latest `valid_to` of the message's bulletins, never
+  under an hour nor over 28 hours (`Delivery.ttl`). `Delivery.expired` is
+  unclamped, so a bulletin that has ended reads as ended even while its
+  TTL would still read an hour.
+- **Topic** is `alert-<YYYYMMDD>` of the latest day the message is for, or
+  `season` when every place is a season start: a newer alert for the same
+  day replaces one the phone has not collected yet.
+- **Stored.** `deliver` writes `push_urgency` and `push_expires_at` on every
+  row of the message and passes only primitives to `_worker_deliver_alert`
+  (`Delivery.to_task` / `from_task`; a task queued before SNOW-1495 goes at
+  `normal` for twelve hours, with no topic).
+- **Resend.** `resend_bulletin_alert` reads them back from the message's
+  rows: the highest urgency and the latest expiry. It refuses, non-zero and
+  sending nothing, once the bulletin has ended. A row from before SNOW-1495
+  goes at `normal` to its bulletin's `valid_to`. Trips are not re-read.
+- **Test button.** `alert_test` sends `high` urgency, topic `test` and a
+  60-second TTL that is not clamped (`Delivery.fixed_ttl`).
 
 A 201 from the push service means only that it took the message. With a
 one-minute TTL a phone asleep in Android Doze, or offline, never got the
 alert: the service held it past its TTL and dropped it unseen. That is how
 Thursday 12 Nov's first alert was accepted on every device and shown on
 none. `Urgency: high` (RFC 8030 §5.3) asks the service to wake the device
-rather than wait for its next maintenance window.
+rather than wait for its next maintenance window, which is why it is kept
+for the alerts worth waking someone for.
 
 ---
 
