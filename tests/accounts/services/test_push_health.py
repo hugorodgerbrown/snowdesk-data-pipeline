@@ -342,6 +342,29 @@ class TestRetiredEmail:
         _worker_send_device_retired_email.enqueue(sub.pk)
         assert mail.outbox == []
 
+    def test_the_claim_locks_only_the_subscription_row(self) -> None:
+        """FOR UPDATE OF self: PostgreSQL refuses to lock the nullable join.
+
+        The suite runs on SQLite, which ignores ``select_for_update``, so the
+        compiled query is checked instead of a real lock.
+        """
+        sub = self._retired()
+        seen: list[Any] = []
+        original = push_health.PushSubscription.objects.select_for_update
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            """Record the locking queryset, then lock as before."""
+            qs = original(*args, **kwargs)
+            seen.append(qs)
+            return qs
+
+        with patch.object(
+            push_health.PushSubscription.objects, "select_for_update", spy
+        ):
+            _worker_send_device_retired_email.enqueue(sub.pk)
+        assert [qs.query.select_for_update_of for qs in seen] == [("self",)]
+        assert len(mail.outbox) == 1
+
     def test_a_missing_row_sends_nothing(self) -> None:
         """A row deleted before the task ran is not an error."""
         _worker_send_device_retired_email.enqueue(999_999)

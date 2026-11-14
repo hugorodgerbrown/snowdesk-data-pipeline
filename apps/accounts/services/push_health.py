@@ -312,7 +312,9 @@ def _worker_send_device_retired_email(sub_pk: int) -> None:
     """
     with transaction.atomic():
         sub = (
-            PushSubscription.objects.select_for_update()
+            # of=self: account is nullable, so select_related makes an outer
+            # join, and PostgreSQL refuses FOR UPDATE on its nullable side.
+            PushSubscription.objects.select_for_update(of=("self",))
             .select_related("account__user")
             .filter(pk=sub_pk)
             .first()
