@@ -557,6 +557,24 @@ def release_line(releases: list[Release]) -> str:
     return _("Bulletins released by %(providers)s.") % {"providers": joined}
 
 
+def cold_copy(releases: list[Release]) -> tuple[str, str]:
+    """
+    Write the title and body every alert carries.
+
+    The alert worker and ``resend_bulletin_alert`` both call this, so a
+    resend reads exactly as a new alert does today, whatever wording was
+    stored when it first went (SNOW-1496).
+
+    Args:
+        releases: Every bulletin behind the alert.
+
+    Returns:
+        ``("New avalanche bulletin", <release_line>)``.
+
+    """
+    return _("New avalanche bulletin"), release_line(releases)
+
+
 def landing_url(places: list[PlaceAlert]) -> str:
     """
     Return the page every alert opens.
@@ -594,10 +612,10 @@ def alert_message(places: list[PlaceAlert], today: datetime.date) -> AlertMessag
     """
     if not places:
         raise ValueError("alert_message needs at least one place")
-    releases = [r for p in places for r in p.releases]
+    title, body = cold_copy([r for p in places for r in p.releases])
     return AlertMessage(
-        title=_("New avalanche bulletin"),
-        body=release_line(releases),
+        title=title,
+        body=body,
         url=landing_url(places),
         places=tuple(places),
     )
