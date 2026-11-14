@@ -25,6 +25,10 @@
  *   mechanismFor(env)         → 'DECLARATIVE' | 'SW'
  *   urlBase64ToUint8Array(s)  → Uint8Array (the VAPID key for subscribe())
  *   testOutcome(body)         → 'test-sent' | 'test-no-device' | 'test-failed'
+ *   registerBody(sub, mechanism, previous)
+ *                             → the /account/push/register/ body, with
+ *                               ``replaces`` when the endpoint changed
+ *                               (SNOW-1494)
  */
 
 (function () {
@@ -92,10 +96,32 @@
     return 'test-failed';
   }
 
+  /**
+   * The body /account/push/register/ takes: the browser's subscription, the
+   * mechanism, and ``replaces`` — the endpoint this device registered last
+   * time — when the browser has since handed out a new one, so the server
+   * retires the old row instead of pushing to it until it goes unconfirmed
+   * (SNOW-1494).
+   *
+   * @param {{endpoint?: string}} sub    PushSubscription.toJSON()
+   * @param {'DECLARATIVE' | 'SW'} mechanism
+   * @param {unknown} previous           the endpoint stored in meta:app, if any
+   * @returns {Object}
+   */
+  function registerBody(sub, mechanism, previous) {
+    /** @type {Object<string, unknown>} */
+    var body = Object.assign({}, sub, { mechanism: mechanism });
+    if (typeof previous === 'string' && previous && previous !== sub.endpoint) {
+      body.replaces = previous;
+    }
+    return body;
+  }
+
   self.pwaAlertsOptinCore = Object.freeze({
     pushSupport: pushSupport,
     mechanismFor: mechanismFor,
     urlBase64ToUint8Array: urlBase64ToUint8Array,
     testOutcome: testOutcome,
+    registerBody: registerBody,
   });
 })();

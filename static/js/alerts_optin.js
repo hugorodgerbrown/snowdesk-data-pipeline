@@ -7,7 +7,10 @@
  *
  *   - available, not subscribed: "Turn on notifications" asks permission,
  *     subscribes with the page's VAPID key and registers the endpoint at
- *     /account/push/register/.
+ *     /account/push/register/. The endpoint is kept in pwaDb meta:app
+ *     (``push.endpoint``); when the browser later hands out a different
+ *     one, the register call names the old one as ``replaces`` so the
+ *     server retires it (SNOW-1494).
  *   - available, subscribed: the status line says so, and "Send a test"
  *     posts /account/alerts/test/ so the person sees one land.
  *   - needs-home-screen / denied / unsupported: the how-to line for that
@@ -28,6 +31,9 @@
 
   /** @type {any} */
   var core = null;
+
+  // The meta:app key the last registered endpoint is kept under (SNOW-1494).
+  var PUSH_ENDPOINT_KEY = 'push.endpoint';
 
   /** @returns {string} the csrftoken cookie Django set. */
   function csrfToken() {
@@ -191,21 +197,49 @@
    * @returns {Promise<boolean>}
    */
   function register(sub, env) {
-    var body = Object.assign({}, sub.toJSON(), { mechanism: core.mechanismFor(env) });
-    return fetch('/account/push/register/', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
-      credentials: 'same-origin',
-      body: JSON.stringify(body),
-    }).then(function (resp) {
-      if (resp.ok && self.pwaDb) {
-        // The launch-time reverify loop (push_demo.js) keys off this.
-        self.pwaDb
-          .put('meta:app', { key: 'push.subscribed_before', value: true })
-          .catch(function () {});
-      }
-      return resp.ok;
-    });
+    var json = sub.toJSON();
+    return previousEndpoint()
+      .then(function (previous) {
+        var body = core.registerBody(json, core.mechanismFor(env), previous);
+        return fetch('/account/push/register/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken() },
+          credentials: 'same-origin',
+          body: JSON.stringify(body),
+        });
+      })
+      .then(function (resp) {
+        if (resp.ok && self.pwaDb) {
+          // The launch-time reverify loop (push_demo.js) keys off this.
+          self.pwaDb
+            .put('meta:app', { key: 'push.subscribed_before', value: true })
+            .catch(function () {});
+          // SNOW-1494: remembered so a later, different endpoint can name
+          // this one as the row it replaces.
+          self.pwaDb
+            .put('meta:app', { key: PUSH_ENDPOINT_KEY, value: json.endpoint })
+            .catch(function () {});
+        }
+        return resp.ok;
+      });
+  }
+
+  /**
+   * The endpoint this device last registered, from meta:app, or '' when
+   * there is none or the store cannot be read.
+   *
+   * @returns {Promise<string>}
+   */
+  function previousEndpoint() {
+    if (!self.pwaDb) return Promise.resolve('');
+    return self.pwaDb
+      .get('meta:app', PUSH_ENDPOINT_KEY)
+      .then(function (row) {
+        return row && typeof row.value === 'string' ? row.value : '';
+      })
+      .catch(function () {
+        return '';
+      });
   }
 
   // Deferred: wait for DOMContentLoaded, which fires after every deferred

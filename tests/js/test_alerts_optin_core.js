@@ -1,6 +1,7 @@
 /*
  * tests/js/test_alerts_optin_core.js — can this device take a bulletin
- * alert, and if not, why not (SNOW-1325, SNOW-1326).
+ * alert, and if not, why not (SNOW-1325, SNOW-1326); and the register
+ * body, with the endpoint it replaces (SNOW-1494).
  */
 
 import { describe, expect, it } from 'vitest';
@@ -67,5 +68,27 @@ describe('testOutcome', () => {
 
   it('says failed when every send failed', () => {
     expect(core.testOutcome({ ok: false, devices: 1, delivered: 0 })).toBe('test-failed');
+  });
+});
+
+describe('registerBody', () => {
+  const SUB = { endpoint: 'https://push.example/new', keys: { p256dh: 'p', auth: 'a' } };
+
+  it('sends the subscription and the mechanism', () => {
+    expect(core.registerBody(SUB, 'SW', '')).toEqual({ ...SUB, mechanism: 'SW' });
+  });
+
+  it('names the endpoint it replaces when the browser handed out a new one', () => {
+    const body = core.registerBody(SUB, 'SW', 'https://push.example/old');
+    expect(body.replaces).toBe('https://push.example/old');
+  });
+
+  it('replaces nothing when the endpoint is unchanged', () => {
+    expect(core.registerBody(SUB, 'SW', SUB.endpoint)).not.toHaveProperty('replaces');
+  });
+
+  it('replaces nothing when no endpoint was stored', () => {
+    expect(core.registerBody(SUB, 'DECLARATIVE', undefined)).not.toHaveProperty('replaces');
+    expect(core.registerBody(SUB, 'SW', null)).not.toHaveProperty('replaces');
   });
 });
