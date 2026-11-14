@@ -34,6 +34,7 @@ URL map
 /account/push/register/               push_register          POST — Web Push spike
 /account/push/unregister/             push_unregister        POST
 /account/push/test/                   push_test              POST
+/account/push/receipt/                push_receipt           POST — SW delivery receipt
 /account/push/subscriptions/          push_subscriptions     GET
 /account/partials/alerts/             alert_settings         POST HTMX (SNOW-939)
 /account/partials/alerts/<uuid>/      alert_place            POST HTMX, one place
@@ -146,6 +147,7 @@ urlpatterns = [
     path("push/register/", push_views.push_register, name="push_register"),
     path("push/unregister/", push_views.push_unregister, name="push_unregister"),
     path("push/test/", push_views.push_test, name="push_test"),
+    path("push/receipt/", push_views.push_receipt, name="push_receipt"),
     path(
         "partials/alerts/",
         alert_views.alert_settings,

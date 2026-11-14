@@ -10,6 +10,10 @@ push_subscriptions):
     redirected to /admin/login/ (302).
   - Staff POST without CSRF token is rejected (403) when enforce_csrf_checks=True.
   - Staff POST succeeds (200) and the expected side effect occurs.
+  - push_receipt (SNOW-1494): a good token confirms, as JSON or a form,
+    with no session and no CSRF token (204); a bad one is 400; GET is 405.
+  - push_register's ``replaces`` (SNOW-1494) retires the old endpoint on the
+    same account only, and a re-registered row starts its count afresh.
   - SNOW-311 caplog regression: log records contain pk=, never the account email.
 
 In the push_test tests, enqueue_push is patched so no real task is enqueued.
@@ -34,6 +38,7 @@ from django.test import Client
 from django.utils import timezone
 
 from apps.accounts.models import PushSubscription
+from apps.accounts.services.push_health import receipt_token
 from tests.factories import AccountFactory, PushSubscriptionFactory, UserFactory
 
 # ---------------------------------------------------------------------------
@@ -44,6 +49,7 @@ _REGISTER_URL = "/account/push/register/"
 _UNREGISTER_URL = "/account/push/unregister/"
 _TEST_URL = "/account/push/test/"
 _SUBSCRIPTIONS_URL = "/account/push/subscriptions/"
+_RECEIPT_URL = "/account/push/receipt/"
 
 _REGISTER_BODY: dict[str, Any] = {
     "endpoint": "https://push.example.com/unique-endpoint-views-test",
@@ -296,6 +302,115 @@ class TestPushRegister:
         row = PushSubscription.objects.get(endpoint=endpoint)
         assert row.p256dh == "p256dh-second"
         assert row.auth == "auth-second"
+
+
+@pytest.mark.django_db
+class TestPushRegisterReplaces:
+    """SNOW-1494: ``replaces`` retires the device's old subscription."""
+
+    def _client(self, account: Any) -> Client:
+        """Return a client signed in as ``account``."""
+        c = Client()
+        c.force_login(account.user)
+        return c
+
+    def test_replaces_retires_the_old_row_on_the_same_account(
+        self, regular_user: Any
+    ) -> None:
+        """The old endpoint is retired as REPLACED; the new one is live."""
+        old = PushSubscriptionFactory.create(account=regular_user)
+        body = {**_REGISTER_BODY, "replaces": old.endpoint}
+        response = _post_json(self._client(regular_user), _REGISTER_URL, body)
+        assert response.status_code == 200
+        old.refresh_from_db()
+        assert old.inactive_at is not None
+        assert old.retired_reason == PushSubscription.RetiredReason.REPLACED
+        new = PushSubscription.objects.get(endpoint=_REGISTER_BODY["endpoint"])
+        assert new.inactive_at is None
+
+    def test_replaces_cannot_retire_another_accounts_row(
+        self, regular_user: Any
+    ) -> None:
+        """An endpoint on someone else's account is left alone."""
+        theirs = PushSubscriptionFactory.create(account=AccountFactory.create())
+        body = {**_REGISTER_BODY, "replaces": theirs.endpoint}
+        _post_json(self._client(regular_user), _REGISTER_URL, body)
+        theirs.refresh_from_db()
+        assert theirs.inactive_at is None
+
+    def test_reregistering_a_retired_row_starts_it_afresh(
+        self, regular_user: Any
+    ) -> None:
+        """A device that comes back is live with nothing owed."""
+        now = timezone.now()
+        sub = PushSubscriptionFactory.create(
+            account=regular_user,
+            endpoint=_REGISTER_BODY["endpoint"],
+            inactive_at=now,
+            retired_reason=PushSubscription.RetiredReason.UNCONFIRMED,
+            unconfirmed_pushes=4,
+            unconfirmed_since=now,
+            retired_notice_sent_at=now,
+        )
+        _post_json(self._client(regular_user), _REGISTER_URL, _REGISTER_BODY)
+        sub.refresh_from_db()
+        assert sub.inactive_at is None
+        assert sub.retired_reason == ""
+        assert sub.unconfirmed_pushes == 0
+        assert sub.unconfirmed_since is None
+        assert sub.retired_notice_sent_at is None
+
+
+# ---------------------------------------------------------------------------
+# push_receipt
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+class TestPushReceipt:
+    """SNOW-1494: /account/push/receipt/ takes the service worker's receipt."""
+
+    def test_a_good_json_receipt_confirms_without_session_or_csrf(self) -> None:
+        """No session, CSRF enforced, JSON body: 204 and the row confirmed."""
+        sub = PushSubscriptionFactory.create(
+            unconfirmed_pushes=2, unconfirmed_since=timezone.now()
+        )
+        c = Client(enforce_csrf_checks=True)
+        response = _post_json(c, _RECEIPT_URL, {"receipt": receipt_token(sub, 60)})
+        assert response.status_code == 204
+        sub.refresh_from_db()
+        assert sub.confirmed_at is not None
+        assert sub.unconfirmed_pushes == 0
+
+    def test_a_good_form_receipt_confirms(self) -> None:
+        """A form-encoded body works too."""
+        sub = PushSubscriptionFactory.create(unconfirmed_pushes=1)
+        c = Client(enforce_csrf_checks=True)
+        response = c.post(_RECEIPT_URL, {"receipt": receipt_token(sub, 60)})
+        assert response.status_code == 204
+        sub.refresh_from_db()
+        assert sub.unconfirmed_pushes == 0
+
+    @pytest.mark.parametrize(
+        "body",
+        [{"receipt": "forged"}, {}, {"receipt": 7}],
+        ids=["forged", "missing", "not-a-string"],
+    )
+    def test_a_bad_receipt_is_400(self, body: dict[str, Any]) -> None:
+        """A token that does not verify is refused."""
+        response = _post_json(Client(), _RECEIPT_URL, body)
+        assert response.status_code == 400
+
+    def test_a_json_body_that_is_not_an_object_is_400(self) -> None:
+        """A JSON list is not a receipt."""
+        response = Client().post(
+            _RECEIPT_URL, data="[1]", content_type="application/json"
+        )
+        assert response.status_code == 400
+
+    def test_get_is_refused(self) -> None:
+        """Only POST is accepted."""
+        assert Client().get(_RECEIPT_URL).status_code == 405
 
 
 # ---------------------------------------------------------------------------
