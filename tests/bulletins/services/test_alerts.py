@@ -18,7 +18,6 @@ from django.core import mail
 from freezegun import freeze_time
 
 from apps.accounts.models import Account
-from apps.accounts.push_service import ALERT_TTL_SECONDS, ALERT_URGENCY
 from apps.bulletins.models import BulletinAlert, RegionDayRating
 from apps.bulletins.services import alerts
 from apps.bulletins.services.alerts import (
@@ -42,6 +41,7 @@ from apps.bulletins.services.bulletin_change import (
     ProblemState,
     bulletin_state,
 )
+from apps.bulletins.services.push_delivery import Delivery
 from apps.core.models import CommandRun
 from apps.ingest.public import build_derived
 from apps.trips.models import Trip
@@ -86,9 +86,15 @@ WIND_RM = {
 }
 
 
-def publish(region: Any, day: datetime.date, rm: dict) -> Any:
+def publish(
+    region: Any,
+    day: datetime.date,
+    rm: dict,
+    valid_to: datetime.datetime | None = None,
+) -> Any:
     """Make ``rm`` the authoritative bulletin for (region, day)."""
-    bulletin = BulletinFactory.create(render_model=rm)
+    extra = {} if valid_to is None else {"valid_to": valid_to}
+    bulletin = BulletinFactory.create(render_model=rm, **extra)
     RegionDayRatingFactory.create(region=region, date=day, source_bulletin=bulletin)
     return bulletin
 
@@ -270,11 +276,10 @@ class TestEvaluateAndDeliver:
         assert run.message.title == "New avalanche bulletin"
         assert run.message.url == "/alerts/2026-01-17/"
         push.assert_called_once()
-        # A sleeping phone must still get it: long TTL, wake the device.
-        assert push.call_args.kwargs == {
-            "ttl": ALERT_TTL_SECONDS,
-            "urgency": ALERT_URGENCY,
-        }
+        # Tomorrow's bulletin goes at normal urgency, topic its day (SNOW-1495).
+        delivery = push.call_args.kwargs["delivery"]
+        assert delivery.urgency == "normal"
+        assert delivery.topic == "alert-20260117"
         # Today fired too (no row, alerts predate it) but one place is named
         # once: today is logged skipped, tomorrow is the message.
         today_row = BulletinAlert.objects.get(account=account, target_date=TODAY)
@@ -430,6 +435,68 @@ class TestEvaluateAndDeliver:
             )
         )
         assert len(stamps) == 1
+
+    def test_deliver_stores_and_sends_the_delivery(self, follower: tuple) -> None:
+        """Every row of a bundle stores its delivery, which the push carries."""
+        account, region = follower
+        other = MicroRegionFactory.create(name="Davos")
+        FavouriteFactory.create(user=account.user, region=other, region_pin=True)
+        early = datetime.datetime(2026, 1, 17, 15, 0, tzinfo=ALERT_TZ)
+        late = datetime.datetime(2026, 1, 17, 17, 0, tzinfo=ALERT_TZ)
+        publish(region, TODAY, render())
+        publish(other, TODAY, render())
+        publish(region, TOMORROW, render(), valid_to=early)
+        publish(other, TOMORROW, render("considerable"), valid_to=late)
+        PushSubscriptionFactory.create(account=account)
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            deliver(evaluate_account(account, NOW))
+        rows = BulletinAlert.objects.filter(account=account, target_date=TOMORROW)
+        assert rows.count() == 2
+        assert {(r.push_urgency, r.push_expires_at) for r in rows} == {("normal", late)}
+        assert push.call_args.kwargs["delivery"] == Delivery(
+            urgency="normal", expires_at=late, topic="alert-20260117"
+        )
+
+    def test_worker_sends_the_queued_delivery(self, follower: tuple) -> None:
+        """The worker rebuilds the delivery from the task's primitives."""
+        account, region = follower
+        row = BulletinAlertFactory.create(
+            account=account, region=region, outcome=BulletinAlert.Outcome.PENDING
+        )
+        PushSubscriptionFactory.create(account=account)
+        ends = datetime.datetime(2026, 1, 16, 17, 0, tzinfo=ALERT_TZ)
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            alerts._worker_deliver_alert.call(
+                account.pk,
+                [row.pk],
+                row.updated_at.isoformat(),
+                {},
+                "t",
+                "b",
+                "/",
+                urgency="high",
+                expires_at=ends.isoformat(),
+                topic="alert-20260116",
+            )
+        assert push.call_args.kwargs["delivery"] == Delivery(
+            urgency="high", expires_at=ends, topic="alert-20260116"
+        )
+
+    def test_worker_queued_before_delivery_still_sends(self, follower: tuple) -> None:
+        """A task with the old arguments goes at normal urgency with no topic."""
+        account, region = follower
+        row = BulletinAlertFactory.create(
+            account=account, region=region, outcome=BulletinAlert.Outcome.PENDING
+        )
+        PushSubscriptionFactory.create(account=account)
+        with patch.object(alerts, "dispatch_push", return_value=OK) as push:
+            alerts._worker_deliver_alert.call(
+                account.pk, [row.pk], row.updated_at.isoformat(), {}, "t", "b", "/"
+            )
+        delivery = push.call_args.kwargs["delivery"]
+        assert (delivery.urgency, delivery.topic) == ("normal", "")
+        row.refresh_from_db()
+        assert row.outcome == BulletinAlert.Outcome.SENT
 
     def test_no_email_when_push_reaches(self, follower: tuple) -> None:
         """FALLBACK with a live device sends push only."""

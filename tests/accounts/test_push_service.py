@@ -9,6 +9,8 @@ Patches pywebpush.webpush to test several branches:
     returns {ok: False}.
   - WebPushException with 500 (transient error): row survives, returns {ok: False}.
   - Declarative vs sw payload shape (SNOW-380).
+  - A Delivery's TTL, Urgency and Topic reach webpush; none sends neither
+    header (SNOW-1495).
   - SNOW-311 caplog regression: log records contain pk=, never the account email.
 
 Also tests _worker_dispatch_push (SNOW-319):
@@ -19,6 +21,7 @@ Also tests _worker_dispatch_push (SNOW-319):
 from __future__ import annotations
 
 import binascii
+import datetime
 import json
 import logging
 from unittest.mock import MagicMock, patch
@@ -29,11 +32,11 @@ from pywebpush import WebPushException
 
 from apps.accounts.models import PushSubscription
 from apps.accounts.push_service import (
-    ALERT_TTL_SECONDS,
     DEFAULT_TTL_SECONDS,
     _worker_dispatch_push,
     dispatch_push,
 )
+from apps.bulletins.services.push_delivery import Delivery
 from tests.factories import AccountFactory, PushSubscriptionFactory
 
 
@@ -169,23 +172,46 @@ class TestDispatchPush:
         assert call_kwargs["ttl"] == DEFAULT_TTL_SECONDS == 60
         assert call_kwargs["headers"] is None
 
-    def test_ttl_and_urgency_reach_the_push_service(self) -> None:
-        """An alert's TTL and Urgency go out on the request to the push service."""
+    def test_delivery_reaches_the_push_service(self) -> None:
+        """An alert's TTL, Urgency and Topic go out on the push request."""
         sub = PushSubscriptionFactory.create()
         mock_response = MagicMock()
         mock_response.status_code = 201
+        now = datetime.datetime(2026, 11, 14, 8, 0, tzinfo=datetime.UTC)
+        delivery = Delivery(
+            urgency="high",
+            expires_at=now + datetime.timedelta(hours=5),
+            topic="alert-20261114",
+        )
+        with (
+            patch(
+                "apps.accounts.push_service.webpush", return_value=mock_response
+            ) as mock_webpush,
+            patch("apps.accounts.push_service.timezone.now", return_value=now),
+        ):
+            dispatch_push(
+                sub, {"title": "Hi", "body": "Test", "url": "/"}, delivery=delivery
+            )
+        _, call_kwargs = mock_webpush.call_args
+        assert call_kwargs["ttl"] == 5 * 60 * 60
+        assert call_kwargs["headers"] == {
+            "Urgency": "high",
+            "Topic": "alert-20261114",
+        }
+
+    def test_delivery_without_topic_sends_no_topic(self) -> None:
+        """A delivery with no topic sends Urgency alone."""
+        sub = PushSubscriptionFactory.create()
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        delivery = Delivery(urgency="normal", expires_at=timezone.now())
         with patch(
             "apps.accounts.push_service.webpush", return_value=mock_response
         ) as mock_webpush:
-            dispatch_push(
-                sub,
-                {"title": "Hi", "body": "Test", "url": "/"},
-                ttl=ALERT_TTL_SECONDS,
-                urgency="high",
-            )
+            dispatch_push(sub, {"title": "Hi"}, delivery=delivery)
         _, call_kwargs = mock_webpush.call_args
-        assert call_kwargs["ttl"] == ALERT_TTL_SECONDS == 12 * 60 * 60
-        assert call_kwargs["headers"] == {"Urgency": "high"}
+        assert call_kwargs["headers"] == {"Urgency": "normal"}
+        assert call_kwargs["ttl"] == 60 * 60
 
     def test_dispatch_push_sw_payload_unchanged(self) -> None:
         """A 'sw' subscription still gets the plain {title, body, url} shape."""

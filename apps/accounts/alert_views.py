@@ -26,6 +26,7 @@ rendered into the settings page and returned by the two HTMX posts.
 
 from __future__ import annotations
 
+import datetime
 import logging
 from typing import Any
 
@@ -45,12 +46,17 @@ from apps.accounts.push_service import dispatch_push
 from apps.accounts.services.alert_email import account_for_unsubscribe
 from apps.bulletins.services.alert_wording import clock
 from apps.bulletins.services.alerts import recent_alerts
+from apps.bulletins.services.push_delivery import Delivery
 from apps.core.decorators import require_htmx
 from apps.favourites.models import Favourite
 
 logger = logging.getLogger(__name__)
 
 ALERTS_FLAG = "bulletin_alerts"
+
+# How long the push service holds a test alert: a minute, unclamped, since
+# one that turns up later would read as a real alert (SNOW-1495).
+TEST_TTL_SECONDS = 60
 
 
 def alerts_enabled(request: HttpRequest) -> bool:
@@ -199,8 +205,18 @@ def alert_test(request: HttpRequest) -> HttpResponse:
     service did. ``devices`` is how many subscriptions were tried and
     ``delivered`` how many the push service accepted; ``ok`` is true only
     when at least one was.
+
+    It goes at ``high`` urgency, so it arrives the way an alert that wakes
+    the phone does, and is held only a minute: a test that turns up later
+    would read as a real alert (SNOW-1495).
     """
     account = _account_or_404(request)
+    delivery = Delivery(
+        urgency="high",
+        expires_at=timezone.now() + datetime.timedelta(seconds=TEST_TTL_SECONDS),
+        topic="test",
+        fixed_ttl=TEST_TTL_SECONDS,
+    )
     payload = {
         "title": _("Snowdesk alerts are on"),
         "body": _("This is how a bulletin alert will look on this device."),
@@ -210,7 +226,7 @@ def alert_test(request: HttpRequest) -> HttpResponse:
     devices = delivered = 0
     for sub in account.push_subscriptions.active():
         devices += 1
-        if dispatch_push(sub, payload, client_version).get("ok"):
+        if dispatch_push(sub, payload, client_version, delivery=delivery).get("ok"):
             delivered += 1
     return JsonResponse(
         {"ok": delivered > 0, "devices": devices, "delivered": delivered}

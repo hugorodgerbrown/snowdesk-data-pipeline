@@ -8,6 +8,10 @@ written; and the failures exit non-zero.
 
 SNOW-1496: a resend is written afresh in today's cold wording from the
 message's bulletins, whatever was stored; only the url is kept.
+
+SNOW-1495: a resend goes with the urgency and expiry its rows stored (or
+``normal`` to the bulletin's ``valid_to`` on a row from before them), and
+is refused once the bulletin has ended.
 """
 
 from __future__ import annotations
@@ -22,9 +26,9 @@ from django.core import mail
 from django.core.mail import EmailMultiAlternatives
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.utils import timezone
 
 from apps.accounts.models import Account
-from apps.accounts.push_service import ALERT_TTL_SECONDS, ALERT_URGENCY
 from apps.bulletins.models import BulletinAlert
 from apps.core import remote_commands
 from apps.core.models import CommandRun
@@ -55,9 +59,18 @@ def make_message(
     rows: int = 2,
     outcome: str = BulletinAlert.Outcome.SENT,
     issued: datetime.datetime = ISSUED,
+    valid_to: datetime.datetime | None = None,
 ) -> list[BulletinAlert]:
-    """Write one delivered message: ``rows`` send-log rows sharing a time."""
-    bulletin = BulletinFactory.create(source="SLF", issued_at=issued)
+    """Write one delivered message: ``rows`` send-log rows sharing a time.
+
+    The bulletin is valid until ``valid_to``, by default six hours from now,
+    so the message has not ended.
+    """
+    bulletin = BulletinFactory.create(
+        source="SLF",
+        issued_at=issued,
+        valid_to=valid_to or timezone.now() + datetime.timedelta(hours=6),
+    )
     made = [
         BulletinAlertFactory.create(
             account=account,
@@ -151,7 +164,7 @@ def test_commit_always_sends_both_in_todays_wording() -> None:
     for call in push.call_args_list:
         assert call.args[0].inactive_at is None
         assert call.args[1] == {"title": NEW_TITLE, "body": NEW_BODY, "url": URL}
-        assert call.kwargs == {"ttl": ALERT_TTL_SECONDS, "urgency": ALERT_URGENCY}
+        assert call.kwargs["delivery"].urgency == "normal"
     (message,) = mail.outbox
     assert isinstance(message, EmailMultiAlternatives)
     assert message.subject == NEW_TITLE
@@ -293,3 +306,108 @@ def test_rows_with_no_bulletin_still_say_a_bulletin_is_out() -> None:
     BulletinAlert.objects.filter(account=account).update(bulletin=None)
     _, push = run("--email", account.user.email, "--commit")
     assert push.call_args.args[1]["body"] == "New bulletin."
+
+
+def test_resend_goes_with_the_stored_delivery() -> None:
+    """The stored urgency, the TTL left to the stored expiry, the day's topic."""
+    account = make_account()
+    ends = timezone.now() + datetime.timedelta(hours=5)
+    BulletinAlert.objects.filter(account=account).update(
+        push_urgency="high",
+        push_expires_at=ends,
+        target_date=datetime.date(2026, 11, 13),
+    )
+    _, push = run("--email", account.user.email, "--commit")
+    delivery = push.call_args.kwargs["delivery"]
+    assert delivery.urgency == "high"
+    assert delivery.expires_at == ends
+    assert delivery.topic == "alert-20261113"
+    assert 5 * 3600 - 60 <= delivery.ttl(timezone.now()) <= 5 * 3600
+
+
+def test_bundle_resends_its_highest_urgency_and_latest_expiry() -> None:
+    """Rows differing in what they stored give the most urgent and latest."""
+    account = make_account()
+    first, second = BulletinAlert.objects.filter(account=account).order_by("pk")
+    later = timezone.now() + datetime.timedelta(hours=9)
+    BulletinAlert.objects.filter(pk=first.pk).update(
+        push_urgency="high",
+        push_expires_at=timezone.now() + datetime.timedelta(hours=2),
+        target_date=datetime.date(2026, 11, 13),
+    )
+    BulletinAlert.objects.filter(pk=second.pk).update(
+        push_urgency="low",
+        push_expires_at=later,
+        target_date=datetime.date(2026, 11, 14),
+    )
+    _, push = run("--email", account.user.email, "--commit")
+    delivery = push.call_args.kwargs["delivery"]
+    assert (delivery.urgency, delivery.expires_at) == ("high", later)
+    assert delivery.topic == "alert-20261114"
+
+
+def test_season_start_resends_under_the_season_topic() -> None:
+    """Every row a season start: topic ``season``."""
+    account = make_account()
+    BulletinAlert.objects.filter(account=account).update(
+        kind=BulletinAlert.Kind.SEASON_START
+    )
+    _, push = run("--email", account.user.email, "--commit")
+    assert push.call_args.kwargs["delivery"].topic == "season"
+
+
+def test_ended_bulletin_is_refused() -> None:
+    """Past the stored expiry: non-zero, nothing pushed or emailed."""
+    account = make_account()
+    BulletinAlert.objects.filter(account=account).update(
+        push_urgency="high",
+        push_expires_at=timezone.now() - datetime.timedelta(minutes=1),
+    )
+    with (
+        patch(f"{COMMAND}.dispatch_push") as push,
+        pytest.raises(CommandError, match="ended"),
+    ):
+        call_command(
+            "resend_bulletin_alert",
+            "--email",
+            account.user.email,
+            "--commit",
+            stdout=StringIO(),
+        )
+    push.assert_not_called()
+    assert mail.outbox == []
+    assert counts()["refused_ended"] == 1
+    out, push = run("--email", account.user.email)
+    assert "a resend is refused" in out
+    push.assert_not_called()
+
+
+def test_ended_legacy_bulletin_is_refused() -> None:
+    """A row with nothing stored is refused once its bulletin's valid_to passed."""
+    account = AccountFactory.create()
+    PushSubscriptionFactory.create(account=account)
+    make_message(account, valid_to=timezone.now() - datetime.timedelta(hours=1))
+    with (
+        patch(f"{COMMAND}.dispatch_push") as push,
+        pytest.raises(CommandError, match="ended"),
+    ):
+        call_command(
+            "resend_bulletin_alert",
+            "--email",
+            account.user.email,
+            "--commit",
+            stdout=StringIO(),
+        )
+    push.assert_not_called()
+
+
+def test_legacy_row_resends_normal_to_its_bulletin_valid_to() -> None:
+    """Nothing stored: normal urgency, held until the bulletin's valid_to."""
+    account = AccountFactory.create(alert_email=Account.AlertEmail.NEVER)
+    PushSubscriptionFactory.create(account=account)
+    ends = timezone.now() + datetime.timedelta(hours=3)
+    make_message(account, valid_to=ends)
+    out, push = run("--email", account.user.email, "--commit")
+    delivery = push.call_args.kwargs["delivery"]
+    assert (delivery.urgency, delivery.expires_at) == ("normal", ends)
+    assert "urgency normal" in out
