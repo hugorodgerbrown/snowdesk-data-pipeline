@@ -192,6 +192,9 @@ each push, and one that stops answering is retired.
   answers 204, or 400 for a bad token. A token is good for its TTL plus
   `RECEIPT_GRACE_SECONDS` (300): sixty seconds and five minutes for a test
   push, up to 28 hours and five minutes for an alert.
+  A receipt proves the service worker ran, not that the notification
+  showed: a browser that has revoked notification permission still
+  confirms, and that case is the permission check's job, not this one's.
 - **Confirm.** `push_health.confirm` sets `confirmed_at` and clears
   `unconfirmed_pushes` and `unconfirmed_since` in one UPDATE. It never
   touches `inactive_at`, so a late receipt does not bring a retired row

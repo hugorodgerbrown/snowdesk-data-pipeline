@@ -276,6 +276,9 @@ def enqueue_outstanding_retired_notices() -> int:
         How many tasks were enqueued.
 
     """
+    # Not iterate_rows: this is a helper inside send_bulletin_alerts, not a
+    # command of its own; it holds only pks, bounded by the owed-notice
+    # backlog, and each enqueue is a write to the task table.
     pks = list(
         PushSubscription.objects.retired_notice_outstanding()
         .order_by("-id")
