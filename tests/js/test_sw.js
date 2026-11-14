@@ -3251,6 +3251,45 @@ describe('push handler', () => {
     // send every tap to the map root instead of the bulletin.
     expect(options.data).toEqual({ url: '/ch-4115/' });
   });
+
+  // SNOW-1494 — the delivery receipt.
+  it('posts the receipt back with keepalive and no cookies', async () => {
+    const fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    const shown = vi.fn(() => Promise.resolve());
+    const sw = loadSw({ showNotification: shown, fetch: fetchStub });
+
+    await dispatchPush(sw, { title: 'T', body: 'b', url: '/', receipt: 'tok.en' });
+
+    expect(shown).toHaveBeenCalledOnce();
+    expect(fetchStub).toHaveBeenCalledOnce();
+    const [url, init] = fetchStub.mock.calls[0];
+    expect(url).toBe('/account/push/receipt/');
+    expect(init.method).toBe('POST');
+    expect(init.keepalive).toBe(true);
+    expect(init.credentials).toBe('omit');
+    expect(JSON.parse(init.body)).toEqual({ receipt: 'tok.en' });
+  });
+
+  it('still shows the notification when the receipt cannot be posted', async () => {
+    const fetchStub = vi.fn(() => Promise.reject(new TypeError('Failed to fetch')));
+    const shown = vi.fn(() => Promise.resolve());
+    const sw = loadSw({ showNotification: shown, fetch: fetchStub });
+
+    // The held promise resolves: a lost receipt never fails the push event.
+    await dispatchPush(sw, { title: 'T', body: 'b', url: '/', receipt: 'tok.en' });
+
+    expect(fetchStub).toHaveBeenCalledOnce();
+    expect(shown).toHaveBeenCalledOnce();
+  });
+
+  it('posts nothing for a push without a receipt', async () => {
+    const fetchStub = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    const sw = loadSw({ fetch: fetchStub });
+
+    await dispatchPush(sw, { title: 'T', body: 'b', url: '/' });
+
+    expect(fetchStub).not.toHaveBeenCalled();
+  });
 });
 
 describe('an unpopulated region tier is never written to the shell cache (SNOW-902)', () => {

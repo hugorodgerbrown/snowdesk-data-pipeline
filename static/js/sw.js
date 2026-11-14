@@ -5949,6 +5949,42 @@ self.addEventListener('sync', (event) => {
 // this SW. We parse the JSON body the server sent (title, body, url) and
 // display a notification. On click we focus an existing tab on the
 // payload URL if one is already open, otherwise open a new window.
+//
+// SNOW-1494: the payload also carries ``receipt``, a signed token the
+// worker posts straight back so the server knows this device still shows
+// its alerts. A device that stops answering is retired after a few
+// unconfirmed alerts (apps/accounts/services/push_health.py).
+
+// Where the delivery receipt goes (``accounts:push_receipt``).
+const PUSH_RECEIPT_URL = '/account/push/receipt/';
+
+/**
+ * Post a push's delivery receipt, best effort. ``keepalive`` lets the
+ * request outlive the worker once the push event settles; no cookies go,
+ * since the signed token is the endpoint's only authority. A failure is
+ * swallowed: a lost receipt costs one unconfirmed count, never the
+ * notification.
+ *
+ * @param {unknown} receipt The token the push payload carried.
+ * @returns {Promise<void>}
+ */
+function _postPushReceipt(receipt) {
+  if (typeof receipt !== 'string' || !receipt) return Promise.resolve();
+  try {
+    return fetch(PUSH_RECEIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ receipt }),
+      credentials: 'omit',
+      keepalive: true,
+    }).then(
+      () => {},
+      () => {},
+    );
+  } catch (_err) {
+    return Promise.resolve();
+  }
+}
 
 self.addEventListener('push', (event) => {
   let payload = { title: 'Snowdesk', body: '', url: '/map/' };
@@ -5990,7 +6026,7 @@ self.addEventListener('push', (event) => {
       // permission, browser quirk) does not falsely report "shown".
       _postTelemetry('pwa.push.shown', { url: payload.url });
     });
-  event.waitUntil(promise);
+  event.waitUntil(Promise.all([promise, _postPushReceipt(payload.receipt)]));
 });
 
 self.addEventListener('notificationclick', (event) => {
